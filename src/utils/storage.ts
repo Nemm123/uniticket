@@ -182,84 +182,122 @@ function restoreStorageValue(key: string, value: string | null): void {
  * Kiểm tra QR payload hoặc ticketCode và cập nhật trạng thái sử dụng một lần.
  * Đây chỉ là dữ liệu mô phỏng phía frontend, không phải cơ chế chống gian lận.
  */
-export function checkInTicket(input: string): CheckInResult {
-  const trimmedInput = input.trim();
-  if (!trimmedInput) {
-    return { status: 'invalid', message: 'Vé không hợp lệ.' };
-  }
+interface MockQrPayload {
+  ticketId: string;
+  orderId: string;
+  eventId: string;
+  tierId: string;
+  ticketCode: string;
+  signatureVersion: 'mock-v1';
+}
 
-  let ticketId: string | undefined;
-  let ticketCode: string | undefined;
+function isCheckedIn(ticket: PurchasedTicket): boolean {
+  return ticket.isCheckedIn || ticket.checkInStatus === 'checked-in' || ticket.status === 'checked_in' || ticket.status === 'CHECKED_IN';
+}
+
+/** Validates a QR payload against the stored ticket without changing ticket state. */
+export function validateTicketForCheckIn(input: string): CheckInResult {
+  if (!input.trim()) return { status: 'invalid', message: 'Invalid QR code.' };
+
+  let payload: MockQrPayload;
   try {
-    const parsed = JSON.parse(trimmedInput) as { ticketId?: unknown; ticketCode?: unknown };
-    if (typeof parsed.ticketId === 'string') ticketId = parsed.ticketId;
-    if (typeof parsed.ticketCode === 'string') ticketCode = parsed.ticketCode;
+    payload = JSON.parse(input) as MockQrPayload;
   } catch {
-    ticketCode = trimmedInput;
+    return { status: 'invalid', message: 'Invalid QR code.' };
   }
 
-  if (!ticketCode) {
-    return { status: 'invalid', message: 'Vé không hợp lệ.' };
+  if (
+    !payload ||
+    typeof payload.ticketId !== 'string' ||
+    typeof payload.orderId !== 'string' ||
+    typeof payload.eventId !== 'string' ||
+    typeof payload.tierId !== 'string' ||
+    typeof payload.ticketCode !== 'string' ||
+    payload.signatureVersion !== 'mock-v1'
+  ) {
+    return { status: 'invalid', message: 'Invalid QR code.' };
   }
 
+  try {
+    const rawTickets = localStorage.getItem(TICKETS_KEY);
+    const tickets = rawTickets ? JSON.parse(rawTickets) : [];
+    if (!Array.isArray(tickets)) return { status: 'error', message: 'Could not read demo ticket storage.' };
+
+    const ticket = tickets.find((item): item is PurchasedTicket => item?.id === payload.ticketId);
+    if (!ticket) return { status: 'invalid', message: 'Ticket not found.' };
+    if (
+      ticket.orderId !== payload.orderId ||
+      ticket.ticketCode !== payload.ticketCode ||
+      ticket.eventId !== payload.eventId ||
+      ticket.tierId !== payload.tierId
+    ) {
+      return { status: 'invalid', message: 'Ticket verification failed.' };
+    }
+    if (isCheckedIn(ticket)) return { status: 'used', message: 'This ticket has already been checked in.', ticket };
+
+    return { status: 'valid', message: 'Ticket verified. Please confirm check-in.', ticket };
+  } catch (error) {
+    console.error('[UniTicket Storage] Failed to validate demo ticket:', error);
+    return { status: 'error', message: 'Could not read demo ticket storage.' };
+  }
+}
+
+/** Re-reads storage and changes a ticket only after an organizer confirms it. */
+export function confirmTicketCheckIn(ticketId: string, checkedInBy: string): CheckInResult {
   let previousTickets: string | null = null;
   let previousHistory: string | null = null;
   let hasTicketsSnapshot = false;
   let hasHistorySnapshot = false;
 
   try {
+    if (!ticketId || !checkedInBy) return { status: 'error', message: 'Organizer wallet is required.' };
+
     previousTickets = localStorage.getItem(TICKETS_KEY);
     hasTicketsSnapshot = true;
     previousHistory = localStorage.getItem(CHECKIN_HISTORY_KEY);
     hasHistorySnapshot = true;
-    const rawTickets = previousTickets ? JSON.parse(previousTickets) : [];
-    if (!Array.isArray(rawTickets)) {
-      return { status: 'error', message: 'Không thể đọc dữ liệu vé mô phỏng.' };
-    }
+    const tickets = previousTickets ? JSON.parse(previousTickets) : [];
+    const history = previousHistory ? JSON.parse(previousHistory) : [];
+    if (!Array.isArray(tickets) || !Array.isArray(history)) return { status: 'error', message: 'Could not read demo ticket storage.' };
 
-    const ticketIndex = rawTickets.findIndex((item) => (
-      item &&
-      item.ticketCode === ticketCode &&
-      (!ticketId || item.id === ticketId)
-    ));
-    if (ticketIndex === -1) {
-      return { status: 'invalid', message: 'Vé không hợp lệ.' };
-    }
+    const ticketIndex = tickets.findIndex((item) => item?.id === ticketId);
+    if (ticketIndex === -1) return { status: 'invalid', message: 'Ticket not found.' };
+    const ticket = tickets[ticketIndex] as PurchasedTicket;
+    if (isCheckedIn(ticket)) return { status: 'used', message: 'This ticket has already been checked in.', ticket };
 
-    const ticket = rawTickets[ticketIndex] as PurchasedTicket;
-    if (ticket.isCheckedIn === true || ticket.status === 'checked_in' || ticket.status === 'CHECKED_IN') {
-      return { status: 'used', message: 'Vé đã được sử dụng.', ticket };
-    }
-
-    const checkInTime = new Date().toISOString();
+    const checkedInAt = new Date().toISOString();
+    const checkedInAtTimestamp = Date.now();
     const updatedTicket: PurchasedTicket = {
       ...ticket,
       isCheckedIn: true,
-      checkInTime,
       status: 'checked_in',
+      checkInTime: checkedInAt,
+      checkedInBy,
+      checkInStatus: 'checked-in',
+      checkedInAt: checkedInAtTimestamp,
     };
-    const updatedTickets = [...rawTickets];
+    const updatedTickets = [...tickets];
     updatedTickets[ticketIndex] = updatedTicket;
-    const rawHistory = previousHistory ? JSON.parse(previousHistory) : [];
-    if (!Array.isArray(rawHistory)) {
-      return { status: 'error', message: 'Không thể đọc lịch sử check-in mô phỏng.' };
-    }
     const historyRecord: CheckInRecord = {
       ticketId: updatedTicket.id,
       ticketCode: updatedTicket.ticketCode,
-      checkedInAt: checkInTime,
+      checkedInAt,
+      checkedInBy,
     };
 
     localStorage.setItem(TICKETS_KEY, JSON.stringify(updatedTickets));
-    localStorage.setItem(CHECKIN_HISTORY_KEY, JSON.stringify([historyRecord, ...rawHistory]));
-    return { status: 'valid', message: 'Check-in thành công.', ticket: updatedTicket };
+    localStorage.setItem(CHECKIN_HISTORY_KEY, JSON.stringify([historyRecord, ...history]));
+    return { status: 'valid', message: 'Check-in confirmed.', ticket: updatedTicket };
   } catch (error) {
-    console.error('[UniTicket Storage] Lỗi check-in, khôi phục dữ liệu:', error);
+    console.error('[UniTicket Storage] Failed to confirm check-in:', error);
     if (hasTicketsSnapshot) restoreStorageValue(TICKETS_KEY, previousTickets);
     if (hasHistorySnapshot) restoreStorageValue(CHECKIN_HISTORY_KEY, previousHistory);
-    return { status: 'error', message: 'Không thể lưu trạng thái check-in mô phỏng.' };
+    return { status: 'error', message: 'Could not save demo check-in.' };
   }
 }
+
+// Backwards-compatible validation entry point. It intentionally does not check in a ticket.
+export const checkInTicket = validateTicketForCheckIn;
 
 export function getStoredCheckInHistory(): CheckInRecord[] {
   try {

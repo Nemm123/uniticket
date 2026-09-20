@@ -78,6 +78,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       for (let i = 0; i < selectedQuantity; i++) {
         const ticketId = createUniqueValue('tkt', usedTicketIds);
         const ticketCode = createUniqueValue('UT-SOL', usedTicketCodes);
+        const timestamp = Date.now();
         const seatPrefix = tier.name.toLowerCase().includes('vip') ? 'VIP-ROW' : 'GA-ZONE';
         const seat = `${seatPrefix}-${Math.floor(1 + Math.random() * 20)}-${String(i + 1).padStart(2, '0')}`;
 
@@ -88,9 +89,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           eventId: event.id,
           tierId: tier.id,
           ticketCode,
+          customerName: trimmedName,
           customerWallet: walletAddress,
           seat,
-          timestamp: Date.now(),
+          timestamp,
           signatureVersion: 'mock-v1',
           isMockQr: true,
         });
@@ -117,6 +119,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           purchaseDate: new Date().toISOString(),
           status: 'valid',
           isCheckedIn: false,
+          timestamp,
+          signatureVersion: 'mock-v1',
+          checkInStatus: 'unused',
           qrPayload,
         });
       }

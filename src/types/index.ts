@@ -78,6 +78,12 @@ export interface PurchasedTicket {
   status: 'valid' | 'checked_in' | 'transferred' | 'VALID' | 'CHECKED_IN';
   isCheckedIn: boolean;
   checkInTime?: string;
+  checkedInBy?: string;
+  /** Explicit demo QR/check-in fields; legacy properties remain for stored tickets. */
+  timestamp?: number;
+  signatureVersion?: 'mock-v1';
+  checkInStatus?: 'unused' | 'checked-in';
+  checkedInAt?: number;
   qrPayload: string;        // JSON string mã hóa thông tin vé an toàn cho demo
 }
 
@@ -85,6 +91,7 @@ export interface CheckInRecord {
   ticketId: string;
   ticketCode: string;
   checkedInAt: string;
+  checkedInBy?: string;
 }
 
 export interface CheckInResult {

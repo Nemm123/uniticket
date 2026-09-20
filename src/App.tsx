@@ -20,7 +20,8 @@ import {
   MapPin, 
   Sparkles,
   Users,
-  CheckCircle2
+  CheckCircle2,
+  X
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { EventItem, PurchasedTicket, TicketTier, ToastMessage, UserRole } from './types';
@@ -62,6 +63,7 @@ export function App() {
   const [events, setEvents] = useState<EventItem[]>(() => getStoredEvents());
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [purchasedTickets, setPurchasedTickets] = useState<PurchasedTicket[]>(() => getStoredPurchasedTickets());
+  const [selectedQrTicket, setSelectedQrTicket] = useState<PurchasedTicket | null>(null);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutEvent, setCheckoutEvent] = useState<EventItem | null>(null);
   const [checkoutTier, setCheckoutTier] = useState<TicketTier | null>(null);
@@ -544,19 +546,20 @@ export function App() {
                         <p className="mt-1 text-xs text-solana-cyan">{ticket.tierName}</p>
                       </div>
                       <span className="shrink-0 rounded-full border border-solana-green/40 bg-solana-green/15 px-2 py-1 text-[10px] font-bold text-solana-green">
-                        {ticket.status === 'valid' || ticket.status === 'VALID' ? 'VALID' : ticket.status}
+                        {ticket.isCheckedIn || ticket.status === 'checked_in' || ticket.status === 'CHECKED_IN' ? 'CHECKED-IN' : 'UNUSED'}
                       </span>
                     </div>
                     <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
                       <div className="space-y-2 text-xs text-slate-300">
+                        <p><span className="text-slate-500">Người mua:</span> {ticket.customerName}</p>
                         <p><span className="text-slate-500">Mã vé:</span> <span className="font-mono text-white">{ticket.ticketCode}</span></p>
                         <p><span className="text-slate-500">Ví:</span> {ticket.customerWallet.slice(0, 4)}...{ticket.customerWallet.slice(-4)}</p>
                         <p><span className="text-slate-500">Ngày mua:</span> {new Date(ticket.purchaseDate || ticket.purchasedAt).toLocaleString('vi-VN')}</p>
                         <p><span className="text-slate-500">Địa điểm:</span> {ticket.venue}, {ticket.city}</p>
                       </div>
-                      <div className="flex w-fit flex-col items-center rounded-xl bg-white p-2 text-black">
-                        <QRCodeSVG value={ticket.qrPayload} size={112} level="M" />
-                        <span className="mt-1 text-[9px] font-mono font-bold">QR MÔ PHỎNG</span>
+                      <div className="flex flex-col items-start gap-2 sm:items-end">
+                        <button onClick={() => setSelectedQrTicket(ticket)} className="min-h-11 rounded-xl border border-solana-cyan/40 bg-solana-cyan/10 px-4 py-2 text-xs font-bold text-solana-cyan hover:bg-solana-cyan/20">Show QR</button>
+                        {ticket.isCheckedIn && ticket.checkInTime && <span className="text-[11px] text-solana-green">Checked-in: {new Date(ticket.checkInTime).toLocaleString('vi-VN')}</span>}
                       </div>
                     </div>
                     <p className="mt-4 border-t border-dashed border-white/10 pt-3 text-[11px] text-slate-400">
@@ -570,7 +573,12 @@ export function App() {
         )}
 
         {currentPage === 'check-in' && (
-          <CheckInPage onShowToast={showToast} />
+          <CheckInPage
+            currentRole={currentRole}
+            organizerAddress={walletAddress}
+            onShowToast={showToast}
+            onTicketsChanged={() => setPurchasedTickets(getStoredPurchasedTickets())}
+          />
         )}
 
         {currentPage === 'organizer' && (
@@ -672,6 +680,20 @@ export function App() {
           </div>
         )}
       </main>
+
+      {selectedQrTicket && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-4 backdrop-blur-md">
+          <button aria-label="Close QR code" className="absolute inset-0" onClick={() => setSelectedQrTicket(null)} />
+          <div className="relative w-full max-w-sm rounded-2xl border border-solana-purple/40 bg-[#0F0A28] p-5 text-center shadow-2xl sm:p-6">
+            <button aria-label="Close QR code" onClick={() => setSelectedQrTicket(null)} className="absolute right-3 top-3 inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-300 hover:bg-white/10 hover:text-white"><X className="h-5 w-5" /></button>
+            <h2 className="pr-10 text-left text-lg font-bold text-white">Ticket QR</h2>
+            <p className="mt-1 text-left text-xs text-slate-300">{selectedQrTicket.eventTitle}</p>
+            <div className="mx-auto mt-5 inline-flex max-w-full rounded-2xl bg-white p-3"><QRCodeSVG value={selectedQrTicket.qrPayload} size={240} level="M" /></div>
+            <p className="mt-4 text-xs text-solana-cyan">Show this QR code to the event organizer.</p>
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-400">Demo QR only. It is not a signed blockchain ticket.</p>
+          </div>
+        </div>
+      )}
 
       {/* Chân trang toàn cục */}
       <Footer onNavigate={(p) => handleNavigate(p)} />
