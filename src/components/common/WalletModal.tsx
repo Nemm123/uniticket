@@ -15,7 +15,6 @@ interface PhantomProvider {
 declare global {
   interface Window {
     phantom?: { solana?: PhantomProvider };
-    solana?: PhantomProvider;
   }
 }
 
@@ -33,6 +32,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, onWal
   const [walletError, setWalletError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [isPhantomAvailable, setIsPhantomAvailable] = useState(false);
   const onWalletChangeRef = useRef(onWalletChange);
   const onConnectionCancelledRef = useRef(onConnectionCancelled);
 
@@ -44,7 +44,10 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, onWal
     onWalletChangeRef.current?.(address);
   };
 
-  const getPhantomProvider = () => window.phantom?.solana ?? window.solana;
+  // Use Phantom's namespaced provider only. `window.solana` is a shared legacy
+  // namespace and can belong to a different wallet when multiple extensions exist.
+  const getPhantomProvider = () => window.phantom?.solana;
+  const isMobileDevice = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
   useEffect(() => {
     let activeProvider: PhantomProvider | null = null;
@@ -52,7 +55,9 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, onWal
 
     const attachProvider = () => {
       const provider = getPhantomProvider();
-      if (!provider || provider === activeProvider) return;
+      const isAvailable = Boolean(provider?.isPhantom);
+      setIsPhantomAvailable(isAvailable);
+      if (!isAvailable || !provider || provider === activeProvider) return;
 
       removeListeners();
       activeProvider = provider;
@@ -90,7 +95,11 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, onWal
     setWalletError(null);
 
     if (!provider?.isPhantom) {
-      setWalletError('Chưa phát hiện Phantom. Vui lòng cài Phantom và thử lại.');
+      setWalletError(
+        isMobileDevice()
+          ? 'Phiên bản này kết nối Phantom trên điện thoại qua Phantom Browser. Hãy mở UniTicket trong ứng dụng Phantom rồi thử lại.'
+          : 'Chưa phát hiện extension Phantom. Vui lòng cài Phantom và tải lại trang.',
+      );
       onConnectionCancelledRef.current?.();
       return;
     }
@@ -235,9 +244,17 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, onWal
           </div>
         )}
 
-        {!getPhantomProvider() && (
+        {!isPhantomAvailable && (
           <div className="mb-4 rounded-xl border border-yellow-400/40 bg-yellow-950/30 px-3 py-2 text-xs text-yellow-100">
-            Phantom chưa được cài đặt. Hãy cài ví từ <a href="https://phantom.app/" target="_blank" rel="noopener noreferrer" className="text-solana-cyan hover:underline">phantom.app</a>, sau đó tải lại trang.
+            {isMobileDevice() ? (
+              <>
+                <p className="font-semibold">Đang dùng Chrome hoặc Safari?</p>
+                <p className="mt-1 leading-relaxed">Mở ứng dụng Phantom, vào Browser, sau đó truy cập lại UniTicket. Phantom chỉ inject provider trong browser tích hợp của ứng dụng; website sẽ không yêu cầu seed phrase hoặc private key.</p>
+                <a href="https://phantom.app/download" target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex text-solana-cyan hover:underline">Cài/mở Phantom</a>
+              </>
+            ) : (
+              <>Phantom chưa được cài đặt. Hãy cài ví từ <a href="https://phantom.app/download" target="_blank" rel="noopener noreferrer" className="text-solana-cyan hover:underline">phantom.app</a>, sau đó tải lại trang.</>
+            )}
           </div>
         )}
 
@@ -300,6 +317,10 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, onWal
             <ExternalLink className="w-3 h-3" />
           </a>
         </div>
+
+        <p className="mt-3 text-center text-[11px] leading-relaxed text-slate-400">
+          Kết nối ví chỉ xác nhận địa chỉ. Checkout và QR ticket hiện là dữ liệu mô phỏng trên thiết bị, không phải giao dịch blockchain.
+        </p>
 
         {/* Security guarantee */}
         <div className="mt-3 text-center flex items-center justify-center gap-1.5 text-[11px] text-slate-400">

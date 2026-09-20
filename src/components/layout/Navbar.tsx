@@ -23,13 +23,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   // Khóa cuộn body khi menu mobile đang mở
   useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
     if (mobileMenuOpen) {
       document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
     }
     return () => {
-      document.body.style.overflow = 'unset';
+      document.body.style.overflow = originalOverflow;
     };
   }, [mobileMenuOpen]);
 
@@ -54,7 +53,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full glass-nav transition-all duration-300">
+    <header className="sticky top-0 z-50 w-full glass-nav transition-all duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 sm:h-20">
           {/* Logo Brand */}
@@ -84,7 +83,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-1 bg-[#150E35]/80 px-3 py-1.5 rounded-full border border-white/10 shadow-inner backdrop-blur-md">
+          <nav className="hidden xl:flex items-center gap-1 bg-[#150E35]/80 px-3 py-1.5 rounded-full border border-white/10 shadow-inner backdrop-blur-md">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = currentPage === item.id;
@@ -106,7 +105,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </nav>
 
           {/* Right Action: Connect Wallet Button */}
-          <div className="hidden sm:flex items-center gap-3">
+          <div className="hidden xl:flex items-center gap-3 shrink-0">
             <button
               onClick={onOpenWalletModal}
               className="relative group overflow-hidden px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm text-white transition-all duration-300 shadow-lg shadow-purple-900/30 hover:shadow-solana-purple/50 active:scale-95"
@@ -131,18 +130,20 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Mobile Right Actions */}
-          <div className="flex md:hidden items-center gap-2">
+          <div className="flex xl:hidden items-center gap-1.5 shrink-0">
             <button
               onClick={onOpenWalletModal}
               aria-label="Connect Wallet"
-              className="p-2 rounded-xl bg-solana-purple/20 border border-solana-purple/40 text-solana-cyan active:scale-95 transition-transform"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-solana-purple/40 bg-solana-purple/20 text-solana-cyan active:scale-95 transition-transform"
             >
               <Wallet className="w-5 h-5" />
             </button>
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               aria-label="Toggle Menu"
-              className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
+              aria-expanded={mobileMenuOpen}
+              aria-controls="mobile-navigation"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-300 hover:bg-white/10 hover:text-white active:scale-95 transition-all"
             >
               {mobileMenuOpen ? <X className="w-6 h-6 text-neon-pink" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -152,7 +153,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Mobile Drawer Menu với Backdrop Blur cao cấp */}
       {mobileMenuOpen && (
-        <div className="md:hidden fixed inset-x-0 top-16 bottom-0 bg-[#070412]/95 backdrop-blur-2xl z-50 p-5 space-y-3 overflow-y-auto animate-fadeIn border-t border-solana-purple/20">
+        <div id="mobile-navigation" className="xl:hidden fixed inset-x-0 top-16 sm:top-20 bottom-0 bg-[#070412]/95 backdrop-blur-2xl z-40 p-4 sm:p-5 space-y-3 overflow-y-auto overscroll-contain animate-fadeIn border-t border-solana-purple/20">
           <div className="space-y-2 pt-2">
             {navItems.map((item) => {
               const Icon = item.icon;

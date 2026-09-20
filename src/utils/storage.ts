@@ -114,18 +114,36 @@ export function savePurchaseAtomically(
   quantityPurchased: number,
   newTickets: PurchasedTicket[],
 ): boolean {
-  const previousInventory = localStorage.getItem(INVENTORY_KEY);
-  const previousTickets = localStorage.getItem(TICKETS_KEY);
+  let previousInventory: string | null = null;
+  let previousTickets: string | null = null;
+  let hasInventorySnapshot = false;
+  let hasTicketsSnapshot = false;
 
   try {
+    if (
+      !eventId ||
+      !tierId ||
+      !Number.isInteger(quantityPurchased) ||
+      quantityPurchased <= 0 ||
+      !Array.isArray(newTickets) ||
+      newTickets.length !== quantityPurchased
+    ) {
+      return false;
+    }
+
+    // localStorage is only demo persistence, so take snapshots before either write.
+    previousInventory = localStorage.getItem(INVENTORY_KEY);
+    hasInventorySnapshot = true;
+    previousTickets = localStorage.getItem(TICKETS_KEY);
+    hasTicketsSnapshot = true;
     const events = getStoredEvents();
     const event = events.find((item) => item.id === eventId);
     const tier = event?.tiers?.find((item) => item.id === tierId);
 
-    if (!event || !tier || !Number.isInteger(quantityPurchased) || quantityPurchased <= 0) {
+    if (!event || !tier) {
       return false;
     }
-    if (tier.remainingQuantity < quantityPurchased || newTickets.length !== quantityPurchased) {
+    if (tier.remainingQuantity < quantityPurchased) {
       return false;
     }
 
@@ -140,17 +158,23 @@ export function savePurchaseAtomically(
     return true;
   } catch (error) {
     console.error('[UniTicket Storage] Lỗi lưu đơn hàng, khôi phục dữ liệu trước đó:', error);
-    restoreStorageValue(INVENTORY_KEY, previousInventory);
-    restoreStorageValue(TICKETS_KEY, previousTickets);
+    if (hasInventorySnapshot) restoreStorageValue(INVENTORY_KEY, previousInventory);
+    if (hasTicketsSnapshot) restoreStorageValue(TICKETS_KEY, previousTickets);
     return false;
   }
 }
 
 function restoreStorageValue(key: string, value: string | null): void {
-  if (value === null) {
-    localStorage.removeItem(key);
-  } else {
-    localStorage.setItem(key, value);
+  try {
+    if (value === null) {
+      localStorage.removeItem(key);
+    } else {
+      localStorage.setItem(key, value);
+    }
+  } catch (error) {
+    // A browser can reject storage again (for example quota/private browsing).
+    // Do not let a failed best-effort rollback crash the UI.
+    console.error('[UniTicket Storage] Kh\u00f4ng th\u1ec3 kh\u00f4i ph\u1ee5c localStorage:', error);
   }
 }
 
@@ -178,10 +202,16 @@ export function checkInTicket(input: string): CheckInResult {
     return { status: 'invalid', message: 'Vé không hợp lệ.' };
   }
 
-  const previousTickets = localStorage.getItem(TICKETS_KEY);
-  const previousHistory = localStorage.getItem(CHECKIN_HISTORY_KEY);
+  let previousTickets: string | null = null;
+  let previousHistory: string | null = null;
+  let hasTicketsSnapshot = false;
+  let hasHistorySnapshot = false;
 
   try {
+    previousTickets = localStorage.getItem(TICKETS_KEY);
+    hasTicketsSnapshot = true;
+    previousHistory = localStorage.getItem(CHECKIN_HISTORY_KEY);
+    hasHistorySnapshot = true;
     const rawTickets = previousTickets ? JSON.parse(previousTickets) : [];
     if (!Array.isArray(rawTickets)) {
       return { status: 'error', message: 'Không thể đọc dữ liệu vé mô phỏng.' };
@@ -225,8 +255,8 @@ export function checkInTicket(input: string): CheckInResult {
     return { status: 'valid', message: 'Check-in thành công.', ticket: updatedTicket };
   } catch (error) {
     console.error('[UniTicket Storage] Lỗi check-in, khôi phục dữ liệu:', error);
-    restoreStorageValue(TICKETS_KEY, previousTickets);
-    restoreStorageValue(CHECKIN_HISTORY_KEY, previousHistory);
+    if (hasTicketsSnapshot) restoreStorageValue(TICKETS_KEY, previousTickets);
+    if (hasHistorySnapshot) restoreStorageValue(CHECKIN_HISTORY_KEY, previousHistory);
     return { status: 'error', message: 'Không thể lưu trạng thái check-in mô phỏng.' };
   }
 }

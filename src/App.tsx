@@ -25,7 +25,7 @@ import {
 import { QRCodeSVG } from 'qrcode.react';
 import { EventItem, PurchasedTicket, TicketTier, ToastMessage, UserRole } from './types';
 import { getStoredEvents, getStoredPurchasedTickets } from './utils/storage';
-import { getUserRole, setUserRole } from './utils/role';
+import { clearUserRole, getUserRole, setUserRole } from './utils/role';
 
 export function App() {
   const [currentPage, setCurrentPage] = useState<string>('home');
@@ -101,13 +101,39 @@ export function App() {
     setToasts((current) => [...current, { id: `${Date.now()}-${Math.random()}`, type, message }]);
   };
 
+  const resetWalletSession = () => {
+    const roleWasCleared = clearUserRole();
+    setCurrentRole(null);
+    setPendingPurchase(null);
+    setIsCheckoutOpen(false);
+    setCheckoutEvent(null);
+    setCheckoutTier(null);
+    setIsRoleSelectionOpen(false);
+
+    if (organizerPages.includes(currentPage)) {
+      setCurrentPage('home');
+      scrollToTop();
+    }
+    if (!roleWasCleared) {
+      showToast('error', 'Kh\u00f4ng th\u1ec3 x\u00f3a role \u0111\u00e3 l\u01b0u tr\u00ean tr\u00ecnh duy\u1ec7t n\u00e0y.');
+    }
+  };
+
   const handleWalletChange = (address: string | null) => {
+    const hasChangedWallet = Boolean(address && walletAddress && walletAddress !== address);
     setWalletAddress(address);
     if (!address) {
-      setPendingPurchase(null);
+      resetWalletSession();
       return;
     }
-    if (address && !getUserRole()) {
+
+    if (hasChangedWallet) {
+      resetWalletSession();
+      setIsRoleSelectionOpen(true);
+      return;
+    }
+
+    if (!currentRole) {
       setIsRoleSelectionOpen(true);
       return;
     }
