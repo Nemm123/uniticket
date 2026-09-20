@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { BarChart3, CalendarDays, Ticket, Sparkles, Menu, X, Wallet, PlusCircle, Compass, Home, ScanLine } from 'lucide-react';
 import { UserRole } from '../../types';
 
@@ -32,6 +33,16 @@ export const Navbar: React.FC<NavbarProps> = ({
     };
   }, [mobileMenuOpen]);
 
+  useEffect(() => {
+    const desktopMedia = window.matchMedia('(min-width: 1280px)');
+    const closeOnDesktop = () => {
+      if (desktopMedia.matches) setMobileMenuOpen(false);
+    };
+    desktopMedia.addEventListener('change', closeOnDesktop);
+    closeOnDesktop();
+    return () => desktopMedia.removeEventListener('change', closeOnDesktop);
+  }, []);
+
   const navItems = currentRole === 'organizer'
     ? [
         { id: 'home', label: 'Trang Chủ', icon: Home },
@@ -52,8 +63,68 @@ export const Navbar: React.FC<NavbarProps> = ({
     setMobileMenuOpen(false);
   };
 
+  const mobileNavigation = mobileMenuOpen ? createPortal(
+    <div
+      id="mobile-navigation"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Mobile navigation"
+      className="fixed inset-x-0 bottom-0 top-16 z-[70] overflow-y-auto overscroll-contain border-t border-solana-purple/20 bg-[#070412]/95 p-4 backdrop-blur-2xl sm:top-20 sm:p-5 xl:hidden"
+    >
+      <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-6">
+        <div className="space-y-2 pt-2">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = currentPage === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => handleNavClick(item.id)}
+                className={`flex min-h-11 w-full items-center gap-3.5 rounded-xl px-4 py-3.5 text-left text-base font-semibold transition-all ${
+                  isActive
+                    ? 'bg-gradient-to-r from-solana-purple to-neon-pink text-white shadow-lg shadow-purple-900/40'
+                    : 'border border-white/5 text-slate-200 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <Icon className="h-5 w-5 text-solana-cyan" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-auto space-y-3 border-t border-white/10 pt-6">
+          <button
+            type="button"
+            onClick={() => {
+              setMobileMenuOpen(false);
+              onOpenWalletModal();
+            }}
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-solana-purple via-neon-pink to-solana-cyan py-3.5 text-base font-bold text-white shadow-xl shadow-purple-950/60 transition-all active:scale-95"
+          >
+            <Wallet className="h-5 w-5 text-white" />
+            <span>{walletAddress ? 'Manage Wallet' : 'Connect Wallet (Solana)'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMobileMenuOpen(false);
+              onOpenRoleSelection();
+            }}
+            className="min-h-11 w-full rounded-xl border border-solana-cyan/30 bg-solana-cyan/10 py-3.5 text-base font-bold text-solana-cyan active:scale-95"
+          >
+            {currentRole ? `Switch Role (${currentRole === 'organizer' ? 'Organizer' : 'Attendee'})` : 'Choose Demo Role'}
+          </button>
+          <p className="text-center text-xs text-slate-400">Frontend demo role is stored only on this device.</p>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  ) : null;
+
   return (
-    <header className="sticky top-0 z-50 w-full glass-nav transition-all duration-300">
+    <>
+    <header className="sticky top-0 z-[80] w-full glass-nav transition-all duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 sm:h-20">
           {/* Logo Brand */}
@@ -139,7 +210,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Wallet className="w-5 h-5" />
             </button>
             <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              onClick={() => setMobileMenuOpen((isOpen) => !isOpen)}
               aria-label="Toggle Menu"
               aria-expanded={mobileMenuOpen}
               aria-controls="mobile-navigation"
@@ -151,58 +222,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Mobile Drawer Menu với Backdrop Blur cao cấp */}
-      {mobileMenuOpen && (
-        <div id="mobile-navigation" className="xl:hidden fixed inset-x-0 top-16 sm:top-20 bottom-0 bg-[#070412]/95 backdrop-blur-2xl z-40 p-4 sm:p-5 space-y-3 overflow-y-auto overscroll-contain animate-fadeIn border-t border-solana-purple/20">
-          <div className="space-y-2 pt-2">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = currentPage === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => handleNavClick(item.id)}
-                  className={`w-full flex items-center gap-3.5 px-4 py-3.5 rounded-xl text-base font-semibold text-left transition-all ${
-                    isActive
-                      ? 'bg-gradient-to-r from-solana-purple to-neon-pink text-white shadow-lg shadow-purple-900/40'
-                      : 'text-slate-200 hover:text-white hover:bg-white/5 border border-white/5'
-                  }`}
-                >
-                  <Icon className="w-5 h-5 text-solana-cyan" />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="pt-6 border-t border-white/10 space-y-3">
-            <button
-              onClick={() => {
-                setMobileMenuOpen(false);
-                onOpenWalletModal();
-              }}
-              className="w-full py-3.5 rounded-xl bg-gradient-to-r from-solana-purple via-neon-pink to-solana-cyan text-white font-bold text-base flex items-center justify-center gap-2 shadow-xl shadow-purple-950/60 active:scale-95 transition-all"
-            >
-              <Wallet className="w-5 h-5 text-white" />
-              <span>Connect Wallet (Solana)</span>
-            </button>
-            {currentRole && (
-              <button
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  onOpenRoleSelection();
-                }}
-                className="w-full rounded-xl border border-solana-cyan/30 bg-solana-cyan/10 py-3.5 text-base font-bold text-solana-cyan active:scale-95"
-              >
-                Switch Role ({currentRole === 'organizer' ? 'Organizer' : 'Attendee'})
-              </button>
-            )}
-            <p className="text-center text-xs text-slate-400">
-              Giao diện Frontend Phase 1 • Cuộc thi UniHackFest
-            </p>
-          </div>
-        </div>
-      )}
     </header>
+    {mobileNavigation}
+    </>
   );
 };

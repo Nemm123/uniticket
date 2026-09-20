@@ -171,12 +171,12 @@ export const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, onWal
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md transition-all">
+    <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto overscroll-contain p-4 bg-black/80 backdrop-blur-md transition-all sm:items-center">
       {/* Background click to close */}
       <div className="absolute inset-0" onClick={onClose} />
 
       {/* Modal Content with Entrance Animation */}
-      <div className="relative w-full max-w-md rounded-2xl bg-[#0F0A28] border border-solana-purple/40 p-5 sm:p-6 shadow-2xl shadow-purple-950/70 z-10 overflow-hidden transform transition-all animate-scaleUp">
+      <div className="relative my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl bg-[#0F0A28] border border-solana-purple/40 p-5 sm:p-6 shadow-2xl shadow-purple-950/70 z-10 transform transition-all animate-scaleUp">
         {/* Neon decorative glow */}
         <div className="absolute -top-20 -right-20 w-44 h-44 bg-solana-purple/25 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-20 -left-20 w-44 h-44 bg-solana-green/20 rounded-full blur-3xl pointer-events-none" />

@@ -47,8 +47,8 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-md">
-      <div className="relative my-4 w-full max-w-3xl rounded-2xl border border-solana-purple/40 bg-[#0F0A28] p-5 shadow-2xl shadow-purple-950/70 sm:p-7">
+    <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto overscroll-contain bg-black/80 p-4 backdrop-blur-md sm:items-center">
+      <div className="relative my-auto max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto rounded-2xl border border-solana-purple/40 bg-[#0F0A28] p-5 shadow-2xl shadow-purple-950/70 sm:p-7">
         <div className="absolute -right-20 -top-20 h-44 w-44 rounded-full bg-solana-purple/20 blur-3xl" />
         <div className="relative flex items-start justify-between gap-4 border-b border-white/10 pb-5">
           <div>
@@ -60,7 +60,7 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Close role selection"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-300 hover:bg-white/10 hover:text-white"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-300 hover:bg-white/10 hover:text-white"
           >
             <X className="h-5 w-5" />
           </button>
