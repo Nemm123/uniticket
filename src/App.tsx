@@ -27,9 +27,36 @@ import { EventItem, PurchasedTicket, TicketTier, ToastMessage, UserRole } from '
 import { getStoredEvents, getStoredPurchasedTickets } from './utils/storage';
 import { clearUserRole, getUserRole, setUserRole } from './utils/role';
 
+const PAGE_PATHS = {
+  home: '/',
+  events: '/events',
+  'my-tickets': '/my-tickets',
+  'event-detail': '/event-detail',
+  organizer: '/organizer',
+  'organizer-events': '/organizer-events',
+  'create-event': '/create-event',
+  'check-in': '/check-in',
+  'access-denied': '/access-denied',
+} as const;
+
+const ORGANIZER_PAGES = ['organizer', 'organizer-events', 'create-event', 'check-in'];
+
+function getPageFromPathname(pathname: string): string | null {
+  const normalizedPath = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  return Object.entries(PAGE_PATHS).find(([, path]) => path === normalizedPath)?.[0] ?? null;
+}
+
+function getPathForPage(page: string, eventId?: string): string {
+  const pathname = PAGE_PATHS[page as keyof typeof PAGE_PATHS] ?? PAGE_PATHS.home;
+  if (page === 'event-detail' && eventId) {
+    return `${pathname}?eventId=${encodeURIComponent(eventId)}`;
+  }
+  return pathname;
+}
+
 export function App() {
-  const [currentPage, setCurrentPage] = useState<string>('home');
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState<string>(() => getPageFromPathname(window.location.pathname) ?? 'home');
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('eventId'));
   const [isWalletModalOpen, setIsWalletModalOpen] = useState<boolean>(false);
   const [showBackToTop, setShowBackToTop] = useState<boolean>(false);
   const [events, setEvents] = useState<EventItem[]>(() => getStoredEvents());
@@ -42,8 +69,6 @@ export function App() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [currentRole, setCurrentRole] = useState<UserRole | null>(() => getUserRole());
   const [isRoleSelectionOpen, setIsRoleSelectionOpen] = useState(false);
-
-  const organizerPages = ['organizer', 'organizer-events', 'create-event', 'check-in'];
 
   // Lắng nghe cuộn trang để hiện nút Back to Top
   useEffect(() => {
@@ -64,19 +89,48 @@ export function App() {
     }
   }, [walletAddress, currentRole]);
 
+  useEffect(() => {
+    const syncPageFromLocation = () => {
+      const pageFromLocation = getPageFromPathname(window.location.pathname);
+      const nextPage = pageFromLocation ?? 'home';
+
+      if (ORGANIZER_PAGES.includes(nextPage) && currentRole !== 'organizer') {
+        setCurrentPage('access-denied');
+        window.history.replaceState(null, '', PAGE_PATHS['access-denied']);
+      } else {
+        setCurrentPage(nextPage);
+        setSelectedEventId(nextPage === 'event-detail' ? new URLSearchParams(window.location.search).get('eventId') : null);
+        if (!pageFromLocation) {
+          window.history.replaceState(null, '', PAGE_PATHS.home);
+        }
+      }
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    };
+
+    syncPageFromLocation();
+    window.addEventListener('popstate', syncPageFromLocation);
+    return () => window.removeEventListener('popstate', syncPageFromLocation);
+  }, [currentRole]);
+
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleNavigate = (page: string, eventId?: string) => {
-    if (organizerPages.includes(page) && currentRole !== 'organizer') {
+    if (ORGANIZER_PAGES.includes(page) && currentRole !== 'organizer') {
       setCurrentPage('access-denied');
+      window.history.pushState(null, '', PAGE_PATHS['access-denied']);
       scrollToTop();
       return;
     }
-    setCurrentPage(page);
+    const nextPage = PAGE_PATHS[page as keyof typeof PAGE_PATHS] ? page : 'home';
+    const nextPath = getPathForPage(nextPage, eventId);
+    setCurrentPage(nextPage);
     if (eventId) {
       setSelectedEventId(eventId);
+    }
+    if (`${window.location.pathname}${window.location.search}` !== nextPath) {
+      window.history.pushState(null, '', nextPath);
     }
     scrollToTop();
   };
@@ -84,7 +138,7 @@ export function App() {
   // Cuộn mượt xuống section sự kiện trên trang chủ
   const handleScrollToEvents = () => {
     if (currentPage !== 'home') {
-      setCurrentPage('home');
+      handleNavigate('home');
       setTimeout(() => {
         const el = document.getElementById('featured-events-section');
         if (el) el.scrollIntoView({ behavior: 'smooth' });
@@ -110,9 +164,8 @@ export function App() {
     setCheckoutTier(null);
     setIsRoleSelectionOpen(false);
 
-    if (organizerPages.includes(currentPage)) {
-      setCurrentPage('home');
-      scrollToTop();
+    if (ORGANIZER_PAGES.includes(currentPage)) {
+      handleNavigate('home');
     }
     if (!roleWasCleared) {
       showToast('error', 'Kh\u00f4ng th\u1ec3 x\u00f3a role \u0111\u00e3 l\u01b0u tr\u00ean tr\u00ecnh duy\u1ec7t n\u00e0y.');
@@ -161,8 +214,8 @@ export function App() {
     setIsRoleSelectionOpen(false);
     showToast('success', 'Role switched successfully');
 
-    if (role === 'attendee' && organizerPages.includes(currentPage)) {
-      setCurrentPage('home');
+    if (role === 'attendee' && ORGANIZER_PAGES.includes(currentPage)) {
+      handleNavigate('home');
     }
     if (pendingPurchase) {
       setCheckoutEvent(pendingPurchase.event);
