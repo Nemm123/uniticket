@@ -3,12 +3,18 @@ import { env } from '../config/env.js';
 
 const { Pool } = pg;
 
+const isRemoteDb =
+  env.databaseSsl ||
+  env.databaseUrl.includes('neon.tech') ||
+  env.databaseUrl.includes('render.com') ||
+  env.databaseUrl.includes('sslmode=require');
+
 export const pool = new Pool({
   connectionString: env.databaseUrl,
-  ssl: env.databaseSsl ? { rejectUnauthorized: false } : undefined,
+  ssl: isRemoteDb ? { rejectUnauthorized: false } : undefined,
   max: 10,
   idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 3_000,
+  connectionTimeoutMillis: 5_000,
 });
 
 pool.on('error', (error) => {

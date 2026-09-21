@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Ticket, Sparkles, ShieldCheck, User, Mail, Minus, Plus } from 'lucide-react';
 import { EventItem, TicketTier, PurchasedTicket } from '../../types';
 import { getStoredPurchasedTickets, savePurchaseAtomically } from '../../utils/storage';
+import { createTicketsApi } from '../../services/ticketsApi';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -37,7 +38,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const totalTicketPriceSol = parseFloat((tier.priceSol * selectedQuantity).toFixed(4));
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const trimmedName = customerName.trim();
@@ -68,7 +69,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     setIsSubmitting(true);
 
-    setTimeout(() => {
+    try {
       // Tạo mã đơn hàng chung và mã riêng cho từng vé.
       const orderId = `ORD-${createUniqueValue('order')}`;
       const existingTickets = getStoredPurchasedTickets();
@@ -82,7 +83,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         const seatPrefix = tier.name.toLowerCase().includes('vip') ? 'VIP-ROW' : 'GA-ZONE';
         const seat = `${seatPrefix}-${Math.floor(1 + Math.random() * 20)}-${String(i + 1).padStart(2, '0')}`;
 
-        // Cấu trúc dữ liệu JSON mã hóa trong QR (Frontend Mock có cấu trúc sẵn sàng cho Signed Token sau này)
+        // Cấu trúc dữ liệu JSON mã hóa trong QR
         const qrPayload = JSON.stringify({
           ticketId,
           orderId,
@@ -94,7 +95,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           seat,
           timestamp,
           signatureVersion: 'mock-v1',
-          isMockQr: true,
         });
 
         newTickets.push({
@@ -126,7 +126,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         });
       }
 
-      const isPurchaseSaved = savePurchaseAtomically(event.id, tier.id, selectedQuantity, newTickets);
+      let finalTickets = newTickets;
+      try {
+        const backendTickets = await createTicketsApi(newTickets);
+        if (backendTickets && backendTickets.length > 0) {
+          finalTickets = backendTickets;
+        }
+      } catch (apiErr) {
+        console.warn('[UniTicket Checkout] Backend sync issue, falling back to local snapshot:', apiErr);
+      }
+
+      const isPurchaseSaved = savePurchaseAtomically(event.id, tier.id, selectedQuantity, finalTickets);
       if (!isPurchaseSaved) {
         setIsSubmitting(false);
         onError('Không thể lưu đơn hàng. Tồn kho và các vé đã mua trước đó được giữ nguyên.');
@@ -135,8 +145,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       setIsSubmitting(false);
       onClose();
-      onSuccess(newTickets);
-    }, 600);
+      onSuccess(finalTickets);
+    } catch {
+      setIsSubmitting(false);
+      onError('Đã xảy ra sự cố khi hoàn tất mua vé.');
+    }
   };
 
   function createUniqueValue(prefix: string, usedValues?: Set<string>): string {

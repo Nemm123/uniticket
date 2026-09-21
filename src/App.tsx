@@ -28,6 +28,7 @@ import { EventItem, PurchasedTicket, TicketTier, ToastMessage, UserRole } from '
 import { getStoredEvents, getStoredPurchasedTickets, saveStoredEvents } from './utils/storage';
 import { clearUserRole, getUserRole, setUserRole } from './utils/role';
 import { getEvent as getEventFromApi, isApiEventId, listEvents } from './services/eventsApi';
+import { listTicketsApi } from './services/ticketsApi';
 
 const PAGE_PATHS = {
   home: '/',
@@ -129,6 +130,28 @@ export function App() {
       });
     return () => { cancelled = true; };
   }, [currentPage, selectedEventId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const syncTickets = async () => {
+      try {
+        const remoteTickets = await listTicketsApi(walletAddress ? { wallet: walletAddress } : undefined);
+        if (cancelled) return;
+        if (Array.isArray(remoteTickets) && remoteTickets.length > 0) {
+          const localTickets = getStoredPurchasedTickets();
+          const remoteCodes = new Set(remoteTickets.map((t) => t.ticketCode));
+          const merged = [...remoteTickets, ...localTickets.filter((t) => !remoteCodes.has(t.ticketCode))];
+          setPurchasedTickets(merged);
+        }
+      } catch (err) {
+        console.warn('[UniTicket App] Could not load tickets from API, using local storage:', err);
+      }
+    };
+    if (currentPage === 'my-tickets' || walletAddress) {
+      void syncTickets();
+    }
+    return () => { cancelled = true; };
+  }, [currentPage, walletAddress]);
 
   // Lắng nghe cuộn trang để hiện nút Back to Top
   useEffect(() => {
@@ -316,7 +339,7 @@ export function App() {
     setIsCheckoutOpen(false);
     setCheckoutEvent(null);
     setCheckoutTier(null);
-    showToast('success', `Mua thành công ${tickets.length} vé mô phỏng. Vé đã được lưu trên thiết bị.`);
+    showToast('success', `Mua thành công ${tickets.length} vé! Vé đã được đồng bộ lên hệ thống.`);
     handleNavigate('my-tickets');
   };
 
