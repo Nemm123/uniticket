@@ -16,13 +16,99 @@ export function getStoredEvents(): EventItem[] {
       return mockEvents;
     }
     const parsed = JSON.parse(data);
-    if (Array.isArray(parsed) && parsed.length > 0) {
+    if (Array.isArray(parsed)) {
       return parsed;
     }
     return mockEvents;
   } catch (error) {
     console.warn('[UniTicket Storage] Lỗi đọc localStorage inventory, sử dụng fallback mockEvents:', error);
     return mockEvents;
+  }
+}
+
+function isValidEvent(event: EventItem): boolean {
+  return Boolean(
+    event &&
+    typeof event.id === 'string' &&
+    event.id.trim() &&
+    typeof event.title === 'string' &&
+    event.title.trim() &&
+    typeof event.description === 'string' &&
+    typeof event.venue === 'string' &&
+    event.venue.trim() &&
+    typeof event.date === 'string' &&
+    typeof event.time === 'string' &&
+    typeof event.bannerImage === 'string' &&
+    typeof event.thumbnailImage === 'string' &&
+    Array.isArray(event.tiers) &&
+    event.tiers.length > 0 &&
+    event.tiers.every((tier) => (
+      typeof tier.id === 'string' && tier.id.trim() &&
+      typeof tier.name === 'string' && tier.name.trim() &&
+      Number.isFinite(tier.priceSol) && tier.priceSol >= 0 &&
+      Number.isInteger(tier.totalQuantity) && tier.totalQuantity > 0 &&
+      Number.isInteger(tier.remainingQuantity) && tier.remainingQuantity >= 0 &&
+      tier.remainingQuantity <= tier.totalQuantity
+    ))
+  );
+}
+
+/** Persists the event inventory without touching purchased tickets or check-in history. */
+export function saveStoredEvents(events: EventItem[]): boolean {
+  try {
+    if (!Array.isArray(events) || !events.every(isValidEvent)) return false;
+    localStorage.setItem(INVENTORY_KEY, JSON.stringify(events));
+    return true;
+  } catch (error) {
+    console.error('[UniTicket Storage] Failed to save event inventory:', error);
+    return false;
+  }
+}
+
+export function updateStoredEvent(event: EventItem): boolean {
+  try {
+    if (!isValidEvent(event)) return false;
+    const events = getStoredEvents();
+    const index = events.findIndex((item) => item.id === event.id);
+    if (index === -1) return false;
+    const updated = [...events];
+    updated[index] = event;
+    return saveStoredEvents(updated);
+  } catch (error) {
+    console.error('[UniTicket Storage] Failed to update event:', error);
+    return false;
+  }
+}
+
+export function createStoredEvent(event: EventItem): boolean {
+  try {
+    if (!isValidEvent(event)) return false;
+    const events = getStoredEvents();
+    if (events.some((item) => item.id === event.id)) return false;
+    return saveStoredEvents([event, ...events]);
+  } catch (error) {
+    console.error('[UniTicket Storage] Failed to create event:', error);
+    return false;
+  }
+}
+
+/** Events with purchased tickets cannot be deleted, preserving ticket/check-in referential integrity. */
+export function deleteStoredEvent(eventId: string): { ok: boolean; message: string } {
+  try {
+    if (!eventId) return { ok: false, message: 'Event ID is required.' };
+    const tickets = getStoredPurchasedTickets();
+    if (tickets.some((ticket) => ticket.eventId === eventId)) {
+      return { ok: false, message: 'This event has purchased tickets and cannot be deleted in the demo.' };
+    }
+    const events = getStoredEvents();
+    if (!events.some((event) => event.id === eventId)) return { ok: false, message: 'Event not found.' };
+    const saved = saveStoredEvents(events.filter((event) => event.id !== eventId));
+    return saved
+      ? { ok: true, message: 'Event deleted.' }
+      : { ok: false, message: 'Could not save event changes.' };
+  } catch (error) {
+    console.error('[UniTicket Storage] Failed to delete event:', error);
+    return { ok: false, message: 'Could not delete event.' };
   }
 }
 

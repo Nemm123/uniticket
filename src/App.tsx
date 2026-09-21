@@ -25,8 +25,9 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { EventItem, PurchasedTicket, TicketTier, ToastMessage, UserRole } from './types';
-import { getStoredEvents, getStoredPurchasedTickets } from './utils/storage';
+import { getStoredEvents, getStoredPurchasedTickets, saveStoredEvents } from './utils/storage';
 import { clearUserRole, getUserRole, setUserRole } from './utils/role';
+import { getEvent as getEventFromApi, isApiEventId, listEvents } from './services/eventsApi';
 
 const PAGE_PATHS = {
   home: '/',
@@ -61,6 +62,11 @@ export function App() {
   const [isWalletModalOpen, setIsWalletModalOpen] = useState<boolean>(false);
   const [showBackToTop, setShowBackToTop] = useState<boolean>(false);
   const [events, setEvents] = useState<EventItem[]>(() => getStoredEvents());
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+  const [eventsReloadToken, setEventsReloadToken] = useState(0);
+  const [selectedApiEvent, setSelectedApiEvent] = useState<EventItem | null>(null);
+  const [eventDetailError, setEventDetailError] = useState<string | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [purchasedTickets, setPurchasedTickets] = useState<PurchasedTicket[]>(() => getStoredPurchasedTickets());
   const [selectedQrTicket, setSelectedQrTicket] = useState<PurchasedTicket | null>(null);
@@ -71,6 +77,58 @@ export function App() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [currentRole, setCurrentRole] = useState<UserRole | null>(() => getUserRole());
   const [isRoleSelectionOpen, setIsRoleSelectionOpen] = useState(false);
+
+  // Backend is the source of truth for events when available. Existing local
+  // events remain visible as a migration fallback, so tickets/check-ins are
+  // not lost while the demo inventory moves to PostgreSQL.
+  useEffect(() => {
+    let cancelled = false;
+    const loadEvents = async () => {
+      setEventsLoading(true);
+      setEventsError(null);
+      try {
+        const remoteEvents = await listEvents();
+        if (cancelled) return;
+        const localEvents = getStoredEvents();
+        if (remoteEvents.length > 0) {
+          const remoteIds = new Set(remoteEvents.map((event) => event.id));
+          const mergedEvents = [...remoteEvents, ...localEvents.filter((event) => !remoteIds.has(event.id))];
+          setEvents(mergedEvents);
+          if (!saveStoredEvents(mergedEvents)) {
+            setEventsError('Events API đã trả dữ liệu nhưng không thể cập nhật bản sao localStorage.');
+          }
+        } else {
+          // An empty backend must not hide the existing demo catalog.
+          setEvents(localEvents);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setEventsError(error instanceof Error ? error.message : 'Could not load events from the API.');
+        setEvents(getStoredEvents());
+      } finally {
+        if (!cancelled) setEventsLoading(false);
+      }
+    };
+    void loadEvents();
+    return () => { cancelled = true; };
+  }, [eventsReloadToken]);
+
+  useEffect(() => {
+    if (currentPage !== 'event-detail' || !selectedEventId || !isApiEventId(selectedEventId)) {
+      setSelectedApiEvent(null);
+      setEventDetailError(null);
+      return;
+    }
+    let cancelled = false;
+    setSelectedApiEvent(null);
+    setEventDetailError(null);
+    getEventFromApi(selectedEventId)
+      .then((event) => { if (!cancelled) setSelectedApiEvent(event); })
+      .catch((error: unknown) => {
+        if (!cancelled) setEventDetailError(error instanceof Error ? error.message : 'Could not load event details from the API.');
+      });
+    return () => { cancelled = true; };
+  }, [currentPage, selectedEventId]);
 
   // Lắng nghe cuộn trang để hiện nút Back to Top
   useEffect(() => {
@@ -151,7 +209,9 @@ export function App() {
     }
   };
 
-  const selectedEvent = events.find((e) => e.id === selectedEventId) || events[0];
+  const selectedEvent = (selectedApiEvent && selectedApiEvent.id === selectedEventId)
+    ? selectedApiEvent
+    : events.find((e) => e.id === selectedEventId) || events[0];
 
   const showToast = (type: ToastMessage['type'], message: string) => {
     setToasts((current) => [...current, { id: `${Date.now()}-${Math.random()}`, type, message }]);
@@ -312,6 +372,18 @@ export function App() {
               </div>
             </div>
 
+            {eventsLoading && (
+              <div role="status" className="rounded-xl border border-solana-cyan/30 bg-solana-cyan/10 px-4 py-3 text-sm text-solana-cyan">
+                Đang tải sự kiện từ Events API…
+              </div>
+            )}
+            {eventsError && (
+              <div role="alert" className="flex flex-col gap-3 rounded-xl border border-neon-pink/40 bg-neon-pink/10 px-4 py-3 text-sm text-pink-100 sm:flex-row sm:items-center sm:justify-between">
+                <span>{eventsError} Đang hiển thị dữ liệu đã lưu trên thiết bị.</span>
+                <button type="button" onClick={() => setEventsReloadToken((token) => token + 1)} className="min-h-11 shrink-0 rounded-lg border border-neon-pink/40 px-3 text-xs font-bold text-white hover:bg-neon-pink/20">Thử lại</button>
+              </div>
+            )}
+
             {/* Grid tất cả sự kiện */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {events.map((evt) => (
@@ -354,8 +426,13 @@ export function App() {
         )}
 
         {/* Trang Chi Tiết Sự Kiện (Event Detail Preview) */}
-        {currentPage === 'event-detail' && (
+        {currentPage === 'event-detail' && selectedEvent && (
           <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8 animate-fadeIn">
+            {eventDetailError && (
+              <div role="status" className="rounded-xl border border-solana-purple/30 bg-solana-purple/10 px-4 py-3 text-xs text-slate-200">
+                Không tải được chi tiết từ Events API; đang dùng bản sự kiện đã lưu trên thiết bị.
+              </div>
+            )}
             <button
               onClick={() => handleNavigate('home')}
               className="inline-flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-solana-cyan transition-colors"
@@ -496,6 +573,14 @@ export function App() {
           </div>
         )}
 
+        {currentPage === 'event-detail' && !selectedEvent && (
+          <div className="mx-auto flex min-h-[60vh] max-w-xl flex-col items-center justify-center gap-4 px-4 text-center">
+            <h1 className="text-2xl font-bold text-white">Không tìm thấy sự kiện</h1>
+            <p className="text-sm text-slate-300">Sự kiện này chưa có trong Events API hoặc dữ liệu trên thiết bị.</p>
+            <button type="button" onClick={() => handleNavigate('events')} className="min-h-11 rounded-xl bg-solana-purple px-5 text-sm font-bold text-white">Quay lại danh sách</button>
+          </div>
+        )}
+
         {/* Trang Vé Của Tôi */}
         {currentPage === 'my-tickets' && (
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16 space-y-8 animate-fadeIn">
@@ -586,7 +671,26 @@ export function App() {
         )}
 
         {currentPage === 'organizer-events' && (
-          <OrganizerEvents events={events} onNavigate={handleNavigate} />
+          <OrganizerEvents
+            events={events}
+            onNavigate={handleNavigate}
+            organizerWallet={walletAddress}
+            eventsLoading={eventsLoading}
+            eventsError={eventsError}
+            onEventsChanged={(nextEvents) => setEvents(nextEvents)}
+          />
+        )}
+
+        {currentPage === 'create-event' && (
+          <OrganizerEvents
+            events={events}
+            onNavigate={handleNavigate}
+            organizerWallet={walletAddress}
+            eventsLoading={eventsLoading}
+            eventsError={eventsError}
+            onEventsChanged={(nextEvents) => setEvents(nextEvents)}
+            startInCreate
+          />
         )}
 
         {currentPage === 'access-denied' && (
@@ -598,7 +702,7 @@ export function App() {
         )}
 
         {/* Trang Tạo Sự Kiện (Create Event Preview) */}
-        {currentPage === 'create-event' && (
+        {false && currentPage === 'create-event' && (
           <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10 sm:py-16 space-y-6 animate-fadeIn">
             <button
               onClick={() => handleNavigate('home')}

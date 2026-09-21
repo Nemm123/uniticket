@@ -1,20 +1,21 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { 
-  ArrowLeft, 
-  Calendar, 
-  MapPin, 
-  Users, 
-  Sparkles, 
-  CheckCircle2, 
-  Plus, 
-  Minus, 
-  ShieldAlert, 
+import {
+  ArrowLeft,
+  Calendar,
+  MapPin,
+  Users,
+  Sparkles,
+  CheckCircle2,
+  Plus,
+  Minus,
+  ShieldAlert,
   Ticket
 } from 'lucide-react';
-import { getStoredEvents } from '../../utils/storage';
-import { TicketTier, PurchasedTicket } from '../../types';
+import { getStoredEvents, saveStoredEvents } from '../../utils/storage';
+import { EventItem, TicketTier, PurchasedTicket } from '../../types';
 import { CheckoutModal } from '../../components/checkout/CheckoutModal';
+import { getEvent as getEventFromApi, isApiEventId } from '../../services/eventsApi';
 
 interface EventDetailPageProps {
   onShowToast: (type: 'success' | 'error' | 'info', message: string) => void;
@@ -25,8 +26,10 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
   const navigate = useNavigate();
 
   // Đọc danh sách sự kiện với tồn kho mới nhất
-  const events = useMemo(() => getStoredEvents(), []);
-  const event = events.find((e) => e.id === id);
+  const localEvent = useMemo(() => getStoredEvents().find((item) => item.id === id), [id]);
+  const [event, setEvent] = useState<EventItem | undefined>(localEvent);
+  const [isLoading, setIsLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   // State chọn hạng vé và số lượng
   const [selectedTierId, setSelectedTierId] = useState<string>(() => {
@@ -34,6 +37,32 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
   });
   const [quantity, setQuantity] = useState<number>(1);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setEvent(localEvent);
+    setSelectedTierId(localEvent?.tiers?.[0]?.id || '');
+    setQuantity(1);
+    setApiError(null);
+    setIsLoading(true);
+    if (!id || !isApiEventId(id)) {
+      setIsLoading(false);
+      return () => { cancelled = true; };
+    }
+    getEventFromApi(id)
+      .then((remoteEvent) => {
+        if (cancelled) return;
+        setEvent(remoteEvent);
+        setSelectedTierId(remoteEvent.tiers?.[0]?.id || '');
+        const localEvents = getStoredEvents();
+        saveStoredEvents([remoteEvent, ...localEvents.filter((item) => item.id !== remoteEvent.id)]);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setApiError(error instanceof Error ? error.message : 'Could not load event details from the API.');
+      })
+      .finally(() => { if (!cancelled) setIsLoading(false); });
+    return () => { cancelled = true; };
+  }, [id, localEvent]);
 
   if (!event) {
     return (
@@ -108,6 +137,8 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
   return (
     <div className="min-h-screen py-8 sm:py-12 relative z-10 cyber-grid-bg">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 animate-fadeIn">
+        {isLoading && <div role="status" className="rounded-xl border border-solana-cyan/30 bg-solana-cyan/10 px-4 py-3 text-xs text-solana-cyan">Đang tải chi tiết từ Events API…</div>}
+        {apiError && <div role="status" className="rounded-xl border border-solana-purple/30 bg-solana-purple/10 px-4 py-3 text-xs text-slate-200">Không tải được chi tiết từ Events API; đang dùng bản sự kiện đã lưu trên thiết bị.</div>}
         {/* Nút quay lại */}
         <button
           onClick={() => navigate(-1)}

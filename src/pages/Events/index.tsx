@@ -1,11 +1,36 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, Calendar, MapPin, Tag, ArrowUpRight, Sparkles, RotateCcw } from 'lucide-react';
-import { getStoredEvents } from '../../utils/storage';
+import { getStoredEvents, saveStoredEvents } from '../../utils/storage';
+import { listEvents } from '../../services/eventsApi';
 
 export const EventsPage: React.FC = () => {
   const navigate = useNavigate();
-  const events = useMemo(() => getStoredEvents(), []);
+  const [events, setEvents] = useState(() => getStoredEvents());
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    listEvents()
+      .then((remoteEvents) => {
+        if (cancelled) return;
+        const localEvents = getStoredEvents();
+        const remoteIds = new Set(remoteEvents.map((event) => event.id));
+        const mergedEvents = remoteEvents.length > 0
+          ? [...remoteEvents, ...localEvents.filter((event) => !remoteIds.has(event.id))]
+          : localEvents;
+        setEvents(mergedEvents);
+        if (remoteEvents.length > 0) saveStoredEvents(mergedEvents);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setEventsError(error instanceof Error ? error.message : 'Could not load events from the API.');
+        setEvents(getStoredEvents());
+      })
+      .finally(() => { if (!cancelled) setEventsLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   // State tìm kiếm và lọc
   const [searchTerm, setSearchTerm] = useState('');
@@ -174,6 +199,9 @@ export const EventsPage: React.FC = () => {
             </button>
           )}
         </div>
+
+        {eventsLoading && <div role="status" className="rounded-xl border border-solana-cyan/30 bg-solana-cyan/10 px-4 py-3 text-sm text-solana-cyan">Đang tải sự kiện từ Events API…</div>}
+        {eventsError && <div role="alert" className="rounded-xl border border-neon-pink/40 bg-neon-pink/10 px-4 py-3 text-sm text-pink-100">{eventsError} Đang hiển thị dữ liệu đã lưu trên thiết bị.</div>}
 
         {/* Grid Sự Kiện */}
         {filteredEvents.length > 0 ? (

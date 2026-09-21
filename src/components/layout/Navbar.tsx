@@ -38,9 +38,19 @@ export const Navbar: React.FC<NavbarProps> = ({
     const closeOnDesktop = () => {
       if (desktopMedia.matches) setMobileMenuOpen(false);
     };
-    desktopMedia.addEventListener('change', closeOnDesktop);
+    if (desktopMedia.addEventListener) {
+      desktopMedia.addEventListener('change', closeOnDesktop);
+    } else {
+      desktopMedia.addListener(closeOnDesktop);
+    }
     closeOnDesktop();
-    return () => desktopMedia.removeEventListener('change', closeOnDesktop);
+    return () => {
+      if (desktopMedia.removeEventListener) {
+        desktopMedia.removeEventListener('change', closeOnDesktop);
+      } else {
+        desktopMedia.removeListener(closeOnDesktop);
+      }
+    };
   }, []);
 
   const navItems = currentRole === 'organizer'
