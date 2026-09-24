@@ -55,14 +55,14 @@ export const EventsPage: React.FC = () => {
       // 2. Lọc theo danh mục
       const matchCategory = selectedCategory === 'All' || evt.category === selectedCategory;
 
-      // 3. Lọc theo khoảng giá SOL
+      // 3. Lọc theo khoảng giá VND
       let matchPrice = true;
-      if (priceRange === 'under-0.5') {
-        matchPrice = evt.minPriceSol < 0.5;
-      } else if (priceRange === '0.5-1.5') {
-        matchPrice = evt.minPriceSol >= 0.5 && evt.minPriceSol <= 1.5;
-      } else if (priceRange === 'over-1.5') {
-        matchPrice = evt.minPriceSol > 1.5;
+      if (priceRange === 'under-500000') {
+        matchPrice = evt.minPriceVnd !== undefined && evt.minPriceVnd < 500000;
+      } else if (priceRange === '500000-1000000') {
+        matchPrice = evt.minPriceVnd !== undefined && evt.minPriceVnd >= 500000 && evt.minPriceVnd <= 1000000;
+      } else if (priceRange === 'over-1000000') {
+        matchPrice = evt.minPriceVnd !== undefined && evt.minPriceVnd > 1000000;
       }
 
       // 4. Lọc theo tháng (chuỗi DD/MM/YYYY)
@@ -146,11 +146,11 @@ export const EventsPage: React.FC = () => {
               </select>
             </div>
 
-            {/* Lọc Khoảng Giá SOL */}
+            {/* Lọc Khoảng Giá VND */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1">
                 <Tag className="w-3 h-3 text-solana-green" />
-                <span>Khoảng Giá SOL</span>
+                <span>Khoảng Giá VND</span>
               </label>
               <select
                 value={priceRange}
@@ -158,9 +158,9 @@ export const EventsPage: React.FC = () => {
                 className="w-full px-3 py-2 rounded-xl bg-[#0B0620] border border-white/10 text-xs text-white focus:border-solana-purple focus:outline-none"
               >
                 <option value="all" className="bg-[#120B30]">Tất Cả Mức Giá</option>
-                <option value="under-0.5" className="bg-[#120B30]">Dưới 0.5 SOL</option>
-                <option value="0.5-1.5" className="bg-[#120B30]">0.5 SOL - 1.5 SOL</option>
-                <option value="over-1.5" className="bg-[#120B30]">Trên 1.5 SOL</option>
+                <option value="under-500000" className="bg-[#120B30]">Dưới 500.000 ₫</option>
+                <option value="500000-1000000" className="bg-[#120B30]">500.000 ₫ - 1.000.000 ₫</option>
+                <option value="over-1000000" className="bg-[#120B30]">Trên 1.000.000 ₫</option>
               </select>
             </div>
 
@@ -233,7 +233,7 @@ export const EventsPage: React.FC = () => {
                       </div>
 
                       <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-lg bg-black/85 backdrop-blur-md border border-solana-green/40 text-solana-green text-xs font-bold shadow-md">
-                        {event.minPriceSol} SOL
+                        {event.minPriceVnd !== undefined ? `${event.minPriceVnd.toLocaleString('vi-VN')} ₫` : 'Chưa cập nhật'}
                       </div>
                     </div>
 

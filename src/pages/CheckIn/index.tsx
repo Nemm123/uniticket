@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Camera, CheckCircle2, Keyboard, Loader2, RefreshCw, ScanLine, ShieldAlert, Ticket, XCircle } from 'lucide-react';
 import QrScanner from 'qr-scanner';
 import { CheckInResult, PurchasedTicket, UserRole } from '../../types';
-import { confirmTicketCheckIn, getStoredPurchasedTickets, validateTicketForCheckIn } from '../../utils/storage';
+import { validateTicketForCheckIn } from '../../utils/storage';
 import { checkInTicketApi, listTicketsApi, verifyTicketApi } from '../../services/ticketsApi';
 
 interface CheckInPageProps {
@@ -23,7 +23,7 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualPayload, setManualPayload] = useState('');
   const [result, setResult] = useState<CheckInResult | null>(null);
-  const [tickets, setTickets] = useState<PurchasedTicket[]>(() => getStoredPurchasedTickets());
+  const [tickets, setTickets] = useState<PurchasedTicket[]>([]);
   const [filter, setFilter] = useState<TicketFilter>('all');
   const [search, setSearch] = useState('');
   const [isValidating, setIsValidating] = useState(false);
@@ -34,19 +34,14 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
     setIsRefreshing(true);
     try {
       const remoteTickets = await listTicketsApi();
-      if (Array.isArray(remoteTickets) && remoteTickets.length > 0) {
-        // Merge remote tickets with any local tickets not yet on backend
-        const remoteIds = new Set(remoteTickets.map((t) => t.ticketCode));
-        const localOnly = getStoredPurchasedTickets().filter((t) => !remoteIds.has(t.ticketCode));
-        setTickets([...remoteTickets, ...localOnly]);
-        return;
-      }
+      setTickets(remoteTickets);
+      return;
     } catch (err) {
       console.warn('[UniTicket CheckIn] Could not fetch remote tickets:', err);
     } finally {
       setIsRefreshing(false);
     }
-    setTickets(getStoredPurchasedTickets());
+    setTickets([]);
   };
 
   useEffect(() => {
@@ -71,7 +66,10 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
           backendValidation.message
         );
       } else {
-        // Fallback to local storage if server unreachable
+        setResult(backendValidation);
+        onShowToast('error', backendValidation.message);
+        return;
+        // Legacy device-only fallback kept unreachable until an authenticated offline protocol exists.
         const localValidation = validateTicketForCheckIn(input);
         if (localValidation.status !== 'invalid') {
           setResult({
@@ -117,29 +115,20 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
       onShowToast('error', 'Chỉ vai trò Ban Tổ Chức mới có thể xác nhận check-in.');
       return;
     }
-    const staffWallet = organizerAddress || 'staff-mobile-gate';
     setIsConfirming(true);
     try {
       const code = result.ticket.ticketCode || result.ticket.id;
-      const backendConfirmation = await checkInTicketApi({
-        code,
-        organizerWallet: staffWallet,
-      });
+      const backendConfirmation = await checkInTicketApi(code);
 
       if (backendConfirmation.status !== 'error') {
         setResult(backendConfirmation);
-        // Also update local storage snapshot
-        confirmTicketCheckIn(result.ticket.id, staffWallet);
         await refreshTickets();
         onTicketsChanged();
         onShowToast(backendConfirmation.status === 'valid' ? 'success' : 'error', backendConfirmation.message);
       } else {
-        // Fallback to local confirm if server error
-        const localConfirmation = confirmTicketCheckIn(result.ticket.id, staffWallet);
-        setResult(localConfirmation);
-        await refreshTickets();
-        onTicketsChanged();
-        onShowToast(localConfirmation.status === 'valid' ? 'success' : 'error', localConfirmation.message);
+        setResult(backendConfirmation);
+        onShowToast('error', backendConfirmation.message);
+        return;
       }
     } finally {
       setIsConfirming(false);

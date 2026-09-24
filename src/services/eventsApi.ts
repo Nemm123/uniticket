@@ -1,4 +1,5 @@
 import { EventItem, TicketTier } from '../types';
+import { getWalletSession } from './authSession';
 
 /**
  * API client for the events resource. The browser talks to the local demo API
@@ -68,20 +69,21 @@ function mapEvent(value: ApiEvent): EventItem {
     tiers: tiers.map((tier) => ({
       ...tier,
       priceSol: Number(tier.priceSol),
+      priceVnd: tier.priceVnd === undefined ? undefined : Number(tier.priceVnd),
       totalQuantity: Number(tier.totalQuantity),
       remainingQuantity: Number(tier.remainingQuantity),
     })),
     totalTickets: Number(value.totalTickets || 0),
     soldTickets: Number(value.soldTickets || 0),
     minPriceSol: Number(value.minPriceSol || 0),
+    minPriceVnd: value.minPriceVnd === undefined ? undefined : Number(value.minPriceVnd),
     tags: Array.isArray(value.tags) ? value.tags : [],
     lineup: Array.isArray(value.lineup) ? value.lineup : [],
   };
 }
 
-function payload({ event, organizerWallet }: EventMutationInput) {
+function payload({ event }: EventMutationInput) {
   return {
-    organizerWallet: organizerWallet || event.createdBy || event.organizer.name || 'demo-organizer',
     title: event.title,
     subtitle: event.subtitle,
     description: event.description,
@@ -103,6 +105,7 @@ function payload({ event, organizerWallet }: EventMutationInput) {
       name: tier.name,
       description: tier.description,
       priceSol: Number(tier.priceSol),
+      priceVnd: Number(tier.priceVnd),
       perks: tier.perks || [],
       totalQuantity: Number(tier.totalQuantity),
       remainingQuantity: Number(tier.remainingQuantity),
@@ -116,7 +119,11 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
-      headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(getWalletSession() ? { Authorization: `Bearer ${getWalletSession()!.token}` } : {}),
+        ...(options?.headers || {}),
+      },
     });
   } catch {
     throw new EventsApiError('Không thể kết nối Events API. Dữ liệu trên thiết bị vẫn được giữ nguyên.', 0);

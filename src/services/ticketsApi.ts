@@ -1,4 +1,5 @@
 import { CheckInResult, PurchasedTicket } from '../types';
+import { getWalletSession } from './authSession';
 
 const runtimeEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
 const API_BASE_URL = (runtimeEnv?.VITE_API_BASE_URL || 'http://localhost:4000').replace(/\/$/, '');
@@ -24,9 +25,14 @@ export class TicketsApiError extends Error {
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   let response: Response;
   try {
+    const session = getWalletSession();
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
-      headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
+        ...(options?.headers || {}),
+      },
     });
   } catch {
     throw new TicketsApiError('Không thể kết nối đến máy chủ vé. Vui lòng kiểm tra kết nối mạng Internet.', 0);
@@ -66,6 +72,16 @@ export async function listTicketsApi(params?: { wallet?: string; eventId?: strin
 }
 
 /**
+ * List tickets for a specific order using guest access token.
+ * Returns only tickets belonging to that order.
+ * Excludes sensitive fields (qr_token_hash, nft_*, owner_wallet, checkedInBy).
+ */
+export async function listGuestTicketsApi(orderId: string, guestAccessToken: string): Promise<PurchasedTicket[]> {
+  const result = await request<ApiEnvelope<PurchasedTicket[]>>(`/api/tickets/guest?orderId=${encodeURIComponent(orderId)}&guestAccessToken=${encodeURIComponent(guestAccessToken)}`);
+  return result.data;
+}
+
+/**
  * Verify a ticket by QR payload or ticket code without checking in
  */
 export async function verifyTicketApi(input: string): Promise<CheckInResult> {
@@ -95,10 +111,7 @@ export async function verifyTicketApi(input: string): Promise<CheckInResult> {
 /**
  * Atomic check-in transition with organizer verification
  */
-export async function checkInTicketApi(params: {
-  code: string;
-  organizerWallet: string;
-}): Promise<CheckInResult> {
+export async function checkInTicketApi(code: string): Promise<CheckInResult> {
   try {
     const result = await request<{
       status: 'valid' | 'used' | 'invalid' | 'error';
@@ -107,8 +120,7 @@ export async function checkInTicketApi(params: {
     }>('/api/tickets/check-in', {
       method: 'POST',
       body: JSON.stringify({
-        input: params.code,
-        organizerWallet: params.organizerWallet,
+        input: code,
       }),
     });
 

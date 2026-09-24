@@ -89,6 +89,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
     id: 'default',
     name: 'Standard Ticket',
     priceSol: event.minPriceSol,
+    priceVnd: undefined,
     description: 'Vé tiêu chuẩn',
     perks: ['Vé NFT kỷ niệm trên Solana'],
     totalQuantity: 1000,
@@ -96,7 +97,8 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
   };
 
   const isSoldOut = selectedTier.remainingQuantity <= 0;
-  const totalPriceSol = parseFloat((selectedTier.priceSol * quantity).toFixed(4));
+  const hasPriceVnd = typeof selectedTier.priceVnd === 'number';
+  const totalPriceVnd = typeof selectedTier.priceVnd === 'number' ? selectedTier.priceVnd * quantity : undefined;
 
   const handleIncrease = () => {
     if (quantity < selectedTier.remainingQuantity) {
@@ -114,7 +116,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
 
   const handleTierSelect = (tierId: string) => {
     setSelectedTierId(tierId);
-    setQuantity(1); // Reset số lượng về 1 khi đổi hạng vé
+    setQuantity(1);
   };
 
   const handleOpenCheckout = () => {
@@ -239,10 +241,10 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
             <div className="space-y-6 pt-6 border-t border-white/10">
               <div>
                 <h3 className="text-xl sm:text-2xl font-extrabold text-white">
-                  Chọn Hạng Vé <span className="text-gradient-solana">& Đặt Mua NFT</span>
+                  Chọn Hạng Vé & Đặt Mua
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-300 mt-1">
-                  Chọn hạng vé mong muốn và điều chỉnh số lượng. Tổng tiền SOL sẽ được tính tự động.
+                  Chọn hạng vé mong muốn và điều chỉnh số lượng. Tổng tiền VND sẽ được tính tự động.
                 </p>
               </div>
 
@@ -281,7 +283,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
                         </div>
 
                         <div className="text-2xl font-black text-solana-cyan mb-2 font-mono">
-                          {tier.priceSol} SOL
+                          {tier.priceVnd ? `${tier.priceVnd.toLocaleString('vi-VN')} ₫` : '—'}
                         </div>
 
                         <p className="text-xs text-slate-300 mb-3 break-words leading-relaxed">
@@ -319,7 +321,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
                 <div className="space-y-1 text-center sm:text-left w-full sm:w-auto">
                   <span className="text-xs text-slate-400 block">Hạng vé đang chọn:</span>
                   <span className="text-base sm:text-lg font-bold text-white block">
-                    {selectedTier.name} ({selectedTier.priceSol} SOL / vé)
+                    {selectedTier.name} ({selectedTier.priceVnd ? `${selectedTier.priceVnd.toLocaleString('vi-VN')} ₫` : '—'} / vé)
                   </span>
                   <span className="text-xs text-solana-green block">
                     Tồn kho khả dụng: {selectedTier.remainingQuantity} vé
@@ -356,9 +358,15 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                   <div className="text-center sm:text-right">
                     <span className="text-xs text-slate-400 block">Tổng tiền tạm tính:</span>
-                    <span className="text-2xl font-black text-solana-green font-mono">
-                      {totalPriceSol} SOL
-                    </span>
+                    {hasPriceVnd ? (
+                      <span className="text-2xl font-black text-solana-green font-mono">
+                        {totalPriceVnd!.toLocaleString('vi-VN')} ₫
+                      </span>
+                    ) : (
+                      <span className="text-2xl font-black text-solana-green font-mono">
+                        Chưa cập nhật
+                      </span>
+                    )}
                   </div>
 
                   <button

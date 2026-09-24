@@ -87,7 +87,7 @@ export const FeaturedEvents: React.FC<FeaturedEventsProps> = ({
 
                     {/* Price Tag */}
                     <div className="absolute bottom-3 right-3 px-3 py-1 rounded-lg bg-black/85 backdrop-blur-md border border-solana-green/40 text-solana-green text-xs font-bold shadow-md">
-                      {event.minPriceSol} SOL
+                      {event.minPriceVnd !== undefined ? `${event.minPriceVnd.toLocaleString('vi-VN')} ₫` : 'Chưa cập nhật'}
                     </div>
                   </div>
 

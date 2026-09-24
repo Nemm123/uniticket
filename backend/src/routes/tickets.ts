@@ -1,6 +1,8 @@
 import { Router, type Request, type Response } from 'express';
 import type { QueryResultRow } from 'pg';
 import { pool } from '../db/pool.js';
+import { sha256 } from '../auth/crypto.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 
 export const ticketsRouter = Router();
 
@@ -26,9 +28,24 @@ interface TicketRow extends QueryResultRow {
   is_checked_in: boolean;
   check_in_time: Date | string | null;
   checked_in_by: string | null;
-  qr_payload: string;
+  owner_wallet: string | null;
+  nft_status: string;
+  nft_mint_address: string | null;
+  nft_transaction_signature: string | null;
+  nft_metadata_uri: string | null;
+  nft_error: string | null;
+  expires_at: Date | string | null;
+  activated_at: Date | string | null;
+  checked_in_at: Date | string | null;
   created_at: Date | string;
   updated_at: Date | string;
+  qr_payload: string;
+  qr_token_hash: string | null;
+}
+
+interface OrderRow extends QueryResultRow {
+  id: string;
+  guest_access_token_hash: string | null;
 }
 
 function mapTicket(row: TicketRow) {
@@ -65,6 +82,49 @@ function mapTicket(row: TicketRow) {
     checkInTime: checkInTimeIso,
     checkedInBy: row.checked_in_by ?? undefined,
     qrPayload: row.qr_payload,
+    ownerWallet: row.owner_wallet ?? undefined,
+    nftStatus: row.nft_status as 'PENDING' | 'MINTING' | 'MINTED' | 'MINT_FAILED',
+    nftMintAddress: row.nft_mint_address ?? undefined,
+    nftTransactionSignature: row.nft_transaction_signature ?? undefined,
+    nftMetadataUri: row.nft_metadata_uri ?? undefined,
+    nftError: row.nft_error ?? undefined,
+    expiresAt: row.expires_at ? (row.expires_at instanceof Date ? row.expires_at.toISOString() : new Date(row.expires_at).toISOString()) : undefined,
+    activatedAt: row.activated_at ? (row.activated_at instanceof Date ? row.activated_at.toISOString() : new Date(row.activated_at).toISOString()) : undefined,
+    checkedInAt: row.checked_in_at ? (row.checked_in_at instanceof Date ? row.checked_in_at.toISOString() : new Date(row.checked_in_at).toISOString()) : undefined,
+  };
+}
+
+function mapGuestTicket(row: TicketRow) {
+  const purchasedAtIso = row.created_at instanceof Date
+    ? row.created_at.toISOString()
+    : new Date(row.created_at).toISOString();
+
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    eventId: row.event_id,
+    eventTitle: row.event_title,
+    eventBanner: row.event_banner,
+    venue: row.venue,
+    city: row.city,
+    date: row.event_date,
+    time: row.event_time,
+    tierId: row.tier_id,
+    tierName: row.tier_name,
+    seat: row.seat,
+    priceSol: Number(row.price_sol),
+    ticketCode: row.ticket_code,
+    customerName: row.customer_name,
+    customerEmail: row.customer_email,
+    customerWallet: row.customer_wallet,
+    purchasedAt: purchasedAtIso,
+    purchaseDate: purchasedAtIso,
+    status: row.status as 'valid' | 'checked_in' | 'transferred' | 'cancelled',
+    isCheckedIn: row.is_checked_in,
+    checkInTime: row.check_in_time ? (row.check_in_time instanceof Date ? row.check_in_time.toISOString() : new Date(row.check_in_time).toISOString()) : undefined,
+    qrPayload: row.qr_payload,
+    expiresAt: row.expires_at ? (row.expires_at instanceof Date ? row.expires_at.toISOString() : new Date(row.expires_at).toISOString()) : undefined,
+    activatedAt: row.activated_at ? (row.activated_at instanceof Date ? row.activated_at.toISOString() : new Date(row.activated_at).toISOString()) : undefined,
   };
 }
 
@@ -93,122 +153,50 @@ function extractIdentifier(raw: unknown): string {
   return trimmed;
 }
 
+async function canManageTicketCheckIn(ticket: TicketRow, request: Request): Promise<boolean> {
+  if (request.auth!.role === 'admin') return true;
+
+  const eventResult = await pool.query<{ organizer_wallet: string }>(
+    'SELECT organizer_wallet FROM events WHERE id::text = $1 LIMIT 1;',
+    [ticket.event_id]
+  );
+
+  return eventResult.rowCount === 1
+    && eventResult.rows[0].organizer_wallet.toLowerCase() === request.auth!.walletAddress.toLowerCase();
+}
+
+async function isEligibleForCheckIn(ticket: TicketRow): Promise<boolean> {
+  if (ticket.status !== 'valid' || ticket.is_checked_in || (ticket.expires_at && new Date(ticket.expires_at) <= new Date())) return false;
+  const order = await pool.query<{ status: string; payment_status: string }>(
+    'SELECT status, payment_status FROM orders WHERE id::text = $1 LIMIT 1',
+    [ticket.order_id],
+  );
+  return order.rowCount === 1 && order.rows[0].status === 'TICKET_ACTIVE' && order.rows[0].payment_status === 'PAID';
+}
+
 /**
  * POST /api/tickets
  * Bulk or single ticket creation after checkout
  */
-ticketsRouter.post('/', async (request: Request, response: Response) => {
-  const client = await pool.connect();
-  try {
-    const body = request.body;
-    const rawTickets = Array.isArray(body?.tickets)
-      ? body.tickets
-      : (body ? [body] : []);
-
-    if (rawTickets.length === 0) {
-      response.status(400).json({ error: 'At least one ticket must be provided.' });
-      return;
-    }
-
-    await client.query('BEGIN');
-
-    const createdTickets: TicketRow[] = [];
-
-    for (let i = 0; i < rawTickets.length; i++) {
-      const item = rawTickets[i];
-      const customerWallet = String(item.customerWallet || '').trim();
-      const customerName = String(item.customerName || '').trim();
-      const customerEmail = String(item.customerEmail || '').trim();
-      const eventId = String(item.eventId || '').trim();
-      const orderId = String(item.orderId || `ORD-${Date.now()}-${i + 1}`).trim();
-
-      if (!customerWallet || !customerName || !eventId) {
-        throw new Error(`Ticket at index ${i} requires customerWallet, customerName and eventId.`);
-      }
-
-      // Generate or use ticketCode
-      let ticketCode = String(item.ticketCode || '').trim();
-      if (!ticketCode) {
-        const rand = Math.random().toString(36).substring(2, 7).toUpperCase();
-        ticketCode = `UT-SOL-${Date.now().toString(36).toUpperCase()}-${rand}`;
-      }
-
-      const eventTitle = String(item.eventTitle || '').trim();
-      const eventBanner = String(item.eventBanner || '').trim();
-      const venue = String(item.venue || '').trim();
-      const city = String(item.city || '').trim();
-      const eventDate = String(item.date || item.eventDate || '').trim();
-      const eventTime = String(item.time || item.eventTime || '').trim();
-      const tierId = String(item.tierId || '').trim();
-      const tierName = String(item.tierName || 'Standard Ticket').trim();
-      const seat = String(item.seat || `GA-${i + 1}`).trim();
-      const priceSol = Number(item.priceSol ?? 0);
-
-      // Construct safe standardized QR payload
-      const qrPayloadObj = {
-        ticketCode,
-        orderId,
-        eventId,
-        tierId,
-        customerWallet,
-        customerName,
-        seat,
-        timestamp: Date.now(),
-        signatureVersion: 'mock-v1',
-      };
-      const qrPayload = item.qrPayload || JSON.stringify(qrPayloadObj);
-
-      const insertResult = await client.query<TicketRow>(
-        `INSERT INTO tickets (
-          order_id, event_id, event_title, event_banner, venue, city,
-          event_date, event_time, tier_id, tier_name, seat, price_sol,
-          ticket_code, customer_name, customer_email, customer_wallet,
-          status, is_checked_in, qr_payload
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6,
-          $7, $8, $9, $10, $11, $12,
-          $13, $14, $15, $16,
-          'valid', FALSE, $17
-        ) RETURNING *;`,
-        [
-          orderId, eventId, eventTitle, eventBanner, venue, city,
-          eventDate, eventTime, tierId, tierName, seat, priceSol,
-          ticketCode, customerName, customerEmail, customerWallet,
-          qrPayload
-        ]
-      );
-
-      createdTickets.push(insertResult.rows[0]);
-    }
-
-    await client.query('COMMIT');
-
-    response.status(201).json({
-      data: createdTickets.map(mapTicket),
-    });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('[UniTicket API] Failed to create tickets:', error);
-    response.status(500).json({
-      error: error instanceof Error ? error.message : 'Could not create tickets in database.',
-    });
-  } finally {
-    client.release();
-  }
+ticketsRouter.post('/', requireAuth, (_request: Request, response: Response) => {
+  response.status(409).json({ error: 'Ticket issuance is unavailable until the verified order and payment flow is implemented.' });
 });
 
 /**
  * GET /api/tickets
  * List tickets filtered by wallet, eventId, or ticketCode
  */
-ticketsRouter.get('/', async (request: Request, response: Response) => {
+ticketsRouter.get('/', requireAuth, async (request: Request, response: Response) => {
   try {
     const { wallet, eventId, ticketCode } = request.query;
 
     const conditions: string[] = [];
     const values: unknown[] = [];
 
-    if (typeof wallet === 'string' && wallet.trim()) {
+    if (request.auth!.role !== 'admin') {
+      values.push(request.auth!.walletAddress);
+      conditions.push(`LOWER(customer_wallet) = LOWER($${values.length})`);
+    } else if (typeof wallet === 'string' && wallet.trim()) {
       values.push(wallet.trim());
       conditions.push(`LOWER(customer_wallet) = LOWER($${values.length})`);
     }
@@ -235,10 +223,42 @@ ticketsRouter.get('/', async (request: Request, response: Response) => {
 });
 
 /**
+ * GET /api/tickets/guest
+ * Retrieve tickets for a specific order using guest access token.
+ * Token is verified by hash comparison against orders.guest_access_token_hash.
+ * Returns only tickets belonging to the matched order.
+ * Excludes sensitive fields (nft_*, qr_token_hash, owner_wallet, checkedInBy).
+ */
+ticketsRouter.get('/guest', async (request: Request, response: Response) => {
+  try {
+    const guestAccessToken = typeof request.query.guestAccessToken === 'string' ? request.query.guestAccessToken.trim() : '';
+    if (!guestAccessToken) {
+      response.status(400).json({ error: 'guestAccessToken is required.' });
+      return;
+    }
+
+    const tokenHash = sha256(guestAccessToken);
+
+    const orderResult = await pool.query<OrderRow>('SELECT * FROM orders WHERE guest_access_token_hash = $1 LIMIT 1;', [tokenHash]);
+    const order = orderResult.rows[0];
+    if (!order) {
+      response.status(404).json({ error: 'Order not found.' });
+      return;
+    }
+
+    const ticketResult = await pool.query<TicketRow>('SELECT * FROM tickets WHERE order_id = $1 ORDER BY created_at DESC;', [order.id]);
+    response.json({ data: ticketResult.rows.map(mapGuestTicket) });
+  } catch (error) {
+    console.error('[UniTicket API] Failed to fetch guest tickets:', error);
+    response.status(500).json({ error: 'Could not fetch tickets from database.' });
+  }
+});
+
+/**
  * POST /api/tickets/verify
  * Safe inspection of ticket validity without state changes
  */
-ticketsRouter.post('/verify', async (request: Request, response: Response) => {
+ticketsRouter.post('/verify', requireAuth, requireRole('organizer', 'admin'), async (request: Request, response: Response) => {
   try {
     const identifier = extractIdentifier(
       request.body?.code ?? request.body?.ticketCode ?? request.body?.qrPayload ?? request.body?.input
@@ -266,6 +286,10 @@ ticketsRouter.post('/verify', async (request: Request, response: Response) => {
     }
 
     const ticketRow = result.rows[0];
+    if (!(await canManageTicketCheckIn(ticketRow, request))) {
+      response.status(403).json({ status: 'error', message: 'You do not have access to tickets for this event.' });
+      return;
+    }
     const ticket = mapTicket(ticketRow);
 
     if (ticket.isCheckedIn || ticket.status === 'checked_in') {
@@ -277,6 +301,11 @@ ticketsRouter.post('/verify', async (request: Request, response: Response) => {
         message: `Vé này đã được sử dụng (check-in lúc ${checkInFormatted}).`,
         ticket,
       });
+      return;
+    }
+
+    if (!(await isEligibleForCheckIn(ticketRow))) {
+      response.status(200).json({ status: 'invalid', message: 'Vé chưa được kích hoạt, đã hết hạn hoặc thanh toán chưa được xác nhận.' });
       return;
     }
 
@@ -298,9 +327,9 @@ ticketsRouter.post('/verify', async (request: Request, response: Response) => {
  * POST /api/tickets/check-in
  * Atomic check-in transition with concurrency lock
  */
-ticketsRouter.post('/check-in', async (request: Request, response: Response) => {
+ticketsRouter.post('/check-in', requireAuth, requireRole('organizer', 'admin'), async (request: Request, response: Response) => {
   try {
-    const organizerWallet = String(request.body?.organizerWallet || '').trim();
+    const organizerWallet = request.auth!.walletAddress;
     if (!organizerWallet) {
       response.status(400).json({
         status: 'error',
@@ -321,6 +350,23 @@ ticketsRouter.post('/check-in', async (request: Request, response: Response) => 
       return;
     }
 
+    const ticketResult = await pool.query<TicketRow>(
+      'SELECT * FROM tickets WHERE ticket_code = $1 OR id::text = $1 LIMIT 1;',
+      [identifier]
+    );
+    if (ticketResult.rowCount === 0) {
+      response.status(200).json({ status: 'invalid', message: 'Ticket was not found.' });
+      return;
+    }
+    if (!(await canManageTicketCheckIn(ticketResult.rows[0], request))) {
+      response.status(403).json({ status: 'error', message: 'You do not have access to tickets for this event.' });
+      return;
+    }
+    if (!(await isEligibleForCheckIn(ticketResult.rows[0]))) {
+      response.status(200).json({ status: 'invalid', message: 'Vé chưa được kích hoạt, đã hết hạn hoặc thanh toán chưa được xác nhận.' });
+      return;
+    }
+
     // Atomic update: only updates if is_checked_in is currently false
     const updateResult = await pool.query<TicketRow>(
       `UPDATE tickets
@@ -328,10 +374,19 @@ ticketsRouter.post('/check-in', async (request: Request, response: Response) => 
          is_checked_in = TRUE,
          status = 'checked_in',
          check_in_time = NOW(),
+         checked_in_at = NOW(),
          checked_in_by = $2,
          updated_at = NOW()
        WHERE (ticket_code = $1 OR id::text = $1)
          AND is_checked_in = FALSE
+         AND status = 'valid'
+         AND (expires_at IS NULL OR expires_at > NOW())
+         AND EXISTS (
+           SELECT 1 FROM orders o
+           WHERE o.id::text = tickets.order_id
+             AND o.status = 'TICKET_ACTIVE'
+             AND o.payment_status = 'PAID'
+         )
        RETURNING *;`,
       [identifier, organizerWallet]
     );

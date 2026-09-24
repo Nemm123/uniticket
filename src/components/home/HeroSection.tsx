@@ -145,7 +145,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
                   {/* Price Tag */}
                   <div className="absolute bottom-3 right-3 px-3 py-1 rounded-lg bg-black/80 backdrop-blur-md border border-solana-green/40 text-solana-green text-xs sm:text-sm font-bold shadow-md">
-                    Chỉ từ {featuredEvent.minPriceSol} SOL
+                    Chỉ từ {featuredEvent.minPriceVnd !== undefined ? `${featuredEvent.minPriceVnd.toLocaleString('vi-VN')} ₫` : 'Chưa cập nhật'}
                   </div>
                 </div>
 

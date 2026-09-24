@@ -92,7 +92,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
               </li>
               <li className="flex items-center gap-2 text-slate-300">
                 <span className="w-2 h-2 rounded-full bg-neon-pink" />
-                <span>Phantom & Solflare Ready</span>
+                <span>Phantom wallet (Devnet)</span>
               </li>
               <li className="flex items-center gap-2 text-slate-300">
                 <span className="w-2 h-2 rounded-full bg-solana-cyan" />

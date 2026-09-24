@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { BarChart3, CalendarDays, Ticket, Sparkles, Menu, X, Wallet, PlusCircle, Compass, Home, ScanLine } from 'lucide-react';
+import { BarChart3, CalendarDays, Ticket, Sparkles, Menu, X, PlusCircle, Compass, Home, ScanLine } from 'lucide-react';
 import { UserRole } from '../../types';
+import { PhantomLogo } from '../common/PhantomLogo';
 
 interface NavbarProps {
   currentPage: string;
@@ -11,6 +12,8 @@ interface NavbarProps {
   currentRole: UserRole | null;
   walletAddress: string | null;
 }
+
+const shortAddress = (address: string) => `${address.slice(0, 4)}...${address.slice(-4)}`;
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentPage,
@@ -112,8 +115,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             }}
             className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-solana-purple via-neon-pink to-solana-cyan py-3.5 text-base font-bold text-white shadow-xl shadow-purple-950/60 transition-all active:scale-95"
           >
-            <Wallet className="h-5 w-5 text-white" />
-            <span>{walletAddress ? 'Manage Wallet' : 'Connect Wallet (Solana)'}</span>
+            <PhantomLogo className="h-5 w-5" />
+            <span>{walletAddress ? shortAddress(walletAddress) : 'Kết nối Phantom'}</span>
           </button>
           <button
             type="button"
@@ -194,9 +197,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="absolute inset-0 bg-gradient-to-r from-solana-purple via-neon-pink to-solana-green opacity-90 group-hover:opacity-100 transition-opacity" />
               <div className="absolute inset-[1px] bg-[#120B30] rounded-[11px] group-hover:bg-opacity-0 transition-all duration-300" />
               <div className="relative flex items-center gap-2">
-                <Wallet className="w-4 h-4 text-solana-cyan group-hover:text-white transition-colors" />
+                <PhantomLogo className="h-4 w-4" />
                 <span className="max-w-[150px] truncate tracking-wide">
-                  {walletAddress ? `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}` : 'Connect Wallet'}
+                  {walletAddress ? shortAddress(walletAddress) : 'Kết nối Phantom'}
                 </span>
               </div>
             </button>
@@ -214,10 +217,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex xl:hidden items-center gap-1.5 shrink-0">
             <button
               onClick={onOpenWalletModal}
-              aria-label="Connect Wallet"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-solana-purple/40 bg-solana-purple/20 text-solana-cyan active:scale-95 transition-transform"
+              aria-label={walletAddress ? `Ví Phantom ${shortAddress(walletAddress)}` : 'Kết nối Phantom'}
+              className="inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl border border-solana-purple/40 bg-solana-purple/20 px-2 text-solana-cyan active:scale-95 transition-transform"
             >
-              <Wallet className="w-5 h-5" />
+              <PhantomLogo className="h-5 w-5" />
+              {walletAddress && <span className="max-w-[88px] truncate text-xs font-bold text-white">{shortAddress(walletAddress)}</span>}
             </button>
             <button
               onClick={() => setMobileMenuOpen((isOpen) => !isOpen)}

@@ -9,7 +9,9 @@ async function start() {
     console.log('[UniTicket API] Checking and running database migrations...');
     await runMigrations();
   } catch (error) {
-    console.error('[UniTicket API] Migration warning:', error);
+    console.error('[UniTicket API] Database migrations failed. Server will not start.', error);
+    process.exitCode = 1;
+    return;
   }
 
   server = app.listen(env.port, () => {

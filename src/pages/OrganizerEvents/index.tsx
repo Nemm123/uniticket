@@ -92,9 +92,8 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
             : await createEventApi({ event: nextEvent, organizerWallet });
           apiMessage = ' PostgreSQL API đã được cập nhật.';
         } catch (error) {
-          // Existing local events use legacy IDs. They remain editable locally
-          // until migrated; API failures never discard the user's form data.
-          apiMessage = ` API chưa khả dụng (${error instanceof Error ? error.message : 'unknown error'}), đã lưu bản local.`;
+          setFeedback({ type: 'error', text: `Không thể lưu event trên máy chủ: ${error instanceof Error ? error.message : 'unknown error'}` });
+          return;
         }
       } else {
         apiMessage = ' Event legacy đang dùng bản localStorage.';
@@ -132,7 +131,8 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
           await deleteEventApi(deleteTarget.id);
           apiMessage = ' PostgreSQL API đã được cập nhật.';
         } catch (error) {
-          apiMessage = ` API chưa khả dụng (${error instanceof Error ? error.message : 'unknown error'}), đã xóa bản local.`;
+          setFeedback({ type: 'error', text: `Không thể xóa event trên máy chủ: ${error instanceof Error ? error.message : 'unknown error'}` });
+          return;
         }
       }
       const localResult = deleteStoredEvent(deleteTarget.id);

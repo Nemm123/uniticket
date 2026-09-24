@@ -2,6 +2,7 @@ export interface TicketTier {
   id: string;
   name: string;
   priceSol: number;
+  priceVnd?: number;
   description: string;
   perks: string[];
   totalQuantity: number;
@@ -27,6 +28,7 @@ export interface EventItem {
     verified: boolean;
   };
   minPriceSol: number;
+  minPriceVnd?: number;
   totalTickets: number;
   soldTickets: number;
   featured: boolean;
@@ -71,6 +73,7 @@ export interface PurchasedTicket {
   tierName: string;
   seat: string;
   priceSol: number;
+  priceVnd?: number;
   ticketCode: string;       // mã vé riêng biệt (vd: UT-SOL-8921-01)
   customerName: string;
   customerEmail: string;

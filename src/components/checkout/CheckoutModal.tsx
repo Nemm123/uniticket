@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { X, Ticket, Sparkles, ShieldCheck, User, Mail, Minus, Plus } from 'lucide-react';
 import { EventItem, TicketTier, PurchasedTicket } from '../../types';
-import { getStoredPurchasedTickets, savePurchaseAtomically } from '../../utils/storage';
-import { createTicketsApi } from '../../services/ticketsApi';
+import { createOrder, demoPayOrder, type OrderSummary } from '../../services/ordersApi';
+import { listGuestTicketsApi } from '../../services/ticketsApi';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -10,10 +10,11 @@ interface CheckoutModalProps {
   event: EventItem;
   tier: TicketTier;
   quantity: number;
-  walletAddress?: string;
   onSuccess: (ticketsCreated: PurchasedTicket[]) => void;
   onError: (msg: string) => void;
 }
+
+const formatVnd = (amount: number): string => `${amount.toLocaleString('vi-VN')} ₫`;
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   isOpen,
@@ -21,7 +22,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   event,
   tier,
   quantity,
-  walletAddress,
   onSuccess,
   onError,
 }) => {
@@ -29,27 +29,52 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [customerEmail, setCustomerEmail] = useState('');
   const [selectedQuantity, setSelectedQuantity] = useState(quantity);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [reservation, setReservation] = useState<OrderSummary | null>(null);
+  const [guestAccessToken, setGuestAccessToken] = useState<string>(() => localStorage.getItem('guest_access_token') ?? '');
 
   useEffect(() => {
     setSelectedQuantity(Math.max(1, Math.min(quantity, tier.remainingQuantity)));
+    setReservation(null);
   }, [quantity, tier.id, tier.remainingQuantity]);
 
   if (!isOpen) return null;
 
-  const totalTicketPriceSol = parseFloat((tier.priceSol * selectedQuantity).toFixed(4));
+  const unitPriceVnd = tier.priceVnd ?? 0;
+  const subtotalVnd = unitPriceVnd * selectedQuantity;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (reservation) {
+      setIsSubmitting(true);
+      try {
+        const completed = await demoPayOrder(reservation.id, guestAccessToken || undefined);
+        let orderTickets: PurchasedTicket[] = [];
+        if (guestAccessToken) {
+          try {
+            orderTickets = await listGuestTicketsApi(completed.id, guestAccessToken);
+          } catch {
+            // Ticket retrieval failed — will be visible on My Tickets page via backend.
+          }
+        }
+        if (guestAccessToken) {
+          localStorage.setItem('guest_access_token', guestAccessToken);
+        }
+        setIsSubmitting(false);
+        onSuccess(orderTickets);
+        return;
+      } catch (error) {
+        onError(error instanceof Error ? error.message : 'Không thể hoàn tất thanh toán thử nghiệm.');
+        setIsSubmitting(false);
+        return;
+      }
+    }
 
     const trimmedName = customerName.trim();
     const trimmedEmail = customerEmail.trim();
 
     if (!Number.isInteger(selectedQuantity) || selectedQuantity <= 0) {
       onError('Số lượng vé phải lớn hơn 0.');
-      return;
-    }
-    if (!walletAddress) {
-      onError('Vui lòng kết nối Phantom trước khi mua vé.');
       return;
     }
     if (selectedQuantity > tier.remainingQuantity) {
@@ -70,110 +95,28 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setIsSubmitting(true);
 
     try {
-      // Tạo mã đơn hàng chung và mã riêng cho từng vé.
-      const orderId = `ORD-${createUniqueValue('order')}`;
-      const existingTickets = getStoredPurchasedTickets();
-      const usedTicketIds = new Set(existingTickets.map((ticket) => ticket.id));
-      const usedTicketCodes = new Set(existingTickets.map((ticket) => ticket.ticketCode));
-      const newTickets: PurchasedTicket[] = [];
-      for (let i = 0; i < selectedQuantity; i++) {
-        const ticketId = createUniqueValue('tkt', usedTicketIds);
-        const ticketCode = createUniqueValue('UT-SOL', usedTicketCodes);
-        const timestamp = Date.now();
-        const seatPrefix = tier.name.toLowerCase().includes('vip') ? 'VIP-ROW' : 'GA-ZONE';
-        const seat = `${seatPrefix}-${Math.floor(1 + Math.random() * 20)}-${String(i + 1).padStart(2, '0')}`;
-
-        // Cấu trúc dữ liệu JSON mã hóa trong QR
-        const qrPayload = JSON.stringify({
-          ticketId,
-          orderId,
-          eventId: event.id,
-          tierId: tier.id,
-          ticketCode,
-          customerName: trimmedName,
-          customerWallet: walletAddress,
-          seat,
-          timestamp,
-          signatureVersion: 'mock-v1',
-        });
-
-        newTickets.push({
-          id: ticketId,
-          orderId,
-          eventId: event.id,
-          eventTitle: event.title,
-          eventBanner: event.bannerImage,
-          venue: event.venue,
-          city: event.city,
-          date: event.date,
-          time: event.time,
-          tierId: tier.id,
-          tierName: tier.name,
-          seat,
-          priceSol: tier.priceSol,
-          ticketCode,
-          customerName: trimmedName,
-          customerEmail: trimmedEmail,
-          customerWallet: walletAddress,
-          purchasedAt: new Date().toISOString(),
-          purchaseDate: new Date().toISOString(),
-          status: 'valid',
-          isCheckedIn: false,
-          timestamp,
-          signatureVersion: 'mock-v1',
-          checkInStatus: 'unused',
-          qrPayload,
-        });
+      const created = await createOrder(event.id, tier.id, selectedQuantity, trimmedName, trimmedEmail);
+      if (created.guestAccessToken) {
+        setGuestAccessToken(created.guestAccessToken);
+        localStorage.setItem('guest_access_token', created.guestAccessToken);
       }
-
-      let finalTickets = newTickets;
-      try {
-        const backendTickets = await createTicketsApi(newTickets);
-        if (backendTickets && backendTickets.length > 0) {
-          finalTickets = backendTickets;
-        }
-      } catch (apiErr) {
-        console.warn('[UniTicket Checkout] Backend sync issue, falling back to local snapshot:', apiErr);
-      }
-
-      const isPurchaseSaved = savePurchaseAtomically(event.id, tier.id, selectedQuantity, finalTickets);
-      if (!isPurchaseSaved) {
-        setIsSubmitting(false);
-        onError('Không thể lưu đơn hàng. Tồn kho và các vé đã mua trước đó được giữ nguyên.');
-        return;
-      }
-
+      setReservation(created);
       setIsSubmitting(false);
-      onClose();
-      onSuccess(finalTickets);
+      return;
     } catch {
       setIsSubmitting(false);
-      onError('Đã xảy ra sự cố khi hoàn tất mua vé.');
+      onError('Đã xảy ra sự cố khi tạo đơn hàng.');
     }
   };
-
-  function createUniqueValue(prefix: string, usedValues?: Set<string>): string {
-    let value = '';
-    do {
-      const uniquePart = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
-      value = `${prefix}-${uniquePart}`;
-    } while (usedValues?.has(value));
-    usedValues?.add(value);
-    return value;
-  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md transition-all">
       <div className="absolute inset-0" onClick={onClose} />
 
       <div className="relative w-full max-w-lg rounded-2xl bg-[#0F0A28] border border-solana-purple/40 p-5 sm:p-7 shadow-2xl shadow-purple-950/80 z-10 overflow-hidden animate-scaleUp text-left max-h-[90vh] overflow-y-auto">
-        {/* Glow decoration */}
         <div className="absolute -top-24 -right-24 w-52 h-52 bg-solana-purple/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-24 -left-24 w-52 h-52 bg-solana-green/20 rounded-full blur-3xl pointer-events-none" />
 
-        {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-white/10">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-gradient-to-br from-solana-purple to-neon-pink text-white shadow-lg">
@@ -181,12 +124,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
             <div>
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                Xác Nhận Đặt Vé NFT
+                Xác Nhận Đặt Vé
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-solana-purple/30 border border-solana-purple/50 text-purple-200">
                   Mô Phỏng
                 </span>
               </h3>
-              <p className="text-xs text-slate-300">Tạo vé NFT độc bản vào ví cá nhân</p>
+              <p className="text-xs text-slate-300">Thanh toán mô phỏng — Demo</p>
             </div>
           </div>
           <button
@@ -197,18 +140,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </button>
         </div>
 
-        {/* Notice Banner */}
         <div className="my-4 p-3 rounded-xl bg-purple-950/50 border border-solana-purple/40 text-xs text-purple-200 flex items-start gap-2.5">
           <Sparkles className="w-4 h-4 text-solana-green shrink-0 mt-0.5 animate-pulse" />
           <div className="space-y-0.5">
             <p className="font-semibold text-white">Thanh Toán & Phát Hành Mô Phỏng</p>
             <p className="text-slate-300 leading-relaxed text-[11px]">
-              Đây là quy trình mô phỏng. Hệ thống tạo {selectedQuantity} vé và lưu trên thiết bị của bạn; không trừ SOL thật và chưa mint NFT.
+              Đây là quy trình mô phỏng. Hệ thống tạo {selectedQuantity} vé và lưu trên máy chủ; không trừ tiền thật và chưa mint NFT.
             </p>
           </div>
         </div>
 
-        {/* Order Summary */}
         <div className="p-4 rounded-xl bg-[#170E38] border border-white/10 space-y-3 mb-5">
           <div className="text-xs text-slate-300 border-b border-white/10 pb-2">
             <span className="text-slate-400 block text-[11px]">Sự kiện:</span>
@@ -226,20 +167,33 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
             <div>
               <span className="text-slate-400 block text-[11px]">Đơn giá:</span>
-              <span className="text-slate-200 block mt-0.5 font-mono">{tier.priceSol} SOL / vé</span>
+              <span className="text-slate-200 block mt-0.5 font-mono">{formatVnd(unitPriceVnd)} / vé</span>
             </div>
             <div>
               <span className="text-slate-400 block text-[11px]">Tạm tính:</span>
-              <span className="text-white block mt-0.5 font-mono font-bold">{totalTicketPriceSol} SOL</span>
+              <span className="text-white block mt-0.5 font-mono font-bold">{formatVnd(subtotalVnd)}</span>
             </div>
           </div>
 
-          <div className="pt-2 border-t border-white/10 flex items-center justify-between">
-            <span className="text-xs font-bold text-white">Tổng cộng thanh toán:</span>
-            <span className="text-lg font-black text-solana-green font-mono">
-              {totalTicketPriceSol} SOL
-            </span>
-          </div>
+          {reservation && (
+            <div className="pt-2 border-t border-white/10 grid grid-cols-2 gap-3 text-xs text-slate-300">
+              <div>
+                <span className="text-slate-400 block text-[11px]">Phí dịch vụ:</span>
+                <strong className="text-solana-green block mt-0.5 font-mono">{formatVnd(reservation.serviceFeeVnd)}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">Tổng thanh toán:</span>
+                <strong className="text-white block mt-0.5 font-mono font-bold">{formatVnd(reservation.totalVnd)}</strong>
+              </div>
+            </div>
+          )}
+
+          {!reservation && (
+            <div className="pt-2 border-t border-white/10 flex items-center justify-between">
+              <span className="text-xs font-bold text-white">Tổng thanh toán:</span>
+              <span className="text-lg font-black text-solana-green font-mono">{formatVnd(subtotalVnd)}</span>
+            </div>
+          )}
         </div>
 
         <div className="mb-5 flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-4 py-3">
@@ -270,7 +224,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
         </div>
 
-        {/* Form nhập thông tin khách hàng */}
+        {reservation && (
+          <div className="mb-5 rounded-xl border border-solana-green/40 bg-solana-green/10 p-4 text-sm text-slate-100" role="status">
+            <p className="font-bold text-solana-green">Đã giữ vé Demo</p>
+            <p className="mt-1 text-xs">Mã đơn: <span className="font-mono text-white">{reservation.orderCode}</span></p>
+            <p className="mt-1 text-xs">Giữ đến: {new Date(reservation.expiresAt).toLocaleString('vi-VN')} · Tổng: {formatVnd(reservation.totalVnd)}</p>
+            <p className="mt-2 text-[11px] text-slate-300">Phương thức: Thanh toán mô phỏng — Demo. Đây là thanh toán thử nghiệm off-chain, không phải giao dịch Solana hay Blockchain.</p>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-200 mb-1.5 flex items-center gap-1.5">
@@ -310,7 +272,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             >
               <ShieldCheck className="w-5 h-5" />
               <span>
-                {isSubmitting ? 'Đang Tạo Vé Mô Phỏng...' : `Xác Nhận Mua ${selectedQuantity} Vé`}
+                {isSubmitting ? 'Đang xử lý...' : reservation ? 'Thanh toán mô phỏng — Demo & nhận vé' : `Giữ ${selectedQuantity} vé Demo`}
               </span>
             </button>
             <p className="text-center text-[11px] text-slate-400 mt-2">

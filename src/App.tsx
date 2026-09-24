@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 import { WalletModal } from './components/common/WalletModal';
+import { PhantomLogo } from './components/common/PhantomLogo';
 import { CheckoutModal } from './components/checkout/CheckoutModal';
 import { ToastContainer } from './components/common/Toast';
 import { HomePage } from './pages/Home';
@@ -9,7 +10,6 @@ import { CheckInPage } from './pages/CheckIn';
 import { OrganizerDashboard } from './pages/OrganizerDashboard';
 import { OrganizerEvents } from './pages/OrganizerEvents';
 import { AccessDenied } from './pages/AccessDenied';
-import { RoleSelectionModal } from './components/common/RoleSelectionModal';
 import { 
   ArrowLeft, 
   Ticket, 
@@ -26,9 +26,10 @@ import {
 import { QRCodeSVG } from 'qrcode.react';
 import { EventItem, PurchasedTicket, TicketTier, ToastMessage, UserRole } from './types';
 import { getStoredEvents, getStoredPurchasedTickets, saveStoredEvents } from './utils/storage';
-import { clearUserRole, getUserRole, setUserRole } from './utils/role';
 import { getEvent as getEventFromApi, isApiEventId, listEvents } from './services/eventsApi';
-import { listTicketsApi } from './services/ticketsApi';
+import { listTicketsApi, listGuestTicketsApi } from './services/ticketsApi';
+import { clearWalletSession, setWalletSession, WalletSession } from './services/authSession';
+import { logoutWalletSession } from './services/authApi';
 
 const PAGE_PATHS = {
   home: '/',
@@ -70,14 +71,14 @@ export function App() {
   const [eventDetailError, setEventDetailError] = useState<string | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [purchasedTickets, setPurchasedTickets] = useState<PurchasedTicket[]>(() => getStoredPurchasedTickets());
+  const [guestAccessToken, setGuestAccessToken] = useState<string>(() => localStorage.getItem('guest_access_token') ?? '');
   const [selectedQrTicket, setSelectedQrTicket] = useState<PurchasedTicket | null>(null);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutEvent, setCheckoutEvent] = useState<EventItem | null>(null);
   const [checkoutTier, setCheckoutTier] = useState<TicketTier | null>(null);
   const [pendingPurchase, setPendingPurchase] = useState<{ event: EventItem; tier: TicketTier } | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [currentRole, setCurrentRole] = useState<UserRole | null>(() => getUserRole());
-  const [isRoleSelectionOpen, setIsRoleSelectionOpen] = useState(false);
+  const [currentRole, setCurrentRole] = useState<UserRole | null>(null);
 
   // Backend is the source of truth for events when available. Existing local
   // events remain visible as a migration fallback, so tickets/check-ins are
@@ -135,23 +136,24 @@ export function App() {
     let cancelled = false;
     const syncTickets = async () => {
       try {
-        const remoteTickets = await listTicketsApi(walletAddress ? { wallet: walletAddress } : undefined);
-        if (cancelled) return;
-        if (Array.isArray(remoteTickets) && remoteTickets.length > 0) {
-          const localTickets = getStoredPurchasedTickets();
-          const remoteCodes = new Set(remoteTickets.map((t) => t.ticketCode));
-          const merged = [...remoteTickets, ...localTickets.filter((t) => !remoteCodes.has(t.ticketCode))];
-          setPurchasedTickets(merged);
+        let remoteTickets: PurchasedTicket[] = [];
+        if (walletAddress) {
+          remoteTickets = await listTicketsApi({ wallet: walletAddress });
+        } else if (guestAccessToken) {
+          remoteTickets = await listGuestTicketsApi('', guestAccessToken);
         }
+        if (cancelled) return;
+        setPurchasedTickets(remoteTickets);
       } catch (err) {
-        console.warn('[UniTicket App] Could not load tickets from API, using local storage:', err);
+        if (!cancelled) setPurchasedTickets([]);
+        console.warn('[UniTicket App] Could not load tickets from API:', err);
       }
     };
-    if (currentPage === 'my-tickets' || walletAddress) {
+    if (currentPage === 'my-tickets' || walletAddress || guestAccessToken) {
       void syncTickets();
     }
     return () => { cancelled = true; };
-  }, [currentPage, walletAddress]);
+  }, [currentPage, walletAddress, guestAccessToken]);
 
   // Lắng nghe cuộn trang để hiện nút Back to Top
   useEffect(() => {
@@ -165,12 +167,6 @@ export function App() {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
-
-  useEffect(() => {
-    if (walletAddress && !currentRole) {
-      setIsRoleSelectionOpen(true);
-    }
-  }, [walletAddress, currentRole]);
 
   useEffect(() => {
     const syncPageFromLocation = () => {
@@ -241,41 +237,29 @@ export function App() {
   };
 
   const resetWalletSession = () => {
-    const roleWasCleared = clearUserRole();
+    const previousSession = clearWalletSession();
+    if (previousSession) void logoutWalletSession(previousSession.token).catch(() => undefined);
     setCurrentRole(null);
     setPendingPurchase(null);
     setIsCheckoutOpen(false);
     setCheckoutEvent(null);
     setCheckoutTier(null);
-    setIsRoleSelectionOpen(false);
 
     if (ORGANIZER_PAGES.includes(currentPage)) {
       handleNavigate('home');
     }
-    if (!roleWasCleared) {
-      showToast('error', 'Kh\u00f4ng th\u1ec3 x\u00f3a role \u0111\u00e3 l\u01b0u tr\u00ean tr\u00ecnh duy\u1ec7t n\u00e0y.');
-    }
   };
 
   const handleWalletChange = (address: string | null) => {
-    const hasChangedWallet = Boolean(address && walletAddress && walletAddress !== address);
     setWalletAddress(address);
-    if (!address) {
-      resetWalletSession();
-      return;
-    }
+    if (!address) resetWalletSession();
+  };
 
-    if (hasChangedWallet) {
-      resetWalletSession();
-      setIsRoleSelectionOpen(true);
-      return;
-    }
-
-    if (!currentRole) {
-      setIsRoleSelectionOpen(true);
-      return;
-    }
-    if (address && pendingPurchase) {
+  const handleWalletAuthenticated = (session: WalletSession) => {
+    setWalletSession(session);
+    setWalletAddress(session.walletAddress);
+    setCurrentRole(session.role === 'organizer' || session.role === 'admin' ? 'organizer' : 'attendee');
+    if (pendingPurchase) {
       setCheckoutEvent(pendingPurchase.event);
       setCheckoutTier(pendingPurchase.tier);
       setPendingPurchase(null);
@@ -289,43 +273,10 @@ export function App() {
     setIsWalletModalOpen(false);
   };
 
-  const handleRoleContinue = (role: UserRole) => {
-    if (!setUserRole(role)) {
-      showToast('error', 'Không thể lưu role trên trình duyệt này.');
-      return;
-    }
-
-    setCurrentRole(role);
-    setIsRoleSelectionOpen(false);
-    showToast('success', 'Role switched successfully');
-
-    if (role === 'attendee' && ORGANIZER_PAGES.includes(currentPage)) {
-      handleNavigate('home');
-    }
-    if (pendingPurchase) {
-      setCheckoutEvent(pendingPurchase.event);
-      setCheckoutTier(pendingPurchase.tier);
-      setPendingPurchase(null);
-      setIsCheckoutOpen(true);
-      setIsWalletModalOpen(false);
-    }
-  };
-
-  const handleCloseRoleSelection = () => {
-    if (!currentRole) {
-      setPendingPurchase(null);
-    }
-    setIsRoleSelectionOpen(false);
-  };
 
   const handlePurchase = (event: EventItem, tier: TicketTier) => {
     if (tier.remainingQuantity <= 0) {
       showToast('error', 'Hạng vé này đã hết. Vui lòng chọn hạng vé khác.');
-      return;
-    }
-    if (!walletAddress) {
-      setPendingPurchase({ event, tier });
-      setIsWalletModalOpen(true);
       return;
     }
     setCheckoutEvent(event);
@@ -334,7 +285,9 @@ export function App() {
   };
 
   const handleCheckoutSuccess = (tickets: PurchasedTicket[]) => {
-    setPurchasedTickets(getStoredPurchasedTickets());
+    const storedToken = localStorage.getItem('guest_access_token') ?? '';
+    if (storedToken) setGuestAccessToken(storedToken);
+    setPurchasedTickets(tickets);
     setEvents(getStoredEvents());
     setIsCheckoutOpen(false);
     setCheckoutEvent(null);
@@ -350,7 +303,7 @@ export function App() {
         currentPage={currentPage}
         onNavigate={(p) => handleNavigate(p)}
         onOpenWalletModal={() => setIsWalletModalOpen(true)}
-        onOpenRoleSelection={() => setIsRoleSelectionOpen(true)}
+        onOpenRoleSelection={() => showToast('info', 'Role is assigned by an authenticated administrator.')}
         currentRole={currentRole}
         walletAddress={walletAddress}
       />
@@ -424,9 +377,15 @@ export function App() {
                     <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md text-xs font-semibold text-solana-cyan">
                       {evt.category}
                     </div>
-                    <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-lg bg-black/85 backdrop-blur-md border border-solana-green/40 text-solana-green text-xs font-bold">
-                      {evt.minPriceSol} SOL
-                    </div>
+                      {evt.minPriceVnd !== undefined ? (
+                        <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-lg bg-black/85 backdrop-blur-md border border-solana-green/40 text-solana-green text-xs font-bold">
+                          {evt.minPriceVnd.toLocaleString('vi-VN')} ₫
+                        </div>
+                      ) : (
+                        <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-lg bg-black/85 backdrop-blur-md border border-solana-green/40 text-solana-green text-xs font-bold">
+                          Chưa cập nhật
+                        </div>
+                      )}
                   </div>
                   <div className="space-y-1 min-w-0">
                     <h3 className="text-base font-bold text-white group-hover:text-solana-cyan transition-colors line-clamp-2 break-words">
@@ -568,7 +527,7 @@ export function App() {
                             </span>
                           </div>
                           <div className="text-2xl font-black text-solana-cyan mb-2">
-                            {tier.priceSol} SOL
+                            {tier.priceVnd ? `${tier.priceVnd.toLocaleString('vi-VN')} ₫` : '—'}
                           </div>
                           <p className="text-xs text-slate-300 mb-3 break-words">{tier.description}</p>
                           <ul className="space-y-1.5 text-xs text-slate-300 min-w-0">
@@ -620,15 +579,16 @@ export function App() {
                   Ví Vé NFT <span className="text-gradient-neon">Của Tôi</span>
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-300 mt-1 break-words">
-                  Mỗi vé là một tài sản số NFT độc bản trên mạng Solana Metaplex.
+                  Vé số độc bản cho sự kiện của bạn.
                 </p>
               </div>
 
               <button
                 onClick={() => setIsWalletModalOpen(true)}
-                className="px-4 py-2 rounded-xl bg-solana-purple/20 border border-solana-purple/40 text-xs font-semibold text-solana-cyan hover:bg-solana-purple/30 transition-colors shrink-0"
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-solana-purple/40 bg-solana-purple/20 px-4 py-2 text-xs font-semibold text-solana-cyan transition-colors hover:bg-solana-purple/30 shrink-0"
               >
-                {walletAddress ? `Connected: ${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}` : 'Disconnected'}
+                <PhantomLogo className="h-4 w-4" />
+                {walletAddress ? `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}` : 'Kết nối Phantom'}
               </button>
             </div>
 
@@ -719,7 +679,7 @@ export function App() {
         {currentPage === 'access-denied' && (
           <AccessDenied
             currentRole={currentRole}
-            onSwitchRole={() => setIsRoleSelectionOpen(true)}
+            onSwitchRole={() => showToast('info', 'Role is assigned by an authenticated administrator.')}
             onNavigate={handleNavigate}
           />
         )}
@@ -830,24 +790,17 @@ export function App() {
         isOpen={isWalletModalOpen}
         onClose={handleCloseWalletModal}
         onWalletChange={handleWalletChange}
+        onAuthenticated={handleWalletAuthenticated}
         onConnectionCancelled={() => setPendingPurchase(null)}
       />
 
-      <RoleSelectionModal
-        isOpen={isRoleSelectionOpen}
-        currentRole={currentRole}
-        onClose={handleCloseRoleSelection}
-        onContinue={handleRoleContinue}
-      />
-
-      {checkoutEvent && checkoutTier && walletAddress && (
+      {checkoutEvent && checkoutTier && (
         <CheckoutModal
           isOpen={isCheckoutOpen}
           onClose={() => setIsCheckoutOpen(false)}
           event={checkoutEvent}
           tier={checkoutTier}
           quantity={1}
-          walletAddress={walletAddress}
           onSuccess={handleCheckoutSuccess}
           onError={(message) => showToast('error', message)}
         />
