@@ -1,14 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { BarChart3, CalendarDays, Ticket, Sparkles, Menu, X, PlusCircle, Compass, Home, ScanLine } from 'lucide-react';
+import {
+  BarChart3,
+  CalendarDays,
+  Ticket,
+  Sparkles,
+  Menu,
+  X,
+  PlusCircle,
+  Compass,
+  Home,
+  ScanLine,
+  ShieldCheck,
+  Eye,
+  LayoutDashboard
+} from 'lucide-react';
 import { UserRole } from '../../types';
+import { ViewMode } from '../../utils/viewMode';
 import { PhantomLogo } from '../common/PhantomLogo';
 
 interface NavbarProps {
   currentPage: string;
   onNavigate: (page: string) => void;
   onOpenWalletModal: () => void;
-  currentRole: UserRole | null;
+  authRole: UserRole | null;
+  viewMode: ViewMode;
+  onToggleViewMode: () => void;
   walletAddress: string | null;
 }
 
@@ -18,7 +35,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentPage,
   onNavigate,
   onOpenWalletModal,
-  currentRole,
+  authRole,
+  viewMode,
+  onToggleViewMode,
   walletAddress,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -35,7 +54,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   }, [mobileMenuOpen]);
 
   useEffect(() => {
-    const desktopMedia = window.matchMedia('(min-width: 1280px)');
+    const desktopMedia = window.matchMedia('(min-width: 1024px)');
     const closeOnDesktop = () => {
       if (desktopMedia.matches) setMobileMenuOpen(false);
     };
@@ -54,7 +73,9 @@ export const Navbar: React.FC<NavbarProps> = ({
     };
   }, []);
 
-  const navItems = currentRole === 'organizer'
+  const isOrganizerView = authRole === 'organizer' && viewMode === 'organizer';
+
+  const navItems = isOrganizerView
     ? [
         { id: 'home', label: 'Trang Chủ', icon: Home },
         { id: 'events', label: 'Sự Kiện', icon: Compass },
@@ -80,7 +101,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label="Mobile navigation"
-      className="fixed inset-x-0 bottom-0 top-16 z-[70] overflow-y-auto overscroll-contain border-t border-solana-purple/20 bg-[#070412]/95 p-4 backdrop-blur-2xl sm:top-20 sm:p-5 xl:hidden"
+      className="fixed inset-x-0 bottom-0 top-16 z-[70] overflow-y-auto overscroll-contain border-t border-solana-purple/20 bg-[#070412]/95 p-4 backdrop-blur-2xl sm:top-20 sm:p-5 lg:hidden"
     >
       <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-6">
         <div className="space-y-2 pt-2">
@@ -104,7 +125,42 @@ export const Navbar: React.FC<NavbarProps> = ({
             );
           })}
         </div>
+
         <div className="mt-auto space-y-3 border-t border-white/10 pt-6">
+          {authRole === 'organizer' && (
+            <div className="rounded-xl border border-solana-green/30 bg-solana-green/10 p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-solana-green flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4" />
+                  Quyền Organizer (Đã xác thực)
+                </span>
+                <span className="text-[11px] text-slate-300">
+                  {viewMode === 'organizer' ? 'Chế độ BTC' : 'Chế độ Khách'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onToggleViewMode();
+                }}
+                className="w-full flex items-center justify-center gap-2 rounded-lg bg-white/10 hover:bg-white/15 px-3 py-2.5 text-xs font-semibold text-white transition-colors active:scale-95"
+              >
+                {viewMode === 'organizer' ? (
+                  <>
+                    <Eye className="w-4 h-4 text-solana-cyan" />
+                    <span>Chuyển sang Chế độ Người tham dự</span>
+                  </>
+                ) : (
+                  <>
+                    <LayoutDashboard className="w-4 h-4 text-solana-green" />
+                    <span>Chuyển sang Chế độ Ban tổ chức</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => {
@@ -144,7 +200,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   Uni<span className="text-gradient-solana">Ticket</span>
                 </span>
                 <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-solana-purple/20 text-solana-green border border-solana-green/30">
-                  SOL
+                  VNĐ
                 </span>
               </div>
               <p className="text-[9px] sm:text-[10px] text-slate-300 font-medium tracking-wider uppercase">
@@ -154,7 +210,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden xl:flex items-center gap-1 bg-[#150E35]/80 px-3 py-1.5 rounded-full border border-white/10 shadow-inner backdrop-blur-md">
+          <nav className="hidden lg:flex items-center gap-1 bg-[#150E35]/80 px-3 py-1.5 rounded-full border border-white/10 shadow-inner backdrop-blur-md">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = currentPage === item.id;
@@ -175,8 +231,35 @@ export const Navbar: React.FC<NavbarProps> = ({
             })}
           </nav>
 
-          {/* Right Action: Connect Wallet Button */}
-          <div className="hidden xl:flex items-center gap-3 shrink-0">
+          {/* Right Action: Connect Wallet & View Mode Toggle */}
+          <div className="hidden lg:flex items-center gap-2 lg:gap-3 shrink-0">
+            {authRole === 'organizer' && (
+              <div className="flex items-center gap-2">
+                <span className="rounded-xl border border-solana-green/40 bg-solana-green/10 px-2.5 py-1.5 text-xs font-semibold text-solana-green flex items-center gap-1.5" title="Ví có quyền Ban tổ chức (xác thực từ server)">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Organizer
+                </span>
+                <button
+                  type="button"
+                  onClick={onToggleViewMode}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:text-white transition-all active:scale-95 shadow-sm"
+                  title={viewMode === 'organizer' ? 'Chuyển sang chế độ xem Người tham dự (không đăng xuất)' : 'Chuyển sang chế độ xem Ban tổ chức'}
+                >
+                  {viewMode === 'organizer' ? (
+                    <>
+                      <Eye className="w-3.5 h-3.5 text-solana-cyan" />
+                      <span>Xem Người tham dự</span>
+                    </>
+                  ) : (
+                    <>
+                      <LayoutDashboard className="w-3.5 h-3.5 text-solana-green" />
+                      <span>Xem Ban tổ chức</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
             <button
               onClick={onOpenWalletModal}
               className="relative group overflow-hidden px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm text-white transition-all duration-300 shadow-lg shadow-purple-900/30 hover:shadow-solana-purple/50 active:scale-95"
@@ -190,15 +273,24 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </div>
             </button>
-            {currentRole === 'organizer' && (
-              <span className="rounded-xl border border-solana-green/40 bg-solana-green/10 px-3 py-1.5 text-xs font-semibold text-solana-green">
-                Organizer
-              </span>
-            )}
           </div>
 
           {/* Mobile Right Actions */}
-          <div className="flex xl:hidden items-center gap-1.5 shrink-0">
+          <div className="flex lg:hidden items-center gap-1.5 shrink-0">
+            {authRole === 'organizer' && (
+              <button
+                type="button"
+                onClick={onToggleViewMode}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 hover:text-white active:scale-95"
+                title={viewMode === 'organizer' ? 'Chuyển sang chế độ xem Người tham dự' : 'Chuyển sang chế độ xem Ban tổ chức'}
+              >
+                {viewMode === 'organizer' ? (
+                  <Eye className="w-5 h-5 text-solana-cyan" />
+                ) : (
+                  <LayoutDashboard className="w-5 h-5 text-solana-green" />
+                )}
+              </button>
+            )}
             <button
               onClick={onOpenWalletModal}
               aria-label={walletAddress ? `Ví Phantom ${shortAddress(walletAddress)}` : 'Kết nối Phantom'}
@@ -219,7 +311,6 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
       </div>
-
     </header>
     {mobileNavigation}
     </>

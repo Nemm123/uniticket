@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
-import { WalletModal } from './components/common/WalletModal';
+import { WalletModal, getPhantomProvider, safeConnectPhantom, logPhantomDebug } from './components/common/WalletModal';
 import { PhantomLogo } from './components/common/PhantomLogo';
 import { CheckoutModal } from './components/checkout/CheckoutModal';
 import { ToastContainer } from './components/common/Toast';
@@ -28,8 +28,10 @@ import { EventItem, PurchasedTicket, TicketTier, ToastMessage, UserRole } from '
 import { getStoredEvents, getStoredPurchasedTickets, saveStoredEvents } from './utils/storage';
 import { getEvent as getEventFromApi, isApiEventId, listEvents } from './services/eventsApi';
 import { listTicketsApi, listGuestTicketsApi } from './services/ticketsApi';
-import { clearWalletSession, setWalletSession, WalletSession } from './services/authSession';
+import { clearWalletSession, getWalletSession, setWalletSession, WalletSession } from './services/authSession';
 import { logoutWalletSession } from './services/authApi';
+import { clearUserRole } from './utils/role';
+import { ViewMode, getStoredViewMode, saveStoredViewMode } from './utils/viewMode';
 
 const PAGE_PATHS = {
   home: '/',
@@ -69,7 +71,17 @@ export function App() {
   const [eventsReloadToken, setEventsReloadToken] = useState(0);
   const [selectedApiEvent, setSelectedApiEvent] = useState<EventItem | null>(null);
   const [eventDetailError, setEventDetailError] = useState<string | null>(null);
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const initialSession = getWalletSession();
+  const [walletAddress, setWalletAddress] = useState<string | null>(initialSession?.walletAddress ?? null);
+  const [authRole, setAuthRole] = useState<UserRole | null>(() => {
+    if (!initialSession) return null;
+    return initialSession.role === 'organizer' || initialSession.role === 'admin' ? 'organizer' : 'attendee';
+  });
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const isOrg = initialSession?.role === 'organizer' || initialSession?.role === 'admin';
+    if (!isOrg) return 'attendee';
+    return getStoredViewMode();
+  });
   const [purchasedTickets, setPurchasedTickets] = useState<PurchasedTicket[]>(() => getStoredPurchasedTickets());
   const [guestAccessToken, setGuestAccessToken] = useState<string>(() => localStorage.getItem('guest_access_token') ?? '');
   const [selectedQrTicket, setSelectedQrTicket] = useState<PurchasedTicket | null>(null);
@@ -78,11 +90,69 @@ export function App() {
   const [checkoutTier, setCheckoutTier] = useState<TicketTier | null>(null);
   const [pendingPurchase, setPendingPurchase] = useState<{ event: EventItem; tier: TicketTier } | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [currentRole, setCurrentRole] = useState<UserRole | null>(null);
 
-  // Backend is the source of truth for events when available. Existing local
-  // events remain visible as a migration fallback, so tickets/check-ins are
-  // not lost while the demo inventory moves to PostgreSQL.
+  // Eager connection: tự động kết nối trong nền khi app khởi tạo nếu ví đã được tin cậy (chỉ chạy duy nhất một lần)
+  useEffect(() => {
+    let cancelled = false;
+    let hasAttempted = false;
+
+    const checkEagerConnection = async () => {
+      if (hasAttempted) {
+        logPhantomDebug('App.tsx checkEagerConnection SKIPPED (already attempted)');
+        return;
+      }
+      const provider = getPhantomProvider();
+      if (!provider?.isPhantom) {
+        logPhantomDebug('App.tsx checkEagerConnection: no provider detected yet');
+        return;
+      }
+      hasAttempted = true;
+      logPhantomDebug('App.tsx checkEagerConnection: STARTING eager connect');
+
+      try {
+        const resp = await safeConnectPhantom({ onlyIfTrusted: true });
+        if (cancelled) {
+          logPhantomDebug('App.tsx checkEagerConnection: cancelled');
+          return;
+        }
+        const pubKey = resp?.publicKey || provider.publicKey;
+        if (!pubKey) return;
+        const address = pubKey.toString();
+        logPhantomDebug('App.tsx checkEagerConnection: eager connect SUCCESS', {
+          addressPrefix: address.slice(0, 4),
+        });
+
+        const currentSession = getWalletSession();
+        if (currentSession && currentSession.walletAddress === address) {
+          // Session đã tồn tại và khớp địa chỉ ví
+          setWalletAddress(address);
+          const isOrg = currentSession.role === 'organizer' || currentSession.role === 'admin';
+          setAuthRole(isOrg ? 'organizer' : 'attendee');
+        } else {
+          // Ví đã trusted nhưng session chưa có hoặc cần xác thực lại
+          setWalletAddress(address);
+        }
+      } catch (err) {
+        const errObj = (typeof err === 'object' && err !== null) ? (err as Record<string, unknown>) : null;
+        logPhantomDebug('App.tsx checkEagerConnection: eager connect FAILED (silent)', {
+          code: errObj?.code,
+          message: errObj?.message || (err instanceof Error ? err.message : String(err)),
+        });
+      }
+    };
+
+    void checkEagerConnection();
+    window.addEventListener('load', checkEagerConnection);
+    const timer = window.setTimeout(checkEagerConnection, 300);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('load', checkEagerConnection);
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  // Backend is the source of truth for events when available.
   useEffect(() => {
     let cancelled = false;
     const loadEvents = async () => {
@@ -91,17 +161,13 @@ export function App() {
       try {
         const remoteEvents = await listEvents();
         if (cancelled) return;
-        const localEvents = getStoredEvents();
         if (remoteEvents.length > 0) {
-          const remoteIds = new Set(remoteEvents.map((event) => event.id));
-          const mergedEvents = [...remoteEvents, ...localEvents.filter((event) => !remoteIds.has(event.id))];
-          setEvents(mergedEvents);
-          if (!saveStoredEvents(mergedEvents)) {
-            setEventsError('Events API đã trả dữ liệu nhưng không thể cập nhật bản sao localStorage.');
-          }
+          // Khi backend trả về sự kiện: sử dụng sự kiện PostgreSQL làm nguồn chính xác duy nhất
+          setEvents(remoteEvents);
+          saveStoredEvents(remoteEvents);
         } else {
-          // An empty backend must not hide the existing demo catalog.
-          setEvents(localEvents);
+          // Fallback cục bộ chỉ dùng khi backend trống
+          setEvents(getStoredEvents());
         }
       } catch (error) {
         if (cancelled) return;
@@ -173,9 +239,19 @@ export function App() {
       const pageFromLocation = getPageFromPathname(window.location.pathname);
       const nextPage = pageFromLocation ?? 'home';
 
-      if (ORGANIZER_PAGES.includes(nextPage) && currentRole !== 'organizer') {
-        setCurrentPage('access-denied');
-        window.history.replaceState(null, '', PAGE_PATHS['access-denied']);
+      if (ORGANIZER_PAGES.includes(nextPage)) {
+        if (authRole !== 'organizer') {
+          setCurrentPage('access-denied');
+          window.history.replaceState(null, '', PAGE_PATHS['access-denied']);
+        } else if (viewMode === 'attendee') {
+          // Người dùng có quyền BTC nhưng đã chọn Chế độ Người tham dự:
+          // Điều hướng về Trang Chủ thay vì tự ý ép đổi viewMode thành organizer hay chặn bằng AccessDenied
+          setCurrentPage('home');
+          window.history.replaceState(null, '', PAGE_PATHS.home);
+        } else {
+          setCurrentPage(nextPage);
+          setSelectedEventId(null);
+        }
       } else {
         setCurrentPage(nextPage);
         setSelectedEventId(nextPage === 'event-detail' ? new URLSearchParams(window.location.search).get('eventId') : null);
@@ -189,18 +265,20 @@ export function App() {
     syncPageFromLocation();
     window.addEventListener('popstate', syncPageFromLocation);
     return () => window.removeEventListener('popstate', syncPageFromLocation);
-  }, [currentRole]);
+  }, [authRole, viewMode]);
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleNavigate = (page: string, eventId?: string) => {
-    if (ORGANIZER_PAGES.includes(page) && currentRole !== 'organizer') {
-      setCurrentPage('access-denied');
-      window.history.pushState(null, '', PAGE_PATHS['access-denied']);
-      scrollToTop();
-      return;
+    if (ORGANIZER_PAGES.includes(page)) {
+      if (authRole !== 'organizer') {
+        setCurrentPage('access-denied');
+        window.history.pushState(null, '', PAGE_PATHS['access-denied']);
+        scrollToTop();
+        return;
+      }
     }
     const nextPage = PAGE_PATHS[page as keyof typeof PAGE_PATHS] ? page : 'home';
     const nextPath = getPathForPage(nextPage, eventId);
@@ -243,7 +321,10 @@ export function App() {
   const resetWalletSession = () => {
     const previousSession = clearWalletSession();
     if (previousSession) void logoutWalletSession(previousSession.token).catch(() => undefined);
-    setCurrentRole(null);
+    clearUserRole();
+    setAuthRole(null);
+    setViewMode('attendee');
+    saveStoredViewMode('attendee');
     setPendingPurchase(null);
     setIsCheckoutOpen(false);
     setCheckoutEvent(null);
@@ -254,6 +335,22 @@ export function App() {
     }
   };
 
+  const handleToggleViewMode = () => {
+    if (authRole !== 'organizer') {
+      showToast('error', 'Bạn cần kết nối ví có quyền Ban tổ chức để chuyển chế độ.');
+      return;
+    }
+    const nextMode: ViewMode = viewMode === 'organizer' ? 'attendee' : 'organizer';
+    setViewMode(nextMode);
+    saveStoredViewMode(nextMode);
+    if (nextMode === 'attendee') {
+      handleNavigate('home');
+    } else {
+      handleNavigate('organizer');
+    }
+    showToast('info', nextMode === 'organizer' ? 'Đã bật Chế độ Ban tổ chức.' : 'Đã bật Chế độ Người tham dự.');
+  };
+
   const handleWalletChange = (address: string | null) => {
     setWalletAddress(address);
     if (!address) resetWalletSession();
@@ -262,7 +359,16 @@ export function App() {
   const handleWalletAuthenticated = (session: WalletSession) => {
     setWalletSession(session);
     setWalletAddress(session.walletAddress);
-    setCurrentRole(session.role === 'organizer' || session.role === 'admin' ? 'organizer' : 'attendee');
+    const isOrg = session.role === 'organizer' || session.role === 'admin';
+    const role: UserRole = isOrg ? 'organizer' : 'attendee';
+    setAuthRole(role);
+    if (isOrg) {
+      const stored = getStoredViewMode();
+      setViewMode(stored);
+    } else {
+      setViewMode('attendee');
+      saveStoredViewMode('attendee');
+    }
     if (pendingPurchase) {
       setCheckoutEvent(pendingPurchase.event);
       setCheckoutTier(pendingPurchase.tier);
@@ -307,7 +413,9 @@ export function App() {
         currentPage={currentPage}
         onNavigate={(p) => handleNavigate(p)}
         onOpenWalletModal={() => setIsWalletModalOpen(true)}
-        currentRole={currentRole}
+        authRole={authRole}
+        viewMode={viewMode}
+        onToggleViewMode={handleToggleViewMode}
         walletAddress={walletAddress}
       />
 
@@ -645,7 +753,7 @@ export function App() {
 
         {currentPage === 'check-in' && (
           <CheckInPage
-            currentRole={currentRole}
+            currentRole={authRole}
             organizerAddress={walletAddress}
             onShowToast={showToast}
             onTicketsChanged={() => setPurchasedTickets(getStoredPurchasedTickets())}
@@ -681,7 +789,13 @@ export function App() {
 
         {currentPage === 'access-denied' && (
           <AccessDenied
-            currentRole={currentRole}
+            authRole={authRole}
+            viewMode={viewMode}
+            onSwitchToOrganizerView={() => {
+              setViewMode('organizer');
+              saveStoredViewMode('organizer');
+              handleNavigate('organizer');
+            }}
             onConnectWallet={() => setIsWalletModalOpen(true)}
             onNavigate={handleNavigate}
           />
@@ -792,6 +906,7 @@ export function App() {
       <WalletModal
         isOpen={isWalletModalOpen}
         onClose={handleCloseWalletModal}
+        walletAddress={walletAddress}
         onWalletChange={handleWalletChange}
         onAuthenticated={handleWalletAuthenticated}
         onConnectionCancelled={() => setPendingPurchase(null)}

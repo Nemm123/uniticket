@@ -96,11 +96,10 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
     remainingQuantity: 500,
   };
 
-  const tierPriceVnd = typeof selectedTier.priceVnd === 'number' && selectedTier.priceVnd > 0
-    ? selectedTier.priceVnd
-    : (selectedTier.name.toLowerCase().includes('vip') ? 799000 : 499000);
+  const hasValidPrice = typeof selectedTier.priceVnd === 'number' && selectedTier.priceVnd > 0;
+  const tierPriceVnd = hasValidPrice ? selectedTier.priceVnd! : 0;
   const isSoldOut = selectedTier.remainingQuantity <= 0;
-  const totalPriceVnd = tierPriceVnd * quantity;
+  const totalPriceVnd = hasValidPrice ? tierPriceVnd * quantity : null;
 
   const handleIncrease = () => {
     if (quantity < selectedTier.remainingQuantity) {
@@ -122,6 +121,10 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
   };
 
   const handleOpenCheckout = () => {
+    if (!hasValidPrice) {
+      onShowToast('error', 'Hạng vé chưa được cập nhật giá VNĐ hợp lệ.');
+      return;
+    }
     if (isSoldOut) {
       onShowToast('error', 'Hạng vé này đã hết. Vui lòng chọn hạng vé khác.');
       return;
@@ -363,17 +366,17 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
                   <div className="text-center sm:text-right">
                     <span className="text-xs text-slate-400 block">Tổng tiền tạm tính:</span>
                     <span className="text-2xl font-black text-solana-green font-mono">
-                      {totalPriceVnd.toLocaleString('vi-VN')} ₫
+                      {totalPriceVnd !== null ? `${totalPriceVnd.toLocaleString('vi-VN')} ₫` : 'Chưa có giá'}
                     </span>
                   </div>
 
                   <button
                     onClick={handleOpenCheckout}
-                    disabled={isSoldOut}
+                    disabled={isSoldOut || !hasValidPrice}
                     className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-gradient-to-r from-solana-purple via-neon-pink to-solana-cyan text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-xl shadow-purple-950/60 hover:shadow-solana-purple/50 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                   >
                     <Ticket className="w-5 h-5" />
-                    <span>{isSoldOut ? 'HẾT VÉ' : `Tiến Hành Đặt ${quantity} Vé`}</span>
+                    <span>{isSoldOut ? 'HẾT VÉ' : !hasValidPrice ? 'CHƯA CÓ GIÁ' : `Tiến Hành Đặt ${quantity} Vé`}</span>
                   </button>
                 </div>
               </div>
