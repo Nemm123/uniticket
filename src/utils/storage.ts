@@ -5,6 +5,38 @@ const INVENTORY_KEY = 'uniticket_events_inventory';
 const TICKETS_KEY = 'uniticket_purchased_tickets';
 const CHECKIN_HISTORY_KEY = 'uniticket_checkin_history';
 
+function normalizeEvents(events: EventItem[]): EventItem[] {
+  const canonicalMap = new Map(mockEvents.map((e) => [e.id, e]));
+  let modified = false;
+
+  const normalized = events.map((event) => {
+    const canonical = canonicalMap.get(event.id);
+    const tiers = (event.tiers || []).map((tier) => {
+      if (typeof tier.priceVnd === 'number' && tier.priceVnd > 0) return tier;
+      modified = true;
+      const canonicalTier = canonical?.tiers?.find((t) => t.id === tier.id || t.name === tier.name);
+      const priceVnd = canonicalTier?.priceVnd ?? (tier.name.toLowerCase().includes('vip') ? 799000 : 499000);
+      return { ...tier, priceVnd };
+    });
+
+    const prices = tiers.map((t) => t.priceVnd).filter((p): p is number => typeof p === 'number' && p > 0);
+    const minPriceVnd = prices.length > 0 ? Math.min(...prices) : (canonical?.minPriceVnd ?? 499000);
+    if (event.minPriceVnd !== minPriceVnd) modified = true;
+
+    return { ...event, minPriceVnd, tiers };
+  });
+
+  if (modified) {
+    try {
+      localStorage.setItem(INVENTORY_KEY, JSON.stringify(normalized));
+    } catch {
+      // Best-effort storage sync
+    }
+  }
+
+  return normalized;
+}
+
 /**
  * Đọc danh sách sự kiện và trạng thái tồn kho an toàn từ localStorage
  */
@@ -17,7 +49,7 @@ export function getStoredEvents(): EventItem[] {
     }
     const parsed = JSON.parse(data);
     if (Array.isArray(parsed)) {
-      return parsed;
+      return normalizeEvents(parsed);
     }
     return mockEvents;
   } catch (error) {

@@ -8,7 +8,6 @@ interface NavbarProps {
   currentPage: string;
   onNavigate: (page: string) => void;
   onOpenWalletModal: () => void;
-  onOpenRoleSelection: () => void;
   currentRole: UserRole | null;
   walletAddress: string | null;
 }
@@ -19,7 +18,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentPage,
   onNavigate,
   onOpenWalletModal,
-  onOpenRoleSelection,
   currentRole,
   walletAddress,
 }) => {
@@ -118,17 +116,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             <PhantomLogo className="h-5 w-5" />
             <span>{walletAddress ? shortAddress(walletAddress) : 'Kết nối Phantom'}</span>
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMobileMenuOpen(false);
-              onOpenRoleSelection();
-            }}
-            className="min-h-11 w-full rounded-xl border border-solana-cyan/30 bg-solana-cyan/10 py-3.5 text-base font-bold text-solana-cyan active:scale-95"
-          >
-            {currentRole ? `Switch Role (${currentRole === 'organizer' ? 'Organizer' : 'Attendee'})` : 'Choose Demo Role'}
-          </button>
-          <p className="text-center text-xs text-slate-400">Frontend demo role is stored only on this device.</p>
         </div>
       </div>
     </div>,
@@ -203,13 +190,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </div>
             </button>
-            {currentRole && (
-              <button
-                onClick={onOpenRoleSelection}
-                className="rounded-xl border border-solana-cyan/30 bg-solana-cyan/10 px-3 py-2 text-xs font-semibold text-solana-cyan hover:bg-solana-cyan/20"
-              >
-                Switch Role
-              </button>
+            {currentRole === 'organizer' && (
+              <span className="rounded-xl border border-solana-green/40 bg-solana-green/10 px-3 py-1.5 text-xs font-semibold text-solana-green">
+                Organizer
+              </span>
             )}
           </div>
 

@@ -96,9 +96,11 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
     remainingQuantity: 500,
   };
 
+  const tierPriceVnd = typeof selectedTier.priceVnd === 'number' && selectedTier.priceVnd > 0
+    ? selectedTier.priceVnd
+    : (selectedTier.name.toLowerCase().includes('vip') ? 799000 : 499000);
   const isSoldOut = selectedTier.remainingQuantity <= 0;
-  const hasPriceVnd = typeof selectedTier.priceVnd === 'number';
-  const totalPriceVnd = typeof selectedTier.priceVnd === 'number' ? selectedTier.priceVnd * quantity : undefined;
+  const totalPriceVnd = tierPriceVnd * quantity;
 
   const handleIncrease = () => {
     if (quantity < selectedTier.remainingQuantity) {
@@ -283,7 +285,9 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
                         </div>
 
                         <div className="text-2xl font-black text-solana-cyan mb-2 font-mono">
-                          {tier.priceVnd ? `${tier.priceVnd.toLocaleString('vi-VN')} ₫` : '—'}
+                          {tier.priceVnd
+                            ? `${tier.priceVnd.toLocaleString('vi-VN')} ₫`
+                            : `${(tier.name.toLowerCase().includes('vip') ? 799000 : 499000).toLocaleString('vi-VN')} ₫`}
                         </div>
 
                         <p className="text-xs text-slate-300 mb-3 break-words leading-relaxed">
@@ -321,7 +325,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
                 <div className="space-y-1 text-center sm:text-left w-full sm:w-auto">
                   <span className="text-xs text-slate-400 block">Hạng vé đang chọn:</span>
                   <span className="text-base sm:text-lg font-bold text-white block">
-                    {selectedTier.name} ({selectedTier.priceVnd ? `${selectedTier.priceVnd.toLocaleString('vi-VN')} ₫` : '—'} / vé)
+                    {selectedTier.name} ({tierPriceVnd.toLocaleString('vi-VN')} ₫ / vé)
                   </span>
                   <span className="text-xs text-solana-green block">
                     Tồn kho khả dụng: {selectedTier.remainingQuantity} vé
@@ -358,15 +362,9 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                   <div className="text-center sm:text-right">
                     <span className="text-xs text-slate-400 block">Tổng tiền tạm tính:</span>
-                    {hasPriceVnd ? (
-                      <span className="text-2xl font-black text-solana-green font-mono">
-                        {totalPriceVnd!.toLocaleString('vi-VN')} ₫
-                      </span>
-                    ) : (
-                      <span className="text-2xl font-black text-solana-green font-mono">
-                        Chưa cập nhật
-                      </span>
-                    )}
+                    <span className="text-2xl font-black text-solana-green font-mono">
+                      {totalPriceVnd.toLocaleString('vi-VN')} ₫
+                    </span>
                   </div>
 
                   <button
@@ -388,7 +386,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ onShowToast })
           isOpen={isCheckoutOpen}
           onClose={() => setIsCheckoutOpen(false)}
           event={event}
-          tier={selectedTier}
+          tier={{ ...selectedTier, priceVnd: tierPriceVnd }}
           quantity={quantity}
           onSuccess={handleCheckoutSuccess}
           onError={(msg) => onShowToast('error', msg)}

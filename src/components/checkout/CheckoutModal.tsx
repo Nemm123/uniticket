@@ -3,6 +3,8 @@ import { X, Ticket, Sparkles, ShieldCheck, User, Mail, Minus, Plus } from 'lucid
 import { EventItem, TicketTier, PurchasedTicket } from '../../types';
 import { createOrder, demoPayOrder, type OrderSummary } from '../../services/ordersApi';
 import { listGuestTicketsApi } from '../../services/ticketsApi';
+import { isApiEventId } from '../../services/eventsApi';
+import { savePurchaseAtomically } from '../../utils/storage';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -39,7 +41,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   if (!isOpen) return null;
 
-  const unitPriceVnd = tier.priceVnd ?? 0;
+  const unitPriceVnd = typeof tier.priceVnd === 'number' && tier.priceVnd > 0
+    ? tier.priceVnd
+    : (tier.name.toLowerCase().includes('vip') ? 799000 : 499000);
   const subtotalVnd = unitPriceVnd * selectedQuantity;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,6 +51,43 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     if (reservation) {
       setIsSubmitting(true);
+      if (!isApiEventId(event.id)) {
+        const mockTickets: PurchasedTicket[] = [];
+        for (let i = 0; i < selectedQuantity; i++) {
+          const tCode = `UTD-${reservation.orderCode.slice(3)}-${i + 1}`;
+          mockTickets.push({
+            id: `TKT-${Date.now()}-${i + 1}`,
+            orderId: reservation.id,
+            eventId: event.id,
+            eventTitle: event.title,
+            eventBanner: event.bannerImage,
+            venue: event.venue,
+            city: event.city,
+            date: event.date,
+            time: event.time,
+            tierId: tier.id,
+            tierName: tier.name,
+            seat: `GENERAL-${i + 1}`,
+            priceSol: tier.priceSol,
+            priceVnd: unitPriceVnd,
+            ticketCode: tCode,
+            customerName: customerName.trim(),
+            customerEmail: customerEmail.trim(),
+            customerWallet: 'Demo Attendee',
+            purchasedAt: new Date().toISOString(),
+            purchaseDate: new Date().toISOString(),
+            status: 'valid',
+            isCheckedIn: false,
+            qrPayload: JSON.stringify({ version: 'v1', token: tCode }),
+          });
+        }
+        savePurchaseAtomically(event.id, tier.id, selectedQuantity, mockTickets);
+        setIsSubmitting(false);
+        onClose();
+        onSuccess(mockTickets);
+        return;
+      }
+
       try {
         const completed = await demoPayOrder(reservation.id, guestAccessToken || undefined);
         let orderTickets: PurchasedTicket[] = [];
@@ -61,6 +102,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           localStorage.setItem('guest_access_token', guestAccessToken);
         }
         setIsSubmitting(false);
+        onClose();
         onSuccess(orderTickets);
         return;
       } catch (error) {
@@ -94,6 +136,38 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     setIsSubmitting(true);
 
+    if (!isApiEventId(event.id)) {
+      const demoOrder: OrderSummary = {
+        id: `DEMO-${Date.now()}`,
+        orderCode: `UT-DEMO-${Date.now().toString(36).toUpperCase()}`,
+        eventId: event.id,
+        customerName: trimmedName,
+        customerEmail: trimmedEmail,
+        status: 'PAYMENT_PENDING',
+        currency: 'VND',
+        subtotalVnd,
+        serviceFeeVnd: 20000,
+        totalVnd: subtotalVnd + 20000,
+        paymentMethod: 'DEMO_PAYMENT',
+        paymentStatus: 'PENDING',
+        paymentProviderReference: null,
+        paymentVerifiedAt: null,
+        expiresAt: new Date(Date.now() + 900000).toISOString(),
+        createdAt: new Date().toISOString(),
+        items: [{
+          id: `item-${Date.now()}`,
+          tierId: tier.id,
+          tierName: tier.name,
+          quantity: selectedQuantity,
+          unitPriceVnd,
+          totalPriceVnd: subtotalVnd,
+        }],
+      };
+      setReservation(demoOrder);
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       const created = await createOrder(event.id, tier.id, selectedQuantity, trimmedName, trimmedEmail);
       if (created.guestAccessToken) {
@@ -103,9 +177,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setReservation(created);
       setIsSubmitting(false);
       return;
-    } catch {
+    } catch (error) {
       setIsSubmitting(false);
-      onError('Đã xảy ra sự cố khi tạo đơn hàng.');
+      onError(error instanceof Error ? error.message : 'Đã xảy ra sự cố khi tạo đơn hàng.');
     }
   };
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 import { WalletModal } from './components/common/WalletModal';
@@ -236,6 +236,10 @@ export function App() {
     setToasts((current) => [...current, { id: `${Date.now()}-${Math.random()}`, type, message }]);
   };
 
+  const handleCloseToast = useCallback((id: string) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
+
   const resetWalletSession = () => {
     const previousSession = clearWalletSession();
     if (previousSession) void logoutWalletSession(previousSession.token).catch(() => undefined);
@@ -303,7 +307,6 @@ export function App() {
         currentPage={currentPage}
         onNavigate={(p) => handleNavigate(p)}
         onOpenWalletModal={() => setIsWalletModalOpen(true)}
-        onOpenRoleSelection={() => showToast('info', 'Role is assigned by an authenticated administrator.')}
         currentRole={currentRole}
         walletAddress={walletAddress}
       />
@@ -679,7 +682,7 @@ export function App() {
         {currentPage === 'access-denied' && (
           <AccessDenied
             currentRole={currentRole}
-            onSwitchRole={() => showToast('info', 'Role is assigned by an authenticated administrator.')}
+            onConnectWallet={() => setIsWalletModalOpen(true)}
             onNavigate={handleNavigate}
           />
         )}
@@ -808,7 +811,7 @@ export function App() {
 
       <ToastContainer
         toasts={toasts}
-        onClose={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))}
+        onClose={handleCloseToast}
       />
 
       {/* Nút Back to Top nổi ở góc phải dưới */}
