@@ -14,23 +14,32 @@ import {
   ShieldCheck,
   Eye,
   LayoutDashboard,
-  Search
+  Search,
+  Coins,
+  LogOut,
+  ExternalLink,
+  Loader2
 } from 'lucide-react';
 import { UserRole } from '../../types';
 import { ViewMode } from '../../utils/viewMode';
 import { PhantomLogo } from '../common/PhantomLogo';
 import { LanguageSwitcher } from '../common/LanguageSwitcher';
 import { useTranslation } from '../../i18n';
+import { formatSolBalance, SOLANA_DEVNET_FAUCET_URL } from '../../services/solanaClient';
 
 interface NavbarProps {
   currentPage: string;
   onNavigate: (page: string) => void;
   onOpenWalletModal: () => void;
+  onConnectWallet?: () => void;
+  onDisconnectWallet?: () => void;
   onOpenSearch?: () => void;
   authRole: UserRole | null;
   viewMode: ViewMode;
   onToggleViewMode: () => void;
   walletAddress: string | null;
+  solBalance?: number | null;
+  isConnectingWallet?: boolean;
 }
 
 const shortAddress = (address: string) => `${address.slice(0, 4)}...${address.slice(-4)}`;
@@ -39,11 +48,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentPage,
   onNavigate,
   onOpenWalletModal,
+  onConnectWallet,
+  onDisconnectWallet,
   onOpenSearch,
   authRole,
   viewMode,
   onToggleViewMode,
   walletAddress,
+  solBalance,
+  isConnectingWallet,
 }) => {
   const { t } = useTranslation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -172,17 +185,85 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={() => {
-              setMobileMenuOpen(false);
-              onOpenWalletModal();
-            }}
-            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-solana-purple via-neon-pink to-solana-cyan py-3.5 text-base font-bold text-white shadow-xl shadow-purple-950/60 transition-all active:scale-95"
-          >
-            <PhantomLogo className="h-5 w-5" />
-            <span>{walletAddress ? shortAddress(walletAddress) : t('nav.connectWallet')}</span>
-          </button>
+          {walletAddress ? (
+            <div className="rounded-xl border border-solana-purple/40 bg-[#120B30] p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <PhantomLogo className="h-5 w-5" />
+                  <span className="font-mono text-sm font-bold text-white">{shortAddress(walletAddress)}</span>
+                </div>
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-solana-purple/20 border border-solana-purple/40 text-[10px] font-semibold text-solana-cyan">
+                  <span className="w-1.5 h-1.5 rounded-full bg-solana-green animate-pulse" />
+                  <span>Solana Devnet</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-xs border-t border-white/5 pt-2">
+                <span className="text-slate-400 flex items-center gap-1">
+                  <Coins className="w-3.5 h-3.5 text-solana-cyan" />
+                  <span>Số dư SOL Devnet:</span>
+                </span>
+                <span className="font-mono font-bold text-white">{formatSolBalance(solBalance)}</span>
+              </div>
+
+              {typeof solBalance === 'number' && solBalance < 0.01 && (
+                <a
+                  href={SOLANA_DEVNET_FAUCET_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-1.5 w-full py-2 px-3 rounded-lg bg-amber-500/20 border border-amber-500/40 text-xs font-bold text-amber-300 hover:bg-amber-500/30 transition-colors animate-pulse"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Nhận SOL test (Faucet)</span>
+                </a>
+              )}
+
+              <div className="flex gap-2 pt-1 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onOpenWalletModal();
+                  }}
+                  className="flex-1 py-2.5 rounded-lg border border-white/10 text-xs font-semibold text-slate-300 hover:bg-white/5 transition-colors"
+                >
+                  {t('walletModal.title')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onDisconnectWallet?.();
+                  }}
+                  className="flex-1 py-2.5 rounded-lg border border-red-500/30 bg-red-500/10 text-xs font-bold text-red-400 hover:bg-red-500/20 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>{t('walletModal.disconnect')}</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                if (onConnectWallet) {
+                  onConnectWallet();
+                } else {
+                  onOpenWalletModal();
+                }
+              }}
+              disabled={isConnectingWallet}
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-solana-purple via-neon-pink to-solana-cyan py-3.5 text-base font-bold text-white shadow-xl shadow-purple-950/60 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-wait"
+            >
+              {isConnectingWallet ? (
+                <Loader2 className="h-5 w-5 animate-spin text-white" />
+              ) : (
+                <PhantomLogo className="h-5 w-5" />
+              )}
+              <span>{isConnectingWallet ? t('walletModal.connecting') : t('nav.connectWallet')}</span>
+            </button>
+          )}
         </div>
       </div>
     </div>,
@@ -286,19 +367,86 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             )}
 
-            <button
-              onClick={onOpenWalletModal}
-              className="relative group overflow-hidden px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm text-white transition-all duration-300 shadow-lg shadow-purple-900/30 hover:shadow-solana-purple/50 active:scale-95"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-solana-purple via-neon-pink to-solana-green opacity-90 group-hover:opacity-100 transition-opacity" />
-              <div className="absolute inset-[1px] bg-[#120B30] rounded-[11px] group-hover:bg-opacity-0 transition-all duration-300" />
-              <div className="relative flex items-center gap-2">
-                <PhantomLogo className="h-4 w-4" />
-                <span className="max-w-[150px] truncate tracking-wide">
-                  {walletAddress ? shortAddress(walletAddress) : t('nav.connectWallet')}
-                </span>
+            {/* Network Badge: Solana Devnet */}
+            <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-solana-purple/20 border border-solana-purple/50 text-[11px] font-semibold text-solana-cyan shadow-sm shadow-purple-900/30">
+              <span className="w-2 h-2 rounded-full bg-solana-green animate-pulse" />
+              <span>Solana Devnet</span>
+            </div>
+
+            {walletAddress ? (
+              <div className="flex items-center gap-2">
+                {/* SOL Balance Badge */}
+                <div
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#120B30] border border-white/10 text-xs font-mono font-medium text-slate-200 shadow-inner"
+                  title="Số dư SOL ví trên Solana Devnet"
+                >
+                  <Coins className="w-3.5 h-3.5 text-solana-cyan" />
+                  <span>{formatSolBalance(solBalance)}</span>
+                </div>
+
+                {/* Faucet Link if SOL < 0.01 */}
+                {typeof solBalance === 'number' && solBalance < 0.01 && (
+                  <a
+                    href={SOLANA_DEVNET_FAUCET_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Số dư Devnet thấp (< 0.01 SOL). Click để nhận SOL test miễn phí"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/50 text-[11px] font-bold text-amber-300 hover:bg-amber-500/30 transition-all shadow-sm active:scale-95 animate-pulse"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    <span>Nhận SOL test (Faucet)</span>
+                  </a>
+                )}
+
+                {/* Connected Wallet Address Button */}
+                <button
+                  type="button"
+                  onClick={onOpenWalletModal}
+                  title={`Ví: ${walletAddress} (Click để mở chi tiết)`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-solana-purple/40 bg-[#120B30] hover:bg-white/10 text-xs font-mono font-bold text-white transition-all shadow-md active:scale-95"
+                >
+                  <PhantomLogo className="h-4 w-4" />
+                  <span>{shortAddress(walletAddress)}</span>
+                </button>
+
+                {/* Disconnect Button */}
+                <button
+                  type="button"
+                  onClick={onDisconnectWallet}
+                  title="Ngắt kết nối ví Phantom"
+                  aria-label={t('walletModal.disconnect')}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-all active:scale-95"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
               </div>
-            </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onConnectWallet) {
+                    onConnectWallet();
+                  } else {
+                    onOpenWalletModal();
+                  }
+                }}
+                disabled={isConnectingWallet}
+                className="relative group overflow-hidden px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm text-white transition-all duration-300 shadow-lg shadow-purple-900/30 hover:shadow-solana-purple/50 active:scale-95 disabled:opacity-75 disabled:cursor-wait"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-solana-purple via-neon-pink to-solana-green opacity-90 group-hover:opacity-100 transition-opacity" />
+                <div className="absolute inset-[1px] bg-[#120B30] rounded-[11px] group-hover:bg-opacity-0 transition-all duration-300" />
+                <div className="relative flex items-center gap-2">
+                  {isConnectingWallet ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-solana-cyan" />
+                  ) : (
+                    <PhantomLogo className="h-4 w-4" />
+                  )}
+                  <span className="max-w-[150px] truncate tracking-wide">
+                    {isConnectingWallet ? t('walletModal.connecting') : t('nav.connectWallet')}
+                  </span>
+                </div>
+              </button>
+            )}
           </div>
 
           {/* Mobile Right Actions */}
@@ -328,14 +476,44 @@ export const Navbar: React.FC<NavbarProps> = ({
                 )}
               </button>
             )}
-            <button
-              onClick={onOpenWalletModal}
-              aria-label={walletAddress ? `${t('nav.connectedWallet')} ${shortAddress(walletAddress)}` : t('nav.connectWallet')}
-              className="inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl border border-solana-purple/40 bg-solana-purple/20 px-2 text-solana-cyan active:scale-95 transition-transform"
-            >
-              <PhantomLogo className="h-5 w-5" />
-              {walletAddress && <span className="max-w-[88px] truncate text-xs font-bold text-white">{shortAddress(walletAddress)}</span>}
-            </button>
+            {walletAddress ? (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={onOpenWalletModal}
+                  aria-label={`${t('nav.connectedWallet')} ${shortAddress(walletAddress)}`}
+                  className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-solana-purple/40 bg-solana-purple/20 px-2.5 text-solana-cyan active:scale-95 transition-transform"
+                >
+                  <PhantomLogo className="h-5 w-5" />
+                  <span className="max-w-[80px] truncate text-xs font-bold text-white font-mono">{shortAddress(walletAddress)}</span>
+                </button>
+                <button
+                  onClick={onDisconnectWallet}
+                  aria-label={t('walletModal.disconnect')}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 active:scale-95"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  if (onConnectWallet) {
+                    onConnectWallet();
+                  } else {
+                    onOpenWalletModal();
+                  }
+                }}
+                disabled={isConnectingWallet}
+                aria-label={t('nav.connectWallet')}
+                className="inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl border border-solana-purple/40 bg-solana-purple/20 px-2 text-solana-cyan active:scale-95 transition-transform disabled:opacity-75"
+              >
+                {isConnectingWallet ? (
+                  <Loader2 className="h-5 w-5 animate-spin text-solana-cyan" />
+                ) : (
+                  <PhantomLogo className="h-5 w-5" />
+                )}
+              </button>
+            )}
             <button
               onClick={() => setMobileMenuOpen((isOpen) => !isOpen)}
               aria-label="Toggle Menu"

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
-import { WalletModal, getPhantomProvider, safeConnectPhantom, logPhantomDebug } from './components/common/WalletModal';
+import { WalletModal, getPhantomProvider, safeConnectPhantom, logPhantomDebug, extractWalletErrorMessage } from './components/common/WalletModal';
 import { PhantomLogo } from './components/common/PhantomLogo';
 import { CheckoutModal } from './components/checkout/CheckoutModal';
 import { ToastContainer } from './components/common/Toast';
@@ -19,6 +19,7 @@ import {
   PlusCircle, 
   ArrowUp, 
   Sparkles,
+  ExternalLink,
   X
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -27,7 +28,8 @@ import { getStoredEvents, getStoredPurchasedTickets, saveStoredEvents } from './
 import { getEvent as getEventFromApi, isApiEventId, listEvents } from './services/eventsApi';
 import { listTicketsApi, listGuestTicketsApi } from './services/ticketsApi';
 import { clearWalletSession, getWalletSession, setWalletSession, WalletSession } from './services/authSession';
-import { logoutWalletSession } from './services/authApi';
+import { logoutWalletSession, authenticatePhantomWallet } from './services/authApi';
+import { getWalletSolBalance } from './services/solanaClient';
 import { clearUserRole } from './utils/role';
 import { ViewMode, getStoredViewMode, saveStoredViewMode } from './utils/viewMode';
 import { useTranslation } from './i18n';
@@ -71,6 +73,8 @@ export function App() {
   const [selectedApiEvent, setSelectedApiEvent] = useState<EventItem | null>(null);
   const initialSession = getWalletSession();
   const [walletAddress, setWalletAddress] = useState<string | null>(initialSession?.walletAddress ?? null);
+  const [solBalance, setSolBalance] = useState<number | null>(null);
+  const [isConnectingWallet, setIsConnectingWallet] = useState<boolean>(false);
   const [authRole, setAuthRole] = useState<UserRole | null>(() => {
     if (!initialSession) return null;
     return initialSession.role === 'organizer' || initialSession.role === 'admin' ? 'organizer' : 'attendee';
@@ -92,6 +96,25 @@ export function App() {
   const [searchCategoryFilter, setSearchCategoryFilter] = useState<string | undefined>(undefined);
   const [searchCityFilter, setSearchCityFilter] = useState<string | undefined>(undefined);
   const [searchQueryFilter, setSearchQueryFilter] = useState<string>('');
+
+  const refreshSolBalance = useCallback(async (address: string) => {
+    try {
+      const balance = await getWalletSolBalance(address);
+      setSolBalance(balance);
+    } catch (err) {
+      console.warn('Failed to query SOL balance:', err);
+      setSolBalance(null);
+    }
+  }, []);
+
+  // Lắng nghe thay đổi số dư khi địa chỉ ví thay đổi
+  useEffect(() => {
+    if (walletAddress) {
+      void refreshSolBalance(walletAddress);
+    } else {
+      setSolBalance(null);
+    }
+  }, [walletAddress, refreshSolBalance]);
 
   // Keyboard shortcut Ctrl+K / Cmd+K để mở Search Modal
   useEffect(() => {
@@ -136,6 +159,8 @@ export function App() {
           addressPrefix: address.slice(0, 4),
         });
 
+        void refreshSolBalance(address);
+
         const currentSession = getWalletSession();
         if (currentSession && currentSession.walletAddress === address) {
           // Session đã tồn tại và khớp địa chỉ ví
@@ -164,7 +189,7 @@ export function App() {
       window.removeEventListener('load', checkEagerConnection);
       window.clearTimeout(timer);
     };
-  }, []);
+  }, [refreshSolBalance]);
 
   // Backend is the source of truth for events when available.
   useEffect(() => {
@@ -210,28 +235,28 @@ export function App() {
     return () => { cancelled = true; };
   }, [currentPage, selectedEventId]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const syncTickets = async () => {
-      try {
-        let remoteTickets: PurchasedTicket[] = [];
-        if (walletAddress) {
-          remoteTickets = await listTicketsApi({ wallet: walletAddress });
-        } else if (guestAccessToken) {
-          remoteTickets = await listGuestTicketsApi('', guestAccessToken);
-        }
-        if (cancelled) return;
-        setPurchasedTickets(remoteTickets);
-      } catch (err) {
-        if (!cancelled) setPurchasedTickets([]);
-        console.warn('[UniTicket App] Could not load tickets from API:', err);
+  const fetchMyTickets = useCallback(async () => {
+    try {
+      let remoteTickets: PurchasedTicket[] = [];
+      const currentToken = localStorage.getItem('guest_access_token') || guestAccessToken;
+      if (walletAddress) {
+        remoteTickets = await listTicketsApi({ wallet: walletAddress });
+      } else if (currentToken) {
+        remoteTickets = await listGuestTicketsApi('', currentToken);
       }
-    };
-    if (currentPage === 'my-tickets' || walletAddress || guestAccessToken) {
-      void syncTickets();
+      setPurchasedTickets(remoteTickets);
+      return remoteTickets;
+    } catch (err) {
+      console.warn('[UniTicket App] Could not load tickets from API:', err);
+      return [];
     }
-    return () => { cancelled = true; };
-  }, [currentPage, walletAddress, guestAccessToken]);
+  }, [walletAddress, guestAccessToken]);
+
+  useEffect(() => {
+    if (currentPage === 'my-tickets' || walletAddress || guestAccessToken) {
+      void fetchMyTickets();
+    }
+  }, [currentPage, walletAddress, guestAccessToken, fetchMyTickets]);
 
   // Lắng nghe cuộn trang để hiện nút Back to Top
   useEffect(() => {
@@ -310,8 +335,16 @@ export function App() {
     ? selectedApiEvent
     : events.find((e) => e.id === selectedEventId) || events[0];
 
-  const showToast = (type: ToastMessage['type'], message: string) => {
-    setToasts((current) => [...current, { id: `${Date.now()}-${Math.random()}`, type, message }]);
+  const showToast = (
+    type: ToastMessage['type'],
+    message: string,
+    actionUrl?: string,
+    actionLabel?: string
+  ) => {
+    setToasts((current) => [
+      ...current,
+      { id: `${Date.now()}-${Math.random()}`, type, message, actionUrl, actionLabel }
+    ]);
   };
 
   const handleCloseToast = useCallback((id: string) => {
@@ -353,12 +386,18 @@ export function App() {
 
   const handleWalletChange = (address: string | null) => {
     setWalletAddress(address);
-    if (!address) resetWalletSession();
+    if (address) {
+      void refreshSolBalance(address);
+    } else {
+      setSolBalance(null);
+      resetWalletSession();
+    }
   };
 
   const handleWalletAuthenticated = (session: WalletSession) => {
     setWalletSession(session);
     setWalletAddress(session.walletAddress);
+    void refreshSolBalance(session.walletAddress);
     const isOrg = session.role === 'organizer' || session.role === 'admin';
     const role: UserRole = isOrg ? 'organizer' : 'attendee';
     setAuthRole(role);
@@ -378,6 +417,92 @@ export function App() {
     }
   };
 
+  const handleConnectWalletDirect = async () => {
+    if (isConnectingWallet) return;
+    const provider = getPhantomProvider();
+    if (!provider?.isPhantom) {
+      // Nếu chưa có extension, mở modal hướng dẫn cài đặt Phantom
+      setIsWalletModalOpen(true);
+      return;
+    }
+
+    setIsConnectingWallet(true);
+    try {
+      let pubKey = provider.publicKey;
+      if (!pubKey || !provider.isConnected) {
+        const resp = await safeConnectPhantom();
+        pubKey = resp?.publicKey || provider.publicKey;
+      }
+      if (!pubKey) {
+        throw new Error('Không nhận được địa chỉ ví công khai từ Phantom.');
+      }
+      const address = pubKey.toString();
+      const session = await authenticatePhantomWallet(address, provider);
+      handleWalletAuthenticated(session);
+      await refreshSolBalance(address);
+      showToast('success', `Đã kết nối ví Phantom (${address.slice(0, 4)}...${address.slice(-4)})`);
+    } catch (error) {
+      const errorMsg = extractWalletErrorMessage(error);
+      showToast('error', errorMsg);
+    } finally {
+      setIsConnectingWallet(false);
+    }
+  };
+
+  const handleDisconnectWallet = async () => {
+    const provider = getPhantomProvider();
+    try {
+      if (provider?.isPhantom && provider.disconnect) {
+        await provider.disconnect();
+      }
+    } catch (err) {
+      console.warn('Disconnect error:', err);
+    } finally {
+      resetWalletSession();
+      setWalletAddress(null);
+      setSolBalance(null);
+      showToast('info', 'Đã ngắt kết nối ví Phantom.');
+    }
+  };
+
+  // Lắng nghe sự kiện đổi tài khoản và ngắt kết nối trực tiếp từ tiện ích Phantom
+  useEffect(() => {
+    const provider = getPhantomProvider();
+    if (!provider || !provider.on) return;
+
+    const handleAccountChange = (publicKey?: { toString: () => string } | null) => {
+      if (publicKey) {
+        const newAddress = publicKey.toString();
+        logPhantomDebug('App.tsx accountChanged', { newAddress });
+        setWalletAddress(newAddress);
+        void refreshSolBalance(newAddress);
+        const currentSession = getWalletSession();
+        if (currentSession && currentSession.walletAddress !== newAddress) {
+          clearWalletSession();
+          clearUserRole();
+          setAuthRole(null);
+          setViewMode('attendee');
+        }
+      } else {
+        void handleDisconnectWallet();
+      }
+    };
+
+    const handleDisconnect = () => {
+      void handleDisconnectWallet();
+    };
+
+    provider.on('accountChanged', handleAccountChange);
+    provider.on('disconnect', handleDisconnect);
+
+    return () => {
+      if (provider.removeListener) {
+        provider.removeListener('accountChanged', handleAccountChange);
+        provider.removeListener('disconnect', handleDisconnect);
+      }
+    };
+  }, [refreshSolBalance]);
+
   const handleCloseWalletModal = () => {
     setPendingPurchase(null);
     setIsWalletModalOpen(false);
@@ -394,16 +519,40 @@ export function App() {
     setIsCheckoutOpen(true);
   };
 
-  const handleCheckoutSuccess = (tickets: PurchasedTicket[]) => {
+  const handleCheckoutSuccess = async (tickets: PurchasedTicket[], txSignature?: string) => {
     const storedToken = localStorage.getItem('guest_access_token') ?? '';
     if (storedToken) setGuestAccessToken(storedToken);
-    setPurchasedTickets(tickets);
+
+    // Tự động fetch lại danh sách vé trong trang "Vé của tôi" (My Tickets)
+    await fetchMyTickets();
+    setPurchasedTickets((prev) => (prev.length > 0 ? prev : tickets));
     setEvents(getStoredEvents());
+
+    const explorerUrl = txSignature
+      ? `https://explorer.solana.com/tx/${txSignature}?cluster=devnet`
+      : undefined;
+
+    showToast(
+      'success',
+      txSignature
+        ? 'Giao dịch mua vé thành công! Đã xác nhận trên Solana Devnet.'
+        : t('toasts.purchaseSuccessCount', { count: tickets.length }),
+      explorerUrl,
+      explorerUrl ? 'Xem giao dịch trên Solana Explorer' : undefined
+    );
+
+    if (walletAddress) {
+      void refreshSolBalance(walletAddress);
+    }
+  };
+
+  const handleCloseCheckout = (navigateToMyTickets?: boolean) => {
     setIsCheckoutOpen(false);
     setCheckoutEvent(null);
     setCheckoutTier(null);
-    showToast('success', t('toasts.purchaseSuccessCount', { count: tickets.length }));
-    handleNavigate('my-tickets');
+    if (navigateToMyTickets) {
+      handleNavigate('my-tickets');
+    }
   };
 
   return (
@@ -413,11 +562,15 @@ export function App() {
         currentPage={currentPage}
         onNavigate={(p) => handleNavigate(p)}
         onOpenWalletModal={() => setIsWalletModalOpen(true)}
+        onConnectWallet={handleConnectWalletDirect}
+        onDisconnectWallet={handleDisconnectWallet}
         onOpenSearch={() => setIsSearchModalOpen(true)}
         authRole={authRole}
         viewMode={viewMode}
         onToggleViewMode={handleToggleViewMode}
         walletAddress={walletAddress}
+        solBalance={solBalance}
+        isConnectingWallet={isConnectingWallet}
       />
 
       {/* Nội dung trang động */}
@@ -541,6 +694,20 @@ export function App() {
                         {ticket.isCheckedIn && ticket.checkInTime && <span className="text-[11px] text-solana-green">{t('myTickets.checkedInAt', { time: formatDate(ticket.checkInTime, { dateStyle: 'short', timeStyle: 'short' }) })}</span>}
                       </div>
                     </div>
+                    {ticket.nftTransactionSignature && (
+                      <div className="mt-3 flex items-center justify-between rounded-xl border border-solana-cyan/20 bg-solana-cyan/5 px-3 py-2 text-xs">
+                        <span className="text-slate-400">Solana Devnet:</span>
+                        <a
+                          href={`https://explorer.solana.com/tx/${ticket.nftTransactionSignature}?cluster=devnet`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 font-mono text-solana-cyan hover:underline"
+                        >
+                          <span>{ticket.nftTransactionSignature.slice(0, 8)}...{ticket.nftTransactionSignature.slice(-8)}</span>
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    )}
                     <p className="mt-4 border-t border-dashed border-white/10 pt-3 text-[11px] text-slate-400">
                       {t('myTickets.order')} {ticket.orderId} · {t('myTickets.qrDemoNotice')}
                     </p>
@@ -707,9 +874,11 @@ export function App() {
         isOpen={isWalletModalOpen}
         onClose={handleCloseWalletModal}
         walletAddress={walletAddress}
+        solBalance={solBalance}
         onWalletChange={handleWalletChange}
         onAuthenticated={handleWalletAuthenticated}
         onConnectionCancelled={() => setPendingPurchase(null)}
+        onDisconnect={handleDisconnectWallet}
       />
 
       {/* Modal Tìm kiếm toàn cục */}
@@ -729,12 +898,17 @@ export function App() {
       {checkoutEvent && checkoutTier && (
         <CheckoutModal
           isOpen={isCheckoutOpen}
-          onClose={() => setIsCheckoutOpen(false)}
+          onClose={() => handleCloseCheckout(false)}
+          onNavigateToMyTickets={() => handleCloseCheckout(true)}
           event={checkoutEvent}
           tier={checkoutTier}
           quantity={1}
+          walletAddress={walletAddress}
+          solBalance={solBalance}
           onSuccess={handleCheckoutSuccess}
           onError={(message) => showToast('error', message)}
+          onOpenWalletModal={() => setIsWalletModalOpen(true)}
+          onConnectWallet={handleConnectWalletDirect}
         />
       )}
 

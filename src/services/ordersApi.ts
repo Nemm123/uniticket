@@ -51,9 +51,10 @@ export function createOrder(eventId: string, tierId: string, quantity: number, c
   return request<OrderSummary>('/api/orders', { method: 'POST', headers: { 'Idempotency-Key': key }, body: JSON.stringify({ eventId, items: [{ tierId, quantity }], customerName, customerEmail }) });
 }
 
-export function demoPayOrder(orderId: string, guestAccessToken?: string): Promise<OrderSummary> {
+export function demoPayOrder(orderId: string, guestAccessToken?: string, transactionSignature?: string): Promise<OrderSummary> {
   return request<OrderSummary>(`/api/orders/${encodeURIComponent(orderId)}/demo-pay`, {
     method: 'POST',
     headers: guestAccessToken ? { 'x-order-access-token': guestAccessToken } : {},
+    body: JSON.stringify({ transactionSignature }),
   });
 }

@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, Copy, ExternalLink, ShieldCheck, X, Loader2 } from 'lucide-react';
+import { Check, Copy, ExternalLink, ShieldCheck, X, Loader2, Coins } from 'lucide-react';
 import { authenticatePhantomWallet, AuthApiError } from '../../services/authApi';
 import { WalletSession } from '../../services/authSession';
 import { PhantomLogo } from './PhantomLogo';
 import { useTranslation } from '../../i18n';
+import { formatSolBalance, SOLANA_DEVNET_FAUCET_URL, getWalletSolBalance } from '../../services/solanaClient';
 
 interface PhantomProvider {
   isPhantom?: boolean;
@@ -27,9 +28,11 @@ interface WalletModalProps {
   isOpen: boolean;
   onClose: () => void;
   walletAddress?: string | null;
+  solBalance?: number | null;
   onWalletChange?: (address: string | null) => void;
   onAuthenticated?: (session: WalletSession) => void;
   onConnectionCancelled?: () => void;
+  onDisconnect?: () => void;
 }
 
 const shortAddress = (address: string) => `${address.slice(0, 4)}...${address.slice(-4)}`;
@@ -170,12 +173,15 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   isOpen,
   onClose,
   walletAddress: currentWalletAddress,
+  solBalance,
   onWalletChange,
   onAuthenticated,
   onConnectionCancelled,
+  onDisconnect,
 }) => {
   const { t } = useTranslation();
   const [walletAddress, setWalletAddress] = useState<string | null>(currentWalletAddress ?? null);
+  const [localBalance, setLocalBalance] = useState<number | null>(solBalance ?? null);
   const [walletError, setWalletError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
@@ -194,6 +200,17 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   useEffect(() => {
     setWalletAddress(currentWalletAddress ?? null);
   }, [currentWalletAddress]);
+
+  // Cập nhật số dư SOL khi mở modal hoặc đổi ví
+  useEffect(() => {
+    if (solBalance !== undefined && solBalance !== null) {
+      setLocalBalance(solBalance);
+    } else if (walletAddress) {
+      void getWalletSolBalance(walletAddress).then((b) => setLocalBalance(b));
+    } else {
+      setLocalBalance(null);
+    }
+  }, [solBalance, walletAddress, isOpen]);
 
   const isMobileDevice = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
@@ -362,10 +379,14 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       if (provider?.isPhantom && provider.disconnect) {
         await provider.disconnect();
       }
-      setWalletAddress(null);
-      onWalletChangeRef.current?.(null);
     } catch (error) {
-      setWalletError(extractWalletErrorMessage(error));
+      console.warn('Disconnect error in modal:', error);
+    } finally {
+      setWalletAddress(null);
+      setLocalBalance(null);
+      onWalletChangeRef.current?.(null);
+      onDisconnect?.();
+      onClose();
     }
   };
 
@@ -418,33 +439,71 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         </div>
 
         {walletAddress ? (
-          <div className="mt-5 rounded-2xl border border-solana-green/30 bg-solana-green/10 p-4">
-            <div className="flex items-center gap-3">
-              <PhantomLogo className="h-11 w-11" />
-              <div>
-                <p className="font-semibold text-white">Phantom Wallet</p>
-                <p className="text-sm font-mono text-solana-green">{shortAddress(walletAddress)}</p>
+          <div className="mt-5 space-y-3">
+            <div className="rounded-2xl border border-solana-green/30 bg-solana-green/10 p-4">
+              <div className="flex items-center gap-3">
+                <PhantomLogo className="h-11 w-11" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-white">Phantom Wallet</p>
+                    <span className="rounded-full border border-solana-green/30 px-2 py-0.5 text-[10px] font-bold text-solana-green">
+                      {t('walletModal.connectedBadge')}
+                    </span>
+                  </div>
+                  <p className="text-sm font-mono text-solana-green truncate">{shortAddress(walletAddress)}</p>
+                </div>
               </div>
-              <span className="ml-auto rounded-full border border-solana-green/30 px-2 py-1 text-[10px] font-bold text-solana-green">
-                {t('walletModal.connectedBadge')}
-              </span>
-            </div>
-            <div className="mt-4 flex gap-3">
-              <button
-                type="button"
-                onClick={() => void copyAddress()}
-                className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-white/15 px-3 text-xs font-semibold text-slate-200 hover:bg-white/5 active:scale-95 transition-all"
-              >
-                {isCopied ? <Check className="h-4 w-4 text-solana-green" /> : <Copy className="h-4 w-4" />}
-                {isCopied ? t('common.copied') : t('walletModal.copyAddress')}
-              </button>
-              <button
-                type="button"
-                onClick={() => void disconnectPhantom()}
-                className="min-h-11 flex-1 rounded-xl border border-neon-pink/40 px-3 text-xs font-bold text-neon-pink hover:bg-neon-pink/10 active:scale-95 transition-all"
-              >
-                {t('walletModal.disconnect')}
-              </button>
+
+              {/* Devnet Network & SOL Balance */}
+              <div className="mt-3.5 pt-3 border-t border-white/10 flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 text-slate-300">
+                  <span className="w-2 h-2 rounded-full bg-solana-green animate-pulse" />
+                  <span className="font-semibold text-solana-cyan">Solana Devnet</span>
+                </span>
+                <span className="flex items-center gap-1.5 font-mono font-bold text-white bg-black/40 px-2.5 py-1 rounded-lg border border-white/10">
+                  <Coins className="w-3.5 h-3.5 text-solana-cyan" />
+                  <span>{formatSolBalance(localBalance)}</span>
+                </span>
+              </div>
+
+              {/* Low Balance & Faucet Prompt */}
+              {localBalance !== null && localBalance < 0.01 && (
+                <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200 space-y-1.5 animate-pulse">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-amber-300">Số dư SOL Devnet thấp (&lt; 0.01 SOL)</span>
+                    <a
+                      href={SOLANA_DEVNET_FAUCET_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-lg bg-amber-400 px-2.5 py-1 text-[11px] font-bold text-black hover:bg-amber-300 transition-colors shadow-sm"
+                    >
+                      <span>Nhận SOL test (Faucet)</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                    Bạn cần một lượng nhỏ SOL Devnet để trả phí mạng (gas fee) khi mua vé NFT.
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-4 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => void copyAddress()}
+                  className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-white/15 px-3 text-xs font-semibold text-slate-200 hover:bg-white/5 active:scale-95 transition-all"
+                >
+                  {isCopied ? <Check className="h-4 w-4 text-solana-green" /> : <Copy className="h-4 w-4" />}
+                  {isCopied ? t('common.copied') : t('walletModal.copyAddress')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void disconnectPhantom()}
+                  className="min-h-11 flex-1 rounded-xl border border-neon-pink/40 px-3 text-xs font-bold text-neon-pink hover:bg-neon-pink/10 active:scale-95 transition-all"
+                >
+                  {t('walletModal.disconnect')}
+                </button>
+              </div>
             </div>
           </div>
         ) : (

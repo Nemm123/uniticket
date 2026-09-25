@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info, X, ExternalLink } from 'lucide-react';
 import { ToastMessage } from '../../types';
 
 interface ToastProps {
@@ -22,11 +22,13 @@ const ToastItem: React.FC<{ toast: ToastMessage; onClose: (id: string) => void }
   onClose,
 }) => {
   useEffect(() => {
+    // Cho phép hiển thị lâu hơn một chút nếu có action link
+    const duration = toast.actionUrl ? 8000 : 4500;
     const timer = setTimeout(() => {
       onClose(toast.id);
-    }, 4500);
+    }, duration);
     return () => clearTimeout(timer);
-  }, [toast.id, onClose]);
+  }, [toast.id, toast.actionUrl, onClose]);
 
   const config = {
     success: {
@@ -63,6 +65,17 @@ const ToastItem: React.FC<{ toast: ToastMessage; onClose: (id: string) => void }
         <p className="text-xs sm:text-sm text-slate-100 font-medium break-words leading-relaxed">
           {toast.message}
         </p>
+        {toast.actionUrl && (
+          <a
+            href={toast.actionUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-solana-cyan/15 hover:bg-solana-cyan/25 border border-solana-cyan/40 px-2.5 py-1 text-xs font-bold text-solana-cyan transition-colors"
+          >
+            <span>{toast.actionLabel || 'Xem trên Solana Explorer'}</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        )}
       </div>
       <button
         onClick={() => onClose(toast.id)}

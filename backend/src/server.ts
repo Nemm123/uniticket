@@ -16,6 +16,7 @@ async function start() {
 
   server = app.listen(env.port, () => {
     console.log(`[UniTicket API] Listening on http://localhost:${env.port}`);
+    console.log(`[UniTicket API] Solana Devnet route: http://localhost:${env.port}/api/solana/health`);
   });
 }
 

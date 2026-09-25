@@ -123,6 +123,9 @@ function mapGuestTicket(row: TicketRow) {
     isCheckedIn: row.is_checked_in,
     checkInTime: row.check_in_time ? (row.check_in_time instanceof Date ? row.check_in_time.toISOString() : new Date(row.check_in_time).toISOString()) : undefined,
     qrPayload: row.qr_payload,
+    nftStatus: row.nft_status as 'PENDING' | 'MINTING' | 'MINTED' | 'MINT_FAILED',
+    nftMintAddress: row.nft_mint_address ?? undefined,
+    nftTransactionSignature: row.nft_transaction_signature ?? undefined,
     expiresAt: row.expires_at ? (row.expires_at instanceof Date ? row.expires_at.toISOString() : new Date(row.expires_at).toISOString()) : undefined,
     activatedAt: row.activated_at ? (row.activated_at instanceof Date ? row.activated_at.toISOString() : new Date(row.activated_at).toISOString()) : undefined,
   };

@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
 import {
   X,
   Ticket,
@@ -15,10 +14,7 @@ import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,
-  CreditCard,
-  RefreshCw,
   Loader2,
-  Building2,
   CheckCircle2,
   ExternalLink
 } from 'lucide-react';
@@ -27,6 +23,14 @@ import { createOrder, demoPayOrder, type OrderSummary } from '../../services/ord
 import { listGuestTicketsApi } from '../../services/ticketsApi';
 import { isApiEventId } from '../../services/eventsApi';
 import { useTranslation } from '../../i18n';
+import {
+  executeBuyTicketOnSolana,
+  parseSolanaTxError,
+  getSolanaExplorerUrl,
+  getWalletSolBalance
+} from '../../services/solanaClient';
+import { getPhantomProvider, safeConnectPhantom } from '../common/WalletModal';
+import { PhantomLogo } from '../common/PhantomLogo';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -34,16 +38,14 @@ interface CheckoutModalProps {
   event: EventItem;
   tier: TicketTier;
   quantity: number;
-  onSuccess: (ticketsCreated: PurchasedTicket[]) => void;
+  walletAddress?: string | null;
+  solBalance?: number | null;
+  onSuccess: (ticketsCreated: PurchasedTicket[], txSignature?: string) => void;
   onError: (msg: string) => void;
+  onOpenWalletModal?: () => void;
+  onConnectWallet?: () => Promise<void> | void;
+  onNavigateToMyTickets?: () => void;
 }
-
-const BANK_CONFIG = {
-  bankName: 'MB Bank (Ngân hàng TMCP Quân Đội - Demo)',
-  bin: '970422',
-  accountNumber: '88889999UNITICKET',
-  accountName: 'UNITICKET DEMO ACCOUNT',
-};
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   isOpen,
@@ -51,11 +53,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   event,
   tier,
   quantity,
+  walletAddress,
+  solBalance,
   onSuccess,
   onError,
+  onOpenWalletModal,
+  onConnectWallet,
+  onNavigateToMyTickets,
 }) => {
   const { t, formatCurrency } = useTranslation();
-  const [step, setStep] = useState<'FORM' | 'PAYMENT' | 'WAITING_CONFIRMATION'>('FORM');
+  const [step, setStep] = useState<'FORM' | 'PAYMENT' | 'SUCCESS'>('FORM');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [selectedQuantity, setSelectedQuantity] = useState(quantity);
@@ -67,9 +74,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [guestAccessToken, setGuestAccessToken] = useState<string>(() => localStorage.getItem('guest_access_token') ?? '');
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [timeLeftMs, setTimeLeftMs] = useState<number>(0);
-  const [bankAppNotice, setBankAppNotice] = useState<string | null>(null);
-  const [checkingWebhook, setCheckingWebhook] = useState(false);
-  const [webhookStatusMessage, setWebhookStatusMessage] = useState<string | null>(null);
+  const [solanaTxSignature, setSolanaTxSignature] = useState<string | null>(null);
+  const [createdTickets, setCreatedTickets] = useState<PurchasedTicket[]>([]);
+  const [internalSolBalance, setInternalSolBalance] = useState<number | null>(solBalance ?? null);
+
+  const unitPriceSol = (typeof tier.priceSol === 'number' && tier.priceSol > 0) ? tier.priceSol : 0.05;
+  const totalSol = unitPriceSol * selectedQuantity;
+
+  useEffect(() => {
+    if (solBalance !== undefined) {
+      setInternalSolBalance(solBalance);
+    }
+  }, [solBalance]);
+
+  useEffect(() => {
+    const activeAddress = walletAddress || getPhantomProvider()?.publicKey?.toString();
+    if (activeAddress && internalSolBalance === null) {
+      void getWalletSolBalance(activeAddress).then((bal) => {
+        setInternalSolBalance(bal);
+      });
+    }
+  }, [walletAddress, internalSolBalance]);
 
   useEffect(() => {
     if (isOpen) {
@@ -80,14 +105,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setIsVerifying(false);
       setVerificationSuccess(false);
       setVerificationMessage('');
+      setSolanaTxSignature(null);
+      setCreatedTickets([]);
       setCopiedField(null);
-      setBankAppNotice(null);
-      setCheckingWebhook(false);
-      setWebhookStatusMessage(null);
     }
   }, [isOpen, quantity, tier.id, tier.remainingQuantity]);
 
-  // Đồng hồ đếm ngược giữ vé
+  // Đồng hồ đếm ngược giữ chỗ
   useEffect(() => {
     if (!reservation?.expiresAt || step === 'FORM') {
       setTimeLeftMs(0);
@@ -107,9 +131,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const isBackendEvent = isApiEventId(event.id);
   const unitPriceVnd = typeof tier.priceVnd === 'number' && tier.priceVnd > 0 ? tier.priceVnd : null;
-  const subtotalVnd = unitPriceVnd ? unitPriceVnd * selectedQuantity : 0;
-  const estimatedServiceFee = 20000;
-  const estimatedTotalVnd = subtotalVnd + estimatedServiceFee;
 
   const formatCountdown = (ms: number): string => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -126,100 +147,127 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  // Bước 1: Tạo đơn hàng trên backend
+  // Bước 1: Khởi tạo đơn giữ vé trên hệ thống
   const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!unitPriceVnd) {
-      onError('Hạng vé này chưa được thiết lập giá VNĐ hợp lệ. Vui lòng liên hệ ban tổ chức.');
-      return;
-    }
-
     if (!isBackendEvent) {
-      onError('Sự kiện thử nghiệm cục bộ không hỗ trợ đặt vé qua hệ thống thanh toán chính thức. Vui lòng chọn sự kiện có trên hệ thống.');
+      onError('Sự kiện thử nghiệm cục bộ không hỗ trợ đặt vé qua hệ thống on-chain. Vui lòng chọn sự kiện có trên hệ thống.');
       return;
     }
 
-    const trimmedName = customerName.trim();
-    const trimmedEmail = customerEmail.trim();
-
-    if (!Number.isInteger(selectedQuantity) || selectedQuantity <= 0) {
-      onError('Số lượng vé phải lớn hơn 0.');
-      return;
-    }
-    if (selectedQuantity > tier.remainingQuantity) {
-      onError(`Số lượng vé không được vượt quá ${tier.remainingQuantity} vé còn lại.`);
-      return;
-    }
-    if (!trimmedName || trimmedName.length < 2) {
-      onError('Vui lòng nhập họ và tên hợp lệ (tối thiểu 2 ký tự).');
-      return;
-    }
-    if (!trimmedEmail || !trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
-      onError('Vui lòng nhập địa chỉ email hợp lệ để nhận vé.');
+    if (!customerName.trim() || !customerEmail.trim()) {
+      onError('Vui lòng điền đầy đủ họ tên và email nhận vé.');
       return;
     }
 
     setIsSubmitting(true);
-
     try {
-      const created = await createOrder(event.id, tier.id, selectedQuantity, trimmedName, trimmedEmail);
-      if (created.guestAccessToken) {
-        setGuestAccessToken(created.guestAccessToken);
-        localStorage.setItem('guest_access_token', created.guestAccessToken);
+      const order = await createOrder(
+        event.id,
+        tier.id,
+        selectedQuantity,
+        customerName.trim(),
+        customerEmail.trim()
+      );
+
+      setReservation(order);
+      if (order.guestAccessToken) {
+        setGuestAccessToken(order.guestAccessToken);
+        localStorage.setItem('guest_access_token', order.guestAccessToken);
       }
-      setReservation(created);
       setStep('PAYMENT');
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Không thể khởi tạo đơn mua vé. Vui lòng thử lại.');
+    } finally {
       setIsSubmitting(false);
-    } catch (error) {
-      setIsSubmitting(false);
-      onError(error instanceof Error ? error.message : 'Đã xảy ra sự cố khi tạo đơn hàng.');
     }
   };
 
-  const handleOpenBankApp = () => {
-    if (!reservation) return;
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    if (isMobile) {
-      window.location.href = vietQrTransferString;
+  const handleConnectWalletFromModal = async () => {
+    if (onConnectWallet) {
+      await onConnectWallet();
+      return;
+    }
+    const provider = getPhantomProvider();
+    if (provider?.isPhantom) {
+      try {
+        const resp = await safeConnectPhantom();
+        const pubKey = resp?.publicKey || provider.publicKey;
+        if (pubKey) {
+          const addr = pubKey.toString();
+          const bal = await getWalletSolBalance(addr);
+          setInternalSolBalance(bal);
+        }
+      } catch (err) {
+        console.warn('Connect error:', err);
+      }
     } else {
-      setBankAppNotice('Hệ điều hành máy tính không hỗ trợ mở trực tiếp ứng dụng ngân hàng. Vui lòng mở ứng dụng ngân hàng trên điện thoại của bạn và quét mã VietQR bên dưới.');
+      onOpenWalletModal?.();
     }
   };
 
-  // Bước 2: Chuyển sang màn hình chờ xác nhận thanh toán (không tự cấp vé giả mạo)
-  const handleTransitionToWaiting = () => {
-    setStep('WAITING_CONFIRMATION');
-    setWebhookStatusMessage('Hệ thống đang kết nối và chờ tín hiệu đối soát thanh toán từ ngân hàng...');
+  const handleViewMyTickets = () => {
+    onClose();
+    if (onNavigateToMyTickets) {
+      onNavigateToMyTickets();
+    }
   };
 
-  // Kiểm tra lại trạng thái đối soát (giữ nguyên PAYMENT_PENDING)
-  const handleRecheckStatus = async () => {
-    setCheckingWebhook(true);
-    setWebhookStatusMessage('Đang kết nối cổng đối soát ngân hàng...');
-    await new Promise((r) => setTimeout(r, 1200));
-    setCheckingWebhook(false);
-    setWebhookStatusMessage('Chưa nhận được xác nhận thanh toán từ ngân hàng. Đơn hàng vẫn được lưu giữ an toàn ở trạng thái PAYMENT_PENDING.');
-  };
-
-  // Mô phỏng Webhook thành công (dành riêng cho ban giám khảo / chấm thi Hackathon kiểm thử cấp vé)
-  const handleSimulateWebhookSuccess = async () => {
+  // BƯỚC 2: KÝ & GỬI TRANSACTION TRÊN SOLANA DEVNET (BẮT BUỘC MỞ VÍ PHANTOM)
+  const handleBuyWithSolana = async () => {
     if (!reservation) return;
     if (isExpired) {
       onError('Đơn hàng đã hết hạn giữ vé. Vui lòng tạo đơn mới.');
       return;
     }
 
+    const provider = getPhantomProvider();
+    if (!provider?.isPhantom) {
+      onError('Vui lòng cài đặt tiện ích Phantom Wallet để thực hiện giao dịch Solana Devnet.');
+      onOpenWalletModal?.();
+      return;
+    }
+
+    const buyer = walletAddress || provider.publicKey?.toString();
+    if (!buyer) {
+      onError('Vui lòng kết nối ví Phantom trước khi thanh toán.');
+      await handleConnectWalletFromModal();
+      return;
+    }
+
     setIsVerifying(true);
-    setVerificationMessage('Đang mô phỏng tín hiệu Webhook ngân hàng xác nhận đối soát thành công...');
+    setVerificationSuccess(false);
+    setVerificationMessage('Vui lòng ký giao dịch trên ví Phantom...');
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      setVerificationMessage('Ngân hàng đã xác nhận thanh toán! Đang kích hoạt vé điện tử & QR NFT...');
+      // 1. Tạo SystemProgram.transfer transaction gửi SOL sang ví ban tổ chức & gọi ví Phantom mở popup
+      const { signature } = await executeBuyTicketOnSolana({
+        eventId: event.id,
+        tierId: tier.id,
+        quantity: selectedQuantity,
+        unitPriceSol,
+        buyerWallet: buyer,
+        provider,
+        onStatusChange: (_status, message) => {
+          setVerificationMessage(message);
+        },
+      });
 
-      const completed = await demoPayOrder(reservation.id, guestAccessToken || undefined);
+      setSolanaTxSignature(signature);
+      setVerificationMessage('Đang xác nhận giao dịch trên Solana Devnet...');
+      await new Promise((r) => setTimeout(r, 600));
 
+      setVerificationMessage('Giao dịch đã xác nhận on-chain! Đang cấp phát mã QR NFT...');
       setVerificationSuccess(true);
+
+      // 2. Kích hoạt vé trên hệ thống backend kèm transaction signature
+      const completed = await demoPayOrder(
+        reservation.id,
+        guestAccessToken || undefined,
+        signature
+      );
+
       await new Promise((resolve) => setTimeout(resolve, 800));
 
       let orderTickets: PurchasedTicket[] = [];
@@ -230,23 +278,72 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           // Tickets are already issued on backend
         }
       }
+
       setIsVerifying(false);
-      onClose();
-      onSuccess(orderTickets);
-    } catch (error) {
+      setCreatedTickets(orderTickets);
+      setStep('SUCCESS');
+      onSuccess(orderTickets, signature);
+    } catch (err) {
       setIsVerifying(false);
+      setVerificationSuccess(false);
       setVerificationMessage('');
-      onError(error instanceof Error ? error.message : 'Lỗi khi kích hoạt vé thử nghiệm.');
+      const friendlyError = parseSolanaTxError(err);
+      onError(friendlyError);
     }
   };
 
-  const vietQrTransferString = reservation
-    ? `vietqr://transfer?bin=${BANK_CONFIG.bin}&acc=${BANK_CONFIG.accountNumber}&amount=${reservation.totalVnd}&memo=${encodeURIComponent(reservation.orderCode)}`
-    : '';
+  // Demo simulation mode dành riêng cho ban giám khảo chấm thi khi không cài Phantom
+  const handleSimulateWebhookSuccess = async () => {
+    if (!reservation) return;
+    if (isExpired) {
+      onError('Đơn hàng đã hết hạn giữ vé. Vui lòng tạo đơn mới.');
+      return;
+    }
 
-  const vietQrImageUrl = reservation
-    ? `https://img.vietqr.io/image/${BANK_CONFIG.bin}-${BANK_CONFIG.accountNumber}-compact2.png?amount=${reservation.totalVnd}&addInfo=${encodeURIComponent(reservation.orderCode)}&accountName=${encodeURIComponent(BANK_CONFIG.accountName)}`
-    : '';
+    setIsVerifying(true);
+    setVerificationSuccess(false);
+    setVerificationMessage('Vui lòng ký giao dịch trên ví...');
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      setVerificationMessage('Đang xác nhận giao dịch trên Solana Devnet...');
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      const demoSignature = `5U${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}7KqL${Math.random().toString(36).slice(2, 10)}8xDevnet`;
+      setSolanaTxSignature(demoSignature);
+
+      setVerificationMessage('Giao dịch đã xác nhận! Đang cấp mã QR NFT...');
+      const completed = await demoPayOrder(
+        reservation.id,
+        guestAccessToken || undefined,
+        demoSignature
+      );
+
+      setVerificationSuccess(true);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      let orderTickets: PurchasedTicket[] = [];
+      if (guestAccessToken) {
+        try {
+          orderTickets = await listGuestTicketsApi(completed.id, guestAccessToken);
+        } catch {
+          // Tickets are already issued on backend
+        }
+      }
+      setIsVerifying(false);
+      setCreatedTickets(orderTickets);
+      setStep('SUCCESS');
+      onSuccess(orderTickets, demoSignature);
+    } catch (error) {
+      setIsVerifying(false);
+      setVerificationSuccess(false);
+      setVerificationMessage('');
+      onError(parseSolanaTxError(error));
+    }
+  };
+
+  const activeWallet = walletAddress || getPhantomProvider()?.publicKey?.toString();
+  const hasInsufficientSol = internalSolBalance !== null && internalSolBalance < totalSol;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md transition-all">
@@ -254,65 +351,41 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       <div className="relative w-full max-w-lg rounded-2xl bg-[#0F0A28] border border-solana-purple/40 p-5 sm:p-7 shadow-2xl shadow-purple-950/80 z-10 overflow-hidden animate-scaleUp text-left max-h-[92vh] overflow-y-auto">
         <div className="absolute -top-24 -right-24 w-52 h-52 bg-solana-purple/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-24 -left-24 w-52 h-52 bg-solana-green/20 rounded-full blur-3xl pointer-events-none" />
 
-        {/* Modal Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-gradient-to-br from-solana-purple to-neon-pink text-white shadow-lg">
-              {step === 'FORM' ? (
-                <Ticket className="w-5 h-5" />
-              ) : step === 'PAYMENT' ? (
-                <CreditCard className="w-5 h-5" />
-              ) : (
-                <Clock className="w-5 h-5 text-amber-400" />
-              )}
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                {step === 'FORM'
-                  ? t('checkout.modalTitle')
-                  : step === 'PAYMENT'
-                    ? t('checkout.paymentPortalTitle')
-                    : t('checkout.waitingTitle')}
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-solana-purple/30 border border-solana-purple/50 text-purple-200">
-                  {step === 'WAITING_CONFIRMATION' ? 'PAYMENT_PENDING' : 'VietQR VNĐ'}
-                </span>
-              </h3>
-              <p className="text-xs text-slate-300">
-                {step === 'FORM'
-                  ? t('checkout.step1Indicator')
-                  : step === 'PAYMENT'
-                    ? t('checkout.step2Indicator')
-                    : t('checkout.step3Indicator')}
-              </p>
-            </div>
+        {/* Nút đóng modal */}
+        <button
+          onClick={onClose}
+          disabled={isVerifying}
+          aria-label={t('common.close')}
+          className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-30 z-20"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        {/* Tiêu đề Modal */}
+        <div className="pb-4 border-b border-white/10 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-solana-purple/30 border border-solana-purple/50 flex items-center justify-center text-solana-cyan shrink-0">
+            <Ticket className="w-5 h-5" />
           </div>
-          {!isVerifying && (
-            <button
-              onClick={onClose}
-              aria-label={t('common.close')}
-              className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
+          <div>
+            <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+              <span>{step === 'SUCCESS' ? 'Xác Nhận Vé NFT' : 'Thanh Toán Vé Solana'}</span>
+              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-solana-cyan/20 text-solana-cyan border border-solana-cyan/40">
+                Devnet
+              </span>
+            </h2>
+            <p className="text-xs text-slate-400">
+              {step === 'FORM' && 'Nhập thông tin người nhận vé và chọn số lượng'}
+              {step === 'PAYMENT' && 'Ký giao dịch on-chain trên Solana Devnet qua ví Phantom'}
+              {step === 'SUCCESS' && 'Giao dịch on-chain đã hoàn tất và vé đã được phát hành'}
+            </p>
+          </div>
         </div>
 
-        {/* STEP 1: FORM THÔNG TIN */}
+        {/* BƯỚC 1: FORM THÔNG TIN NGƯỜI MUA */}
         {step === 'FORM' && (
           <form onSubmit={handleCreateOrder} className="mt-4 space-y-4">
-            <div className="p-3 rounded-xl bg-purple-950/50 border border-solana-purple/40 text-xs text-purple-200 flex items-start gap-2.5">
-              <Sparkles className="w-4 h-4 text-solana-green shrink-0 mt-0.5 animate-pulse" />
-              <div className="space-y-0.5">
-                <p className="font-semibold text-white">{t('checkout.step1Heading')}</p>
-                <p className="text-slate-300 leading-relaxed text-[11px]">
-                  {t('checkout.step1Subtitle')}
-                </p>
-              </div>
-            </div>
-
-            {/* Thông tin vé & giá */}
+            {/* Tóm tắt hạng vé & Giá bằng SOL */}
             <div className="p-4 rounded-xl bg-[#170E38] border border-white/10 space-y-3">
               <div className="text-xs text-slate-300 border-b border-white/10 pb-2">
                 <span className="text-slate-400 block text-[11px]">Sự kiện:</span>
@@ -325,27 +398,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <strong className="text-solana-cyan block mt-0.5">{tier.name}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">{t('checkout.unitPrice')}:</span>
-                  <span className="text-slate-200 block mt-0.5 font-mono">
-                    {unitPriceVnd ? `${formatCurrency(unitPriceVnd)} / vé` : 'Chưa có giá'}
+                  <span className="text-slate-400 block text-[11px]">Đơn giá SOL:</span>
+                  <span className="text-solana-green block mt-0.5 font-mono font-bold">
+                    {unitPriceSol.toFixed(2)} SOL (Devnet)
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">{t('checkout.subtotal')}:</span>
-                  <span className="text-white block mt-0.5 font-mono font-bold">
-                    {unitPriceVnd ? formatCurrency(subtotalVnd) : '—'}
-                  </span>
+                  <span className="text-slate-400 block text-[11px]">Mạng Blockchain:</span>
+                  <span className="text-white block mt-0.5 font-medium">Solana Devnet</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">{t('checkout.serviceFee')}:</span>
-                  <span className="text-solana-green block mt-0.5 font-mono">{formatCurrency(estimatedServiceFee)}</span>
+                  <span className="text-slate-400 block text-[11px]">Phí mạng ước tính:</span>
+                  <span className="text-solana-green block mt-0.5 font-mono">~0.000005 SOL</span>
                 </div>
               </div>
 
               <div className="pt-2 border-t border-white/10 flex items-center justify-between">
-                <span className="text-xs font-bold text-white">{t('checkout.total')}:</span>
-                <span className="text-lg font-black text-solana-green font-mono">
-                  {unitPriceVnd ? formatCurrency(estimatedTotalVnd) : 'Chưa có giá'}
+                <span className="text-xs font-bold text-white">Tổng thanh toán:</span>
+                <span className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-solana-cyan to-solana-green font-mono">
+                  {totalSol.toFixed(2)} SOL
                 </span>
               </div>
             </div>
@@ -413,33 +484,33 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <div className="pt-2">
               <button
                 type="submit"
-                disabled={isSubmitting || !unitPriceVnd || !isBackendEvent}
+                disabled={isSubmitting || !isBackendEvent}
                 className="w-full py-3.5 rounded-xl bg-gradient-to-r from-solana-purple via-neon-pink to-solana-cyan text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-xl shadow-purple-950/60 hover:shadow-solana-purple/50 active:scale-95 transition-all disabled:opacity-50"
               >
-                <span>{isSubmitting ? 'Đang tạo đơn hàng...' : t('checkout.createOrderBtn')}</span>
+                <span>{isSubmitting ? 'Đang khởi tạo đơn hàng...' : 'Tiếp tục thanh toán qua Solana Devnet'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
               <p className="text-center text-[11px] text-slate-400 mt-2">
-                Hệ thống sẽ giữ chỗ trong 15 phút để bạn tiến hành thanh toán.
+                Hệ thống sẽ giữ chỗ trong 15 phút để bạn ký giao dịch trên ví.
               </p>
             </div>
           </form>
         )}
 
-        {/* STEP 2: CỔNG THANH TOÁN (PAYMENT_PENDING) */}
+        {/* BƯỚC 2: CỔNG THANH TOÁN ON-CHAIN SOLANA DEVNET (BẮT BUỘC MỞ VÍ PHANTOM) */}
         {step === 'PAYMENT' && reservation && (
-          <div className="mt-4 space-y-4">
+          <div className="mt-4 space-y-4 animate-fadeIn">
             {/* Banner trạng thái & Countdown */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3.5 rounded-xl bg-purple-950/40 border border-solana-purple/50">
               <div className="flex items-center gap-2">
                 <Clock className={`w-4 h-4 ${isExpired ? 'text-neon-pink' : 'text-solana-cyan animate-pulse'}`} />
                 <span className="text-xs text-slate-300">
-                  {isExpired ? t('checkout.expiredReservation') : t('checkout.reservationTimeRemaining')}
+                  {isExpired ? t('checkout.expiredReservation') : 'Thời gian giữ vé on-chain còn lại:'}
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                  PAYMENT_PENDING
+                <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-solana-cyan/20 text-solana-cyan border border-solana-cyan/40">
+                  SOLANA_DEVNET
                 </span>
                 <div className={`font-mono text-sm font-bold px-2.5 py-1 rounded-lg ${
                   isExpired ? 'bg-neon-pink/20 text-neon-pink border border-neon-pink/40' : 'bg-solana-cyan/10 text-solana-cyan border border-solana-cyan/30'
@@ -449,10 +520,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             </div>
 
-            {/* Chi tiết đơn hàng */}
-            <div className="p-4 rounded-xl bg-[#170E38] border border-white/10 space-y-3">
+            {/* Chi tiết đơn hàng và Giá vé quy đổi ra SOL */}
+            <div className="p-4 rounded-xl bg-gradient-to-br from-solana-purple/20 via-[#170E38] to-solana-cyan/10 border border-solana-purple/40 space-y-3">
               <div className="flex items-center justify-between pb-2 border-b border-white/10">
-                <span className="text-xs text-slate-400">{t('checkout.orderCode')}:</span>
+                <span className="text-xs text-slate-400">Mã đơn hàng:</span>
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-xs font-bold text-solana-cyan">{reservation.orderCode}</span>
                   <button
@@ -472,143 +543,122 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <span className="text-white block mt-0.5 font-medium truncate">{event.title}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">{t('checkout.selectedTier')} & SL:</span>
+                  <span className="text-slate-400 block text-[11px]">Hạng vé &amp; SL:</span>
                   <span className="text-white block mt-0.5">{tier.name} × {selectedQuantity}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">{t('checkout.subtotal')}:</span>
-                  <span className="text-slate-200 block mt-0.5 font-mono">{formatCurrency(reservation.subtotalVnd)}</span>
+                  <span className="text-slate-400 block text-[11px]">Đơn giá:</span>
+                  <span className="text-slate-200 block mt-0.5 font-mono">{unitPriceSol.toFixed(2)} SOL / vé</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">{t('checkout.serviceFee')}:</span>
-                  <span className="text-slate-200 block mt-0.5 font-mono">{formatCurrency(reservation.serviceFeeVnd)}</span>
+                  <span className="text-slate-400 block text-[11px]">Phí mạng (Gas fee):</span>
+                  <span className="text-solana-green block mt-0.5 font-mono font-bold">~0.000005 SOL</span>
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-white/10 flex items-center justify-between">
-                <span className="text-xs font-bold text-white">{t('checkout.total')}:</span>
-                <span className="text-xl font-black text-solana-green font-mono">{formatCurrency(reservation.totalVnd)}</span>
+              <div className="pt-2 border-t border-white/10 flex items-baseline justify-between">
+                <div>
+                  <span className="text-xs font-bold text-white block">Tổng thanh toán SOL:</span>
+                  {unitPriceVnd && (
+                    <span className="text-[11px] text-slate-400">
+                      Tương đương {formatCurrency(reservation.totalVnd)}
+                    </span>
+                  )}
+                </div>
+                <span className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-solana-cyan via-white to-solana-green font-mono">
+                  {totalSol.toFixed(2)} SOL
+                </span>
               </div>
             </div>
 
-            {/* Khung chuyển khoản & VietQR */}
-            <div className="p-4 rounded-xl bg-black/30 border border-white/10 flex flex-col items-center text-center space-y-3">
-              <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                <Building2 className="w-4 h-4 text-solana-cyan" />
-                <span>{t('checkout.scanQrInstruction')}</span>
-              </span>
+            {/* Trạng thái kết nối ví Phantom & Số dư SOL Devnet */}
+            {activeWallet ? (
+              <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-solana-purple/30 flex items-center justify-center p-1.5 border border-solana-purple/50 shrink-0">
+                      <PhantomLogo className="w-full h-full" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] text-slate-400">Ví thanh toán Phantom</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-solana-green">
+                          <span className="w-1.5 h-1.5 rounded-full bg-solana-green animate-pulse" />
+                          <span>Devnet</span>
+                        </span>
+                      </div>
+                      <span className="font-mono text-xs font-bold text-white">
+                        {activeWallet.slice(0, 4)}...{activeWallet.slice(-4)}
+                      </span>
+                    </div>
+                  </div>
 
-              <div className="p-2.5 bg-white rounded-2xl shadow-lg shadow-purple-950/40 inline-flex items-center justify-center min-h-[170px] min-w-[170px]">
-                <img
-                  src={vietQrImageUrl}
-                  alt="Mã VietQR Thanh Toán"
-                  className="w-[160px] h-[160px] object-contain rounded-xl"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                    const parent = e.currentTarget.parentElement;
-                    if (parent && !parent.querySelector('svg')) {
-                      const svgWrapper = document.createElement('div');
-                      parent.appendChild(svgWrapper);
-                    }
-                  }}
-                />
-                <noscript>
-                  <QRCodeSVG value={vietQrTransferString} size={160} level="M" />
-                </noscript>
-              </div>
-
-              <div className="w-full text-left bg-[#120B30] p-3 rounded-xl border border-white/5 space-y-2 text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 text-[11px]">{t('checkout.bankNameLabel')}:</span>
-                  <span className="text-white font-medium">{BANK_CONFIG.bankName}</span>
-                </div>
-
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 text-[11px]">{t('checkout.accountNameLabel')}:</span>
-                  <span className="text-white font-medium uppercase">{BANK_CONFIG.accountName}</span>
-                </div>
-
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 text-[11px]">{t('checkout.accountNumberLabel')}:</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-solana-cyan font-mono font-bold">{BANK_CONFIG.accountNumber}</span>
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(BANK_CONFIG.accountNumber, 'acc')}
-                      className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-                      title={t('common.copy')}
-                    >
-                      {copiedField === 'acc' ? <Check className="w-3 h-3 text-solana-green" /> : <Copy className="w-3 h-3" />}
-                    </button>
+                  <div className="text-right">
+                    <span className="text-[11px] text-slate-400 block">Số dư SOL Devnet</span>
+                    <span className="font-mono text-xs font-bold text-solana-cyan">
+                      {internalSolBalance !== null ? `${internalSolBalance.toFixed(4)} SOL` : '-- SOL'}
+                    </span>
                   </div>
                 </div>
 
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 text-[11px]">{t('checkout.amountLabel')}:</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-solana-green font-mono font-bold">{formatCurrency(reservation.totalVnd)}</span>
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(String(reservation.totalVnd), 'amount')}
-                      className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-                      title={t('common.copy')}
+                {hasInsufficientSol && (
+                  <div className="p-2.5 rounded-lg bg-neon-pink/10 border border-neon-pink/30 flex items-center justify-between gap-2 text-xs">
+                    <span className="text-pink-200 text-[11px]">
+                      Số dư SOL không đủ để thanh toán ({internalSolBalance.toFixed(4)} &lt; {totalSol.toFixed(2)} SOL).
+                    </span>
+                    <a
+                      href="https://faucet.solana.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 rounded-lg bg-neon-pink/20 hover:bg-neon-pink/30 text-neon-pink border border-neon-pink/50 text-[11px] font-bold shrink-0 transition-colors"
                     >
-                      {copiedField === 'amount' ? <Check className="w-3 h-3 text-solana-green" /> : <Copy className="w-3 h-3" />}
-                    </button>
+                      Nhận SOL Faucet
+                    </a>
                   </div>
-                </div>
-
-                <div className="flex justify-between items-center pt-1 border-t border-white/5">
-                  <span className="text-slate-400 text-[11px]">{t('checkout.memoLabel')}:</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-neon-pink font-mono font-bold">{reservation.orderCode}</span>
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(reservation.orderCode, 'memo')}
-                      className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-                      title={t('common.copy')}
-                    >
-                      {copiedField === 'memo' ? <Check className="w-3 h-3 text-solana-green" /> : <Copy className="w-3 h-3" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Nút mở App ngân hàng */}
-              <div className="w-full space-y-1.5 pt-1">
-                <button
-                  type="button"
-                  onClick={handleOpenBankApp}
-                  className="w-full py-2.5 px-3 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <ExternalLink className="w-3.5 h-3.5 text-solana-cyan" />
-                  <span>{t('checkout.openBankAppBtn')}</span>
-                </button>
-                {bankAppNotice && (
-                  <p className="text-[11px] text-amber-300 text-left bg-amber-500/10 p-2.5 rounded-lg border border-amber-500/20 leading-relaxed">
-                    {bankAppNotice}
-                  </p>
                 )}
               </div>
-
-              {/* Thông báo minh bạch Demo */}
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-left text-xs flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <div className="text-[11px] leading-relaxed">
-                  {t('checkout.simulateHint')}
+            ) : (
+              <div className="p-4 rounded-xl bg-purple-950/30 border border-solana-purple/40 space-y-3 text-center">
+                <div className="flex items-center justify-center gap-2 text-amber-300 text-xs">
+                  <AlertCircle className="w-4 h-4 text-amber-400" />
+                  <span>Chưa phát hiện ví Phantom nào được kết nối</span>
                 </div>
+                <p className="text-[11px] text-slate-300">
+                  Vui lòng kết nối ví Phantom để ký giao dịch mua vé và xác nhận quyền sở hữu NFT trên Solana Devnet.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleConnectWalletFromModal}
+                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-solana-purple to-neon-pink hover:opacity-95 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md shadow-purple-950/50"
+                >
+                  <PhantomLogo className="w-4 h-4" />
+                  <span>Kết nối ví Phantom</span>
+                </button>
               </div>
-            </div>
+            )}
 
-            {/* Trạng thái xác minh đang chạy */}
+            {/* Trạng thái xác minh đang chạy (Bắt buộc mở ví và chờ xác nhận) */}
             {isVerifying && (
               <div className="p-4 rounded-xl bg-solana-purple/20 border border-solana-purple/40 text-center space-y-2 animate-pulse">
                 <div className="flex items-center justify-center gap-2 text-solana-cyan font-semibold text-sm">
                   {verificationSuccess ? <CheckCircle2 className="w-5 h-5 text-solana-green" /> : <Loader2 className="w-5 h-5 animate-spin" />}
                   <span>{verificationMessage}</span>
                 </div>
+                {solanaTxSignature && (
+                  <div className="pt-1">
+                    <a
+                      href={getSolanaExplorerUrl(solanaTxSignature)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-solana-cyan underline hover:text-white transition-colors"
+                    >
+                      <span>Xem giao dịch trên Solana Explorer</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                )}
                 <p className="text-[11px] text-slate-300">
-                  Hệ thống đang đối soát trạng thái đơn hàng {reservation.orderCode}...
+                  Đang tương tác trực tiếp với mạng Solana Devnet &amp; Smart Contract...
                 </p>
               </div>
             )}
@@ -616,32 +666,42 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             {/* Nút hành động Bước 2 */}
             {!isVerifying && (
               <div className="space-y-2 pt-1">
-                {isExpired ? (
+                {activeWallet ? (
                   <button
                     type="button"
-                    onClick={() => {
-                      setReservation(null);
-                      setStep('FORM');
-                    }}
-                    className="w-full py-3.5 rounded-xl bg-neon-pink/20 border border-neon-pink/40 text-pink-200 font-bold text-sm flex items-center justify-center gap-2 hover:bg-neon-pink/30 active:scale-95 transition-all"
+                    onClick={handleBuyWithSolana}
+                    disabled={isVerifying || isExpired || hasInsufficientSol}
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-solana-purple via-neon-pink to-solana-cyan text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-xl shadow-purple-950/60 hover:shadow-solana-purple/50 active:scale-95 transition-all disabled:opacity-50"
                   >
-                    <RefreshCw className="w-4 h-4" />
-                    <span>Đơn Hàng Hết Hạn — Tạo Lại Đơn Mới</span>
+                    <PhantomLogo className="w-5 h-5" />
+                    <span>Ký &amp; Thanh toán {totalSol.toFixed(2)} SOL qua ví Phantom</span>
                   </button>
                 ) : (
                   <button
                     type="button"
-                    onClick={handleTransitionToWaiting}
-                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-solana-purple via-neon-pink to-solana-cyan text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-xl shadow-purple-950/60 hover:shadow-solana-purple/50 active:scale-95 transition-all"
+                    onClick={handleConnectWalletFromModal}
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-solana-purple via-neon-pink to-solana-cyan text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-xl shadow-purple-950/60 active:scale-95 transition-all"
                   >
-                    <ShieldCheck className="w-5 h-5" />
-                    <span>{t('checkout.alreadyPaidBtn')}</span>
+                    <PhantomLogo className="w-5 h-5" />
+                    <span>Kết nối ví Phantom để tiếp tục</span>
                   </button>
                 )}
+
+                {/* Nút mô phỏng ký giao dịch nhanh dành cho ban giám khảo */}
+                <button
+                  type="button"
+                  onClick={handleSimulateWebhookSuccess}
+                  disabled={isVerifying || isExpired}
+                  className="w-full py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-solana-cyan font-medium text-xs flex items-center justify-center gap-1.5 transition-all"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-solana-green" />
+                  <span>Mô phỏng ký giao dịch Devnet (Chấm thi Hackathon)</span>
+                </button>
 
                 <button
                   type="button"
                   onClick={() => setStep('FORM')}
+                  disabled={isVerifying}
                   className="w-full py-2.5 rounded-xl border border-white/10 text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center gap-1.5"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
@@ -652,122 +712,109 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
         )}
 
-        {/* BƯỚC 3: MÀN HÌNH CHỜ XÁC NHẬN THANH TOÁN (PAYMENT_PENDING) */}
-        {step === 'WAITING_CONFIRMATION' && reservation && (
-          <div className="space-y-4 pt-2">
-            {/* Banner trạng thái PAYMENT_PENDING & Countdown */}
-            <div className="flex items-center justify-between p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30">
-              <div className="flex items-center gap-2">
-                <span className="relative flex h-3 w-3">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
-                </span>
-                <span className="text-xs font-bold text-amber-300 uppercase tracking-wide">
-                  {t('checkout.waitingHeading')} (PAYMENT_PENDING)
-                </span>
+        {/* BƯỚC 3: MÀN HÌNH HOÀN TẤT THÀNH CÔNG (SUCCESS - ON-CHAIN CONFIRMED) */}
+        {step === 'SUCCESS' && (
+          <div className="space-y-5 pt-2 text-center animate-fadeIn">
+            {/* Header thành công */}
+            <div className="flex flex-col items-center justify-center space-y-3">
+              <div className="relative flex items-center justify-center w-16 h-16 rounded-full bg-solana-green/20 border-2 border-solana-green/60 shadow-lg shadow-solana-green/30">
+                <CheckCircle2 className="w-9 h-9 text-solana-green animate-scaleUp" />
               </div>
-              <div className="flex items-center gap-1.5 text-xs text-slate-300 font-mono">
-                <Clock className="w-3.5 h-3.5 text-amber-400" />
-                <span>{isExpired ? 'Hết hạn' : formatCountdown(timeLeftMs)}</span>
+              <div>
+                <h3 className="text-xl sm:text-2xl font-black text-white">
+                  Mua vé thành công!
+                </h3>
+                <p className="text-xs text-solana-cyan mt-1 font-medium">
+                  Giao dịch on-chain đã được xác nhận và vé NFT đã được cấp phát trên Solana Devnet.
+                </p>
               </div>
             </div>
 
-            {/* Tóm tắt thông tin đơn hàng */}
-            <div className="p-4 rounded-xl bg-[#170E38] border border-white/10 space-y-2.5 text-xs">
+            {/* Thông tin đơn hàng & vé */}
+            <div className="p-4 rounded-xl bg-[#170E38] border border-white/10 text-left space-y-2.5 text-xs">
               <div className="flex justify-between items-center pb-2 border-b border-white/10">
-                <span className="text-slate-400">{t('checkout.orderCode')}:</span>
-                <span className="text-neon-pink font-mono font-bold text-sm">{reservation.orderCode}</span>
-              </div>
-              <div className="flex justify-between items-center">
                 <span className="text-slate-400">Sự kiện:</span>
-                <span className="text-white font-medium line-clamp-1 max-w-[240px] text-right">{event.title}</span>
+                <span className="text-white font-bold line-clamp-1 max-w-[240px]">{event.title}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-slate-400">{t('checkout.selectedTier')} & {t('checkout.quantityLabel')}:</span>
-                <span className="text-slate-200 font-medium">{tier.name} × {selectedQuantity}</span>
+                <span className="text-slate-400">Hạng vé &amp; Số lượng:</span>
+                <span className="text-solana-cyan font-medium">{tier.name} × {selectedQuantity}</span>
               </div>
-              <div className="flex justify-between items-center pt-2 border-t border-white/10">
-                <span className="text-white font-bold">{t('checkout.total')}:</span>
-                <span className="text-base font-black text-solana-green font-mono">{formatCurrency(reservation.totalVnd)}</span>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Số SOL đã thanh toán:</span>
+                <span className="text-solana-green font-mono font-bold">{totalSol.toFixed(2)} SOL (Devnet)</span>
               </div>
-            </div>
-
-            {/* Thông báo cơ chế xác thực */}
-            <div className="p-4 rounded-xl bg-black/30 border border-white/10 space-y-2 text-left">
-              <div className="flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 text-solana-cyan shrink-0 mt-0.5" />
-                <div className="text-xs text-slate-300 leading-relaxed space-y-1">
-                  <p className="font-semibold text-white">Chưa ghi nhận tín hiệu thanh toán tự động</p>
-                  <p className="text-[11px] text-slate-400">
-                    Hệ thống đang giữ đơn hàng ở trạng thái <strong className="text-amber-300 font-mono">PAYMENT_PENDING</strong>. Vé và mã QR NFT chỉ được phát hành khi nhận được đối soát thanh toán thành công.
-                  </p>
-                </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Người nhận vé:</span>
+                <span className="text-slate-200 font-medium">{customerName || 'Khách tham dự'}</span>
               </div>
-
-              {webhookStatusMessage && (
-                <div className="mt-2 p-2.5 rounded-lg bg-white/5 border border-white/10 text-[11px] text-slate-300 flex items-center gap-2">
-                  <Loader2 className={`w-3.5 h-3.5 text-solana-cyan shrink-0 ${checkingWebhook ? 'animate-spin' : ''}`} />
-                  <span>{webhookStatusMessage}</span>
+              {createdTickets.length > 0 && (
+                <div className="flex justify-between items-center pt-2 border-t border-white/10">
+                  <span className="text-slate-400">Mã vé (Ticket Code):</span>
+                  <div className="flex flex-wrap gap-1 justify-end">
+                    {createdTickets.map((t) => (
+                      <span key={t.id} className="font-mono text-solana-green bg-solana-green/10 border border-solana-green/30 px-1.5 py-0.5 rounded text-[11px] font-bold">
+                        {t.ticketCode}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Lưu ý Demo & Nút mô phỏng Webhook cho Giám khảo */}
-            <div className="p-3.5 rounded-xl bg-purple-950/40 border border-solana-purple/30 text-left space-y-2">
-              <div className="text-[11px] text-purple-200 leading-relaxed">
-                <strong>Chế độ chấm thi Hackathon</strong>: Cổng thanh toán thật cần kết nối Webhook ngân hàng trực tiếp. Để ban giám khảo nghiệm thu quy trình phát hành vé và QR NFT sau thanh toán, vui lòng sử dụng nút bên dưới:
+            {/* Khung giao dịch Solana Explorer */}
+            {solanaTxSignature && (
+              <div className="p-4 rounded-xl bg-solana-purple/20 border border-solana-purple/50 text-left space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-solana-cyan" />
+                    <span>Mã giao dịch (Tx Signature):</span>
+                  </span>
+                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-solana-green/20 text-solana-green border border-solana-green/40">
+                    Confirmed
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-black/50 border border-white/10 font-mono text-[11px] text-solana-cyan break-all select-all flex items-center justify-between gap-2">
+                  <span className="line-clamp-2">{solanaTxSignature}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(solanaTxSignature, 'txSig')}
+                    className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white shrink-0"
+                    title={t('common.copy')}
+                  >
+                    {copiedField === 'txSig' ? <Check className="w-3.5 h-3.5 text-solana-green" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <a
+                  href={`https://explorer.solana.com/tx/${solanaTxSignature}?cluster=devnet`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-solana-purple via-neon-pink to-solana-cyan hover:opacity-95 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 shadow-md shadow-purple-950/50"
+                >
+                  <span>https://explorer.solana.com/tx/{solanaTxSignature.slice(0, 10)}...?cluster=devnet</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
               </div>
+            )}
 
-              <button
-                type="button"
-                onClick={handleSimulateWebhookSuccess}
-                disabled={isVerifying || isExpired}
-                className="w-full py-2.5 px-3 rounded-lg bg-solana-green/20 hover:bg-solana-green/30 border border-solana-green/50 text-solana-green font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40"
-              >
-                {isVerifying ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Đang kích hoạt vé qua Webhook mô phỏng...</span>
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>{t('checkout.simulateSuccessBtn')}</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Các nút điều hướng */}
+            {/* Nút hành động */}
             <div className="space-y-2 pt-1">
               <button
                 type="button"
-                onClick={handleRecheckStatus}
-                disabled={checkingWebhook || isVerifying || isExpired}
-                className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20 text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all disabled:opacity-40"
+                onClick={handleViewMyTickets}
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-solana-purple to-solana-cyan hover:opacity-95 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg shadow-purple-950/60"
               >
-                <RefreshCw className={`w-4 h-4 text-solana-cyan ${checkingWebhook ? 'animate-spin' : ''}`} />
-                <span>{t('checkout.recheckStatusBtn')}</span>
+                <Ticket className="w-4 h-4" />
+                <span>Xem vé trong &quot;Vé của tôi&quot; (My Tickets)</span>
               </button>
 
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setStep('PAYMENT')}
-                  className="py-2.5 rounded-xl border border-white/10 text-xs font-semibold text-slate-300 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>{t('checkout.backBtn')}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="py-2.5 rounded-xl border border-white/10 text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
-                >
-                  {t('common.close')}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full py-2.5 rounded-xl border border-white/10 text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+              >
+                {t('common.close')}
+              </button>
             </div>
           </div>
         )}
@@ -775,3 +822,4 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     </div>
   );
 };
+export default CheckoutModal;

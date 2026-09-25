@@ -8,6 +8,7 @@ import { eventsRouter } from './routes/events.js';
 import { ticketsRouter } from './routes/tickets.js';
 import { authRouter } from './routes/auth.js';
 import { ordersRouter } from './routes/orders.js';
+import { solanaHealthRouter } from './routes/solanaHealth.js';
 
 export const app = express();
 
@@ -42,6 +43,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/tickets', ticketsRouter);
+app.use('/api/solana', solanaHealthRouter);
 
 app.use((_request, response) => {
   response.status(404).json({ error: 'Not found' });

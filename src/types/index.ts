@@ -116,6 +116,9 @@ export interface PurchasedTicket {
   checkInStatus?: 'unused' | 'checked-in';
   checkedInAt?: number;
   qrPayload: string;        // JSON string mã hóa thông tin vé an toàn cho demo
+  nftTransactionSignature?: string;
+  nftMintAddress?: string;
+  nftStatus?: 'PENDING' | 'MINTING' | 'MINTED' | 'MINT_FAILED';
 }
 
 export interface CheckInRecord {
@@ -135,6 +138,8 @@ export interface ToastMessage {
   id: string;
   type: 'success' | 'error' | 'info';
   message: string;
+  actionUrl?: string;
+  actionLabel?: string;
 }
 
 export interface CheckoutFormData {
