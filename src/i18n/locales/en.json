@@ -137,7 +137,17 @@
     "upcomingTitle": "All Upcoming Events",
     "upcomingSubtitle": "Latest events currently available for NFT ticket bookings on UniTicket.",
     "upcomingBadge": "⚡ UPCOMING",
-    "viewAll": "View all ({{count}})"
+    "viewAll": "View all ({{count}})",
+    "showcaseBadge": "⚡ DISCOVERY",
+    "showcaseTitle": "Event Discovery",
+    "showcaseSubtitle": "Browse and book tickets for live concerts, festivals, and premier tech summits.",
+    "allTab": "All",
+    "musicTab": "Music",
+    "web3Tab": "Web3 & Tech",
+    "artTab": "Art & Theater",
+    "workshopTab": "Workshops",
+    "emptyCategory": "No events in this category yet.",
+    "viewAllEvents": "View all events"
   },
   "search": {
     "inputPlaceholder": "Search events, artists, or venues...",

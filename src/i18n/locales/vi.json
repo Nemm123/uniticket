@@ -137,7 +137,17 @@
     "upcomingTitle": "Tất Cả Sự Kiện Sắp Diễn Ra",
     "upcomingSubtitle": "Danh sách các sự kiện mới nhất đang mở bán vé NFT trên nền tảng UniTicket.",
     "upcomingBadge": "⚡ UPCOMING",
-    "viewAll": "Xem tất cả ({{count}})"
+    "viewAll": "Xem tất cả ({{count}})",
+    "showcaseBadge": "⚡ KHÁM PHÁ",
+    "showcaseTitle": "Khám Phá Sự Kiện",
+    "showcaseSubtitle": "Tìm kiếm và chọn vé tham dự các concert, lễ hội và hội thảo công nghệ nổi bật.",
+    "allTab": "Tất cả",
+    "musicTab": "Âm nhạc",
+    "web3Tab": "Web3 & Công nghệ",
+    "artTab": "Nghệ thuật",
+    "workshopTab": "Workshop",
+    "emptyCategory": "Chưa có sự kiện trong danh mục này.",
+    "viewAllEvents": "Xem tất cả sự kiện"
   },
   "search": {
     "inputPlaceholder": "Tìm kiếm sự kiện, nghệ sĩ hoặc địa điểm...",
