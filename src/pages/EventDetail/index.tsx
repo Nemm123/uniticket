@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   Calendar,
@@ -32,6 +32,11 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
 }) => {
   const { t, formatCurrency, formatDate } = useTranslation();
   const [isDescExpanded, setIsDescExpanded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    setImageError(false);
+  }, [event?.id, event?.bannerImage, event?.thumbnailImage]);
 
   const scrollToTiers = () => {
     const el = document.getElementById('ticket-tiers-section');
@@ -89,11 +94,23 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
       <div className="rounded-2xl bg-[#120B30] border border-solana-purple/30 overflow-hidden shadow-2xl">
         {/* Banner lớn */}
         <div className="relative h-64 sm:h-96 w-full overflow-hidden bg-black/60">
-          <img
-            src={event.bannerImage || event.thumbnailImage}
-            alt={event.title}
-            className="w-full h-full object-cover"
-          />
+          {(event.bannerImage || event.thumbnailImage) && !imageError ? (
+            <img
+              src={event.bannerImage || event.thumbnailImage}
+              alt={event.title}
+              onError={() => setImageError(true)}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-[#1A0B3B] via-[#0F0826] to-[#20104A] flex flex-col items-center justify-center text-center p-6 select-none">
+              <div className="w-16 h-16 rounded-2xl bg-solana-purple/20 border border-solana-purple/40 flex items-center justify-center text-solana-cyan mb-2 shadow-lg shadow-purple-950/50">
+                <Ticket className="w-8 h-8" />
+              </div>
+              <span className="text-sm font-bold tracking-wider uppercase text-slate-300">
+                UniTicket Event
+              </span>
+            </div>
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-[#120B30] via-[#120B30]/50 to-transparent" />
 
           {/* Badges on Banner */}

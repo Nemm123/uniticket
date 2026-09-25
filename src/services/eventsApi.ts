@@ -61,22 +61,29 @@ function mapEvent(value: ApiEvent): EventItem {
     avatar: '',
     verified: false,
   };
+  const mappedTiers = tiers.map((tier) => ({
+    ...tier,
+    priceSol: Number(tier.priceSol),
+    priceVnd: tier.priceVnd === undefined ? undefined : Number(tier.priceVnd),
+    totalQuantity: Number(tier.totalQuantity),
+    remainingQuantity: Number(tier.remainingQuantity),
+  }));
+  const validTierVndPrices = mappedTiers
+    .map((tier) => Number(tier.priceVnd))
+    .filter((price) => Number.isFinite(price) && price > 0);
+  const minPriceVnd = typeof value.minPriceVnd === 'number' && Number.isFinite(value.minPriceVnd) && value.minPriceVnd > 0
+    ? value.minPriceVnd
+    : (validTierVndPrices.length > 0 ? Math.min(...validTierVndPrices) : undefined);
   return {
     ...value,
     date: toUiDate(value.date),
     category: category(value.category),
     organizer,
-    tiers: tiers.map((tier) => ({
-      ...tier,
-      priceSol: Number(tier.priceSol),
-      priceVnd: tier.priceVnd === undefined ? undefined : Number(tier.priceVnd),
-      totalQuantity: Number(tier.totalQuantity),
-      remainingQuantity: Number(tier.remainingQuantity),
-    })),
+    tiers: mappedTiers,
     totalTickets: Number(value.totalTickets || 0),
     soldTickets: Number(value.soldTickets || 0),
     minPriceSol: Number(value.minPriceSol || 0),
-    minPriceVnd: value.minPriceVnd === undefined ? undefined : Number(value.minPriceVnd),
+    minPriceVnd,
     tags: Array.isArray(value.tags) ? value.tags : [],
     lineup: Array.isArray(value.lineup) ? value.lineup : [],
   };

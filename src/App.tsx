@@ -532,7 +532,7 @@ export function App() {
                       <div className="space-y-2 text-xs text-slate-300">
                         <p><span className="text-slate-500">{t('myTickets.buyer')}</span> {ticket.customerName}</p>
                         <p><span className="text-slate-500">{t('myTickets.ticketCode')}</span> <span className="font-mono text-white">{ticket.ticketCode}</span></p>
-                        <p><span className="text-slate-500">{t('myTickets.wallet')}</span> {ticket.customerWallet.slice(0, 4)}...{ticket.customerWallet.slice(-4)}</p>
+                        <p><span className="text-slate-500">{t('myTickets.wallet')}</span> {ticket.customerWallet ? `${ticket.customerWallet.slice(0, 4)}...${ticket.customerWallet.slice(-4)}` : 'N/A'}</p>
                         <p><span className="text-slate-500">{t('myTickets.purchaseDate')}</span> {formatDate(ticket.purchaseDate || ticket.purchasedAt, { dateStyle: 'short', timeStyle: 'short' })}</p>
                         <p><span className="text-slate-500">{t('myTickets.venue')}</span> {ticket.venue}, {ticket.city}</p>
                       </div>

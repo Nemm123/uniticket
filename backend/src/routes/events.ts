@@ -191,6 +191,10 @@ function eventResponse(row: EventRow) {
   const tiers = row.tiers.map((tier) => ({ id: tier.id, name: tier.name, description: tier.description, priceSol: Number(tier.price_sol), priceVnd: Number(tier.price_vnd), perks: tier.perks, totalQuantity: tier.total_quantity, remainingQuantity: tier.remaining_quantity, colorHex: tier.color_hex ?? undefined }));
   const totalTickets = tiers.reduce((total, tier) => total + tier.totalQuantity, 0);
   const soldTickets = tiers.reduce((total, tier) => total + tier.totalQuantity - tier.remainingQuantity, 0);
+  const validVndPrices = tiers
+    .map((tier) => Number(tier.priceVnd))
+    .filter((price) => Number.isFinite(price) && price > 0);
+  const minPriceVnd = validVndPrices.length > 0 ? Math.min(...validVndPrices) : undefined;
   return {
     id: row.id,
     organizerWallet: row.organizer_wallet,
@@ -211,6 +215,7 @@ function eventResponse(row: EventRow) {
     lineup: row.lineup,
     tiers,
     minPriceSol: tiers.length ? Math.min(...tiers.map((tier) => tier.priceSol)) : 0,
+    minPriceVnd,
     totalTickets,
     soldTickets,
     createdAt: row.created_at,
