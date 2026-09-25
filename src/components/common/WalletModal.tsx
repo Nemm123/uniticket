@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, Copy, ExternalLink, ShieldCheck, X, Loader2, Coins } from 'lucide-react';
-import { authenticatePhantomWallet, AuthApiError } from '../../services/authApi';
 import { WalletSession } from '../../services/authSession';
 import { PhantomLogo } from './PhantomLogo';
 import { useTranslation } from '../../i18n';
@@ -133,11 +132,11 @@ export function extractWalletErrorMessage(error: unknown): string {
     lowerMsg.includes('rejected the request');
 
   if (isUserRejected) {
-    return 'Bạn đã từ chối yêu cầu kết nối hoặc ký xác thực trên Phantom.';
+    return 'Bạn đã từ chối yêu cầu kết nối ví Phantom.';
   }
 
-  if (error instanceof AuthApiError) {
-    return error.message;
+  if (error instanceof Error && error.name === 'AuthApiError') {
+    return 'Lỗi kết nối ví Phantom.';
   }
 
   const parts: string[] = [];
@@ -340,10 +339,15 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         addressPrefix: address.slice(0, 4),
       });
 
-      // 2. Yêu cầu nonce và ký xác thực danh tính Web3 với Backend API
-      logPhantomDebug('connectPhantom: step 4 - calling authenticatePhantomWallet');
-      const session = await authenticatePhantomWallet(address, provider);
-      logPhantomDebug('connectPhantom: step 4 - authenticatePhantomWallet SUCCEEDED', {
+      // 2. Định danh Web3 trực tiếp từ địa chỉ ví Phantom (không phụ thuộc backend)
+      logPhantomDebug('connectPhantom: step 4 - pure Web3 session generation');
+      const session: WalletSession = {
+        token: `pure_web3_${address}`,
+        walletAddress: address,
+        role: 'customer',
+        expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+      };
+      logPhantomDebug('connectPhantom: step 4 - session ready', {
         role: session.role,
       });
 

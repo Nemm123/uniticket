@@ -8,9 +8,17 @@ interface ToastProps {
 }
 
 export const ToastContainer: React.FC<ToastProps> = ({ toasts, onClose }) => {
+  // Lọc bỏ triệt để các thông báo liên quan đến máy chủ xác thực trong dApp Web3
+  const filteredToasts = toasts.filter(
+    (t) =>
+      !t.message.includes('máy chủ xác thực') &&
+      !t.message.includes('Không thể kết nối máy chủ xác thực') &&
+      !t.message.includes('Backend offline')
+  );
+
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2.5 max-w-sm w-full px-4 pointer-events-none">
-      {toasts.map((toast) => (
+      {filteredToasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onClose={onClose} />
       ))}
     </div>

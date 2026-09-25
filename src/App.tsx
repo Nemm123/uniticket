@@ -25,12 +25,13 @@ import {
 import { QRCodeSVG } from 'qrcode.react';
 import { EventItem, PurchasedTicket, TicketTier, ToastMessage, UserRole } from './types';
 import { getStoredEvents, getStoredPurchasedTickets, saveStoredEvents } from './utils/storage';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { getEvent as getEventFromApi, isApiEventId, listEvents } from './services/eventsApi';
 import { listTicketsApi, listGuestTicketsApi } from './services/ticketsApi';
 import { clearWalletSession, getWalletSession, setWalletSession, WalletSession } from './services/authSession';
-import { logoutWalletSession, authenticatePhantomWallet } from './services/authApi';
-import { getWalletSolBalance } from './services/solanaClient';
-import { clearUserRole } from './utils/role';
+import { logoutWalletSession } from './services/authApi';
+import { getWalletSolBalance, SOLANA_TREASURY_WALLET_STR } from './services/solanaClient';
+import { clearUserRole, getUserRole } from './utils/role';
 import { ViewMode, getStoredViewMode, saveStoredViewMode } from './utils/viewMode';
 import { useTranslation } from './i18n';
 
@@ -79,6 +80,42 @@ export function App() {
     if (!initialSession) return null;
     return initialSession.role === 'organizer' || initialSession.role === 'admin' ? 'organizer' : 'attendee';
   });
+
+  const refreshSolBalance = useCallback(async (address: string) => {
+    try {
+      const balance = await getWalletSolBalance(address);
+      setSolBalance(balance);
+    } catch (err) {
+      console.warn('Failed to query SOL balance:', err);
+      setSolBalance(null);
+    }
+  }, []);
+
+  // Sử dụng useWallet() từ @solana/wallet-adapter-react làm nguồn định danh Web3
+  const { publicKey, connected, disconnect: walletDisconnect } = useWallet();
+
+  // Đồng bộ trạng thái ví từ Solana Wallet Adapter:
+  // - Chưa connect: ở trạng thái khách bình thường, KHÔNG bắn popup lỗi "Không thể kết nối máy chủ xác thực"
+  // - Đã connect: lấy publicKey làm định danh tài khoản Web3
+  useEffect(() => {
+    if (connected && publicKey) {
+      const address = publicKey.toBase58();
+      setWalletAddress(address);
+      void refreshSolBalance(address);
+
+      const storedRole = getUserRole();
+      const isOrg = storedRole === 'organizer' || address === SOLANA_TREASURY_WALLET_STR;
+      setAuthRole(isOrg ? 'organizer' : 'attendee');
+
+      const localSession: WalletSession = {
+        token: `pure_web3_${address}`,
+        walletAddress: address,
+        role: isOrg ? 'organizer' : 'customer',
+        expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+      };
+      setWalletSession(localSession);
+    }
+  }, [connected, publicKey, refreshSolBalance]);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const isOrg = initialSession?.role === 'organizer' || initialSession?.role === 'admin';
     if (!isOrg) return 'attendee';
@@ -96,16 +133,6 @@ export function App() {
   const [searchCategoryFilter, setSearchCategoryFilter] = useState<string | undefined>(undefined);
   const [searchCityFilter, setSearchCityFilter] = useState<string | undefined>(undefined);
   const [searchQueryFilter, setSearchQueryFilter] = useState<string>('');
-
-  const refreshSolBalance = useCallback(async (address: string) => {
-    try {
-      const balance = await getWalletSolBalance(address);
-      setSolBalance(balance);
-    } catch (err) {
-      console.warn('Failed to query SOL balance:', err);
-      setSolBalance(null);
-    }
-  }, []);
 
   // Lắng nghe thay đổi số dư khi địa chỉ ví thay đổi
   useEffect(() => {
@@ -134,49 +161,34 @@ export function App() {
     let hasAttempted = false;
 
     const checkEagerConnection = async () => {
-      if (hasAttempted) {
-        logPhantomDebug('App.tsx checkEagerConnection SKIPPED (already attempted)');
-        return;
-      }
+      if (hasAttempted) return;
       const provider = getPhantomProvider();
-      if (!provider?.isPhantom) {
-        logPhantomDebug('App.tsx checkEagerConnection: no provider detected yet');
-        return;
-      }
+      if (!provider?.isPhantom) return;
       hasAttempted = true;
-      logPhantomDebug('App.tsx checkEagerConnection: STARTING eager connect');
 
       try {
         const resp = await safeConnectPhantom({ onlyIfTrusted: true });
-        if (cancelled) {
-          logPhantomDebug('App.tsx checkEagerConnection: cancelled');
-          return;
-        }
+        if (cancelled) return;
         const pubKey = resp?.publicKey || provider.publicKey;
         if (!pubKey) return;
         const address = pubKey.toString();
-        logPhantomDebug('App.tsx checkEagerConnection: eager connect SUCCESS', {
-          addressPrefix: address.slice(0, 4),
-        });
 
         void refreshSolBalance(address);
+        setWalletAddress(address);
 
-        const currentSession = getWalletSession();
-        if (currentSession && currentSession.walletAddress === address) {
-          // Session đã tồn tại và khớp địa chỉ ví
-          setWalletAddress(address);
-          const isOrg = currentSession.role === 'organizer' || currentSession.role === 'admin';
-          setAuthRole(isOrg ? 'organizer' : 'attendee');
-        } else {
-          // Ví đã trusted nhưng session chưa có hoặc cần xác thực lại
-          setWalletAddress(address);
-        }
-      } catch (err) {
-        const errObj = (typeof err === 'object' && err !== null) ? (err as Record<string, unknown>) : null;
-        logPhantomDebug('App.tsx checkEagerConnection: eager connect FAILED (silent)', {
-          code: errObj?.code,
-          message: errObj?.message || (err instanceof Error ? err.message : String(err)),
-        });
+        const storedRole = getUserRole();
+        const isOrg = storedRole === 'organizer' || address === SOLANA_TREASURY_WALLET_STR;
+        setAuthRole(isOrg ? 'organizer' : 'attendee');
+
+        const localSession: WalletSession = {
+          token: `pure_web3_${address}`,
+          walletAddress: address,
+          role: isOrg ? 'organizer' : 'customer',
+          expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+        };
+        setWalletSession(localSession);
+      } catch {
+        // Trạng thái khách bình thường: im lặng hoàn toàn, không hiển thị lỗi
       }
     };
 
@@ -341,6 +353,16 @@ export function App() {
     actionUrl?: string,
     actionLabel?: string
   ) => {
+    // Chặn triệt để mọi thông báo lỗi về máy chủ xác thực trong dApp Web3
+    if (
+      message.includes('máy chủ xác thực') ||
+      message.includes('Không thể kết nối máy chủ xác thực') ||
+      message.includes('Backend offline')
+    ) {
+      console.warn('[UniTicket Toast Suppressed]:', message);
+      return;
+    }
+
     setToasts((current) => [
       ...current,
       { id: `${Date.now()}-${Math.random()}`, type, message, actionUrl, actionLabel }
@@ -437,13 +459,41 @@ export function App() {
         throw new Error('Không nhận được địa chỉ ví công khai từ Phantom.');
       }
       const address = pubKey.toString();
-      const session = await authenticatePhantomWallet(address, provider);
-      handleWalletAuthenticated(session);
+
+      // Trong dApp Web3: Lấy publicKey làm định danh tài khoản trực tiếp (không gọi máy chủ xác thực)
+      const storedRole = getUserRole();
+      const isOrg = storedRole === 'organizer' || address === SOLANA_TREASURY_WALLET_STR;
+      const role: UserRole = isOrg ? 'organizer' : 'attendee';
+      setAuthRole(role);
+
+      const localSession: WalletSession = {
+        token: `pure_web3_${address}`,
+        walletAddress: address,
+        role: isOrg ? 'organizer' : 'customer',
+        expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+      };
+      setWalletSession(localSession);
+      setWalletAddress(address);
+
       await refreshSolBalance(address);
       showToast('success', `Đã kết nối ví Phantom (${address.slice(0, 4)}...${address.slice(-4)})`);
+
+      if (pendingPurchase) {
+        setCheckoutEvent(pendingPurchase.event);
+        setCheckoutTier(pendingPurchase.tier);
+        setPendingPurchase(null);
+        setIsWalletModalOpen(false);
+        setIsCheckoutOpen(true);
+      }
     } catch (error) {
       const errorMsg = extractWalletErrorMessage(error);
-      showToast('error', errorMsg);
+      if (
+        !errorMsg.includes('máy chủ xác thực') &&
+        !errorMsg.includes('Không thể kết nối máy chủ xác thực') &&
+        !errorMsg.includes('Backend offline')
+      ) {
+        showToast('error', errorMsg);
+      }
     } finally {
       setIsConnectingWallet(false);
     }
@@ -452,6 +502,9 @@ export function App() {
   const handleDisconnectWallet = async () => {
     const provider = getPhantomProvider();
     try {
+      if (walletDisconnect) {
+        await walletDisconnect().catch(() => undefined);
+      }
       if (provider?.isPhantom && provider.disconnect) {
         await provider.disconnect();
       }
@@ -476,13 +529,18 @@ export function App() {
         logPhantomDebug('App.tsx accountChanged', { newAddress });
         setWalletAddress(newAddress);
         void refreshSolBalance(newAddress);
-        const currentSession = getWalletSession();
-        if (currentSession && currentSession.walletAddress !== newAddress) {
-          clearWalletSession();
-          clearUserRole();
-          setAuthRole(null);
-          setViewMode('attendee');
-        }
+
+        const storedRole = getUserRole();
+        const isOrg = storedRole === 'organizer' || newAddress === SOLANA_TREASURY_WALLET_STR;
+        setAuthRole(isOrg ? 'organizer' : 'attendee');
+
+        const session: WalletSession = {
+          token: `pure_web3_${newAddress}`,
+          walletAddress: newAddress,
+          role: isOrg ? 'organizer' : 'customer',
+          expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+        };
+        setWalletSession(session);
       } else {
         void handleDisconnectWallet();
       }
