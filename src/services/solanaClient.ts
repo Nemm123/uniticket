@@ -141,11 +141,12 @@ export interface BuyTicketSolanaParams {
   quantity: number;
   unitPriceSol?: number;
   buyerWallet: string;
-  provider: {
+  provider?: {
     publicKey?: { toString: () => string };
     signAndSendTransaction?: (tx: Transaction) => Promise<{ signature: string }>;
     signTransaction?: (tx: Transaction) => Promise<Transaction>;
   };
+  sendTransaction?: (tx: Transaction, connection: Connection) => Promise<string>;
   onStatusChange?: (status: TxStepStatus, message: string) => void;
 }
 
@@ -163,10 +164,10 @@ export interface BuyTicketSolanaResult {
 export async function executeBuyTicketOnSolana(
   params: BuyTicketSolanaParams
 ): Promise<BuyTicketSolanaResult> {
-  const { eventId, tierId, quantity, buyerWallet, provider, onStatusChange } = params;
+  const { eventId, tierId, quantity, buyerWallet, provider, sendTransaction, onStatusChange } = params;
   const unitPriceSol = (params.unitPriceSol && params.unitPriceSol > 0) ? params.unitPriceSol : 0.05;
 
-  if (!provider) {
+  if (!provider && !sendTransaction) {
     throw new Error('Chưa phát hiện tiện ích ví Phantom.');
   }
 
@@ -223,13 +224,15 @@ export async function executeBuyTicketOnSolana(
     // Program memo instruction is optional
   }
 
-  // Yêu cầu ví Phantom ký và phát transaction
+  // Yêu cầu ví Phantom ký và phát transaction (qua sendTransaction của adapter hoặc provider)
   let signature: string;
   try {
-    if (typeof provider.signAndSendTransaction === 'function') {
+    if (typeof sendTransaction === 'function') {
+      signature = await sendTransaction(transaction, connection);
+    } else if (provider && typeof provider.signAndSendTransaction === 'function') {
       const res = await provider.signAndSendTransaction(transaction);
       signature = res.signature;
-    } else if (typeof provider.signTransaction === 'function') {
+    } else if (provider && typeof provider.signTransaction === 'function') {
       const signed = await provider.signTransaction(transaction);
       signature = await connection.sendRawTransaction(signed.serialize());
     } else {

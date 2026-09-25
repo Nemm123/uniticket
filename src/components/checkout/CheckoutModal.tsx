@@ -23,6 +23,7 @@ import { createOrder, demoPayOrder, type OrderSummary } from '../../services/ord
 import { listGuestTicketsApi } from '../../services/ticketsApi';
 import { isApiEventId } from '../../services/eventsApi';
 import { useTranslation } from '../../i18n';
+import { useWallet } from '@solana/wallet-adapter-react';
 import {
   executeBuyTicketOnSolana,
   parseSolanaTxError,
@@ -61,7 +62,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onConnectWallet,
   onNavigateToMyTickets,
 }) => {
-  const { t, formatCurrency } = useTranslation();
+  const { t } = useTranslation();
+  const { publicKey, sendTransaction } = useWallet();
   const [step, setStep] = useState<'FORM' | 'PAYMENT' | 'SUCCESS'>('FORM');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -78,23 +80,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [createdTickets, setCreatedTickets] = useState<PurchasedTicket[]>([]);
   const [internalSolBalance, setInternalSolBalance] = useState<number | null>(solBalance ?? null);
 
-  const unitPriceSol = (typeof tier.priceSol === 'number' && tier.priceSol > 0) ? tier.priceSol : 0.05;
+  const activeWallet = publicKey ? publicKey.toBase58() : (walletAddress || getPhantomProvider()?.publicKey?.toString());
+  const unitPriceSol = 0.05;
   const totalSol = unitPriceSol * selectedQuantity;
 
   useEffect(() => {
-    if (solBalance !== undefined) {
+    if (solBalance !== undefined && solBalance !== null) {
       setInternalSolBalance(solBalance);
     }
   }, [solBalance]);
 
   useEffect(() => {
-    const activeAddress = walletAddress || getPhantomProvider()?.publicKey?.toString();
-    if (activeAddress && internalSolBalance === null) {
-      void getWalletSolBalance(activeAddress).then((bal) => {
-        setInternalSolBalance(bal);
+    if (activeWallet) {
+      void getWalletSolBalance(activeWallet).then((bal) => {
+        if (bal !== null) {
+          setInternalSolBalance(bal);
+        }
       });
     }
-  }, [walletAddress, internalSolBalance]);
+  }, [activeWallet]);
 
   useEffect(() => {
     if (isOpen) {
@@ -130,7 +134,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   if (!isOpen) return null;
 
   const isBackendEvent = isApiEventId(event.id);
-  const unitPriceVnd = typeof tier.priceVnd === 'number' && tier.priceVnd > 0 ? tier.priceVnd : null;
 
   const formatCountdown = (ms: number): string => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -223,13 +226,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
 
     const provider = getPhantomProvider();
-    if (!provider?.isPhantom) {
-      onError('Vui lòng cài đặt tiện ích Phantom Wallet để thực hiện giao dịch Solana Devnet.');
-      onOpenWalletModal?.();
-      return;
-    }
-
-    const buyer = walletAddress || provider.publicKey?.toString();
+    const buyer = activeWallet;
     if (!buyer) {
       onError('Vui lòng kết nối ví Phantom trước khi thanh toán.');
       await handleConnectWalletFromModal();
@@ -241,14 +238,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setVerificationMessage('Vui lòng ký giao dịch trên ví Phantom...');
 
     try {
-      // 1. Tạo SystemProgram.transfer transaction gửi SOL sang ví ban tổ chức & gọi ví Phantom mở popup
+      // 1. Tạo SystemProgram.transfer transaction chuyển 0.05 SOL và kích hoạt popup ví Phantom bằng sendTransaction
       const { signature } = await executeBuyTicketOnSolana({
         eventId: event.id,
         tierId: tier.id,
         quantity: selectedQuantity,
-        unitPriceSol,
+        unitPriceSol: 0.05,
         buyerWallet: buyer,
-        provider,
+        provider: provider || undefined,
+        sendTransaction: sendTransaction,
         onStatusChange: (_status, message) => {
           setVerificationMessage(message);
         },
@@ -342,7 +340,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
-  const activeWallet = walletAddress || getPhantomProvider()?.publicKey?.toString();
   const hasInsufficientSol = internalSolBalance !== null && internalSolBalance < totalSol;
 
   return (
@@ -398,9 +395,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <strong className="text-solana-cyan block mt-0.5">{tier.name}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">Đơn giá SOL:</span>
+                  <span className="text-slate-400 block text-[11px]">Đơn giá:</span>
                   <span className="text-solana-green block mt-0.5 font-mono font-bold">
-                    {unitPriceSol.toFixed(2)} SOL (Devnet)
+                    0.05 SOL (Solana Devnet)
                   </span>
                 </div>
                 <div>
@@ -547,8 +544,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <span className="text-white block mt-0.5">{tier.name} × {selectedQuantity}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">Đơn giá:</span>
-                  <span className="text-slate-200 block mt-0.5 font-mono">{unitPriceSol.toFixed(2)} SOL / vé</span>
+                  <span className="text-slate-400 block text-[11px]">Giá vé:</span>
+                  <span className="text-solana-green block mt-0.5 font-mono font-bold">0.05 SOL (Solana Devnet)</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[11px]">Phí mạng (Gas fee):</span>
@@ -558,12 +555,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
               <div className="pt-2 border-t border-white/10 flex items-baseline justify-between">
                 <div>
-                  <span className="text-xs font-bold text-white block">Tổng thanh toán SOL:</span>
-                  {unitPriceVnd && (
-                    <span className="text-[11px] text-slate-400">
-                      Tương đương {formatCurrency(reservation.totalVnd)}
-                    </span>
-                  )}
+                  <span className="text-xs font-bold text-white block">Tổng thanh toán:</span>
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    {selectedQuantity > 1 ? `${selectedQuantity} × 0.05 SOL` : '0.05 SOL (Solana Devnet)'}
+                  </span>
                 </div>
                 <span className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-solana-cyan via-white to-solana-green font-mono">
                   {totalSol.toFixed(2)} SOL
@@ -671,10 +666,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     type="button"
                     onClick={handleBuyWithSolana}
                     disabled={isVerifying || isExpired || hasInsufficientSol}
-                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-solana-purple via-neon-pink to-solana-cyan text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-xl shadow-purple-950/60 hover:shadow-solana-purple/50 active:scale-95 transition-all disabled:opacity-50"
+                    className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-solana-purple via-[#9945FF] to-solana-cyan text-white font-black text-base sm:text-lg flex items-center justify-center gap-3 shadow-2xl shadow-purple-950/80 hover:shadow-solana-purple/50 active:scale-95 transition-all disabled:opacity-50"
                   >
-                    <PhantomLogo className="w-5 h-5" />
-                    <span>Ký &amp; Thanh toán {totalSol.toFixed(2)} SOL qua ví Phantom</span>
+                    <PhantomLogo className="w-5 h-5 shrink-0" />
+                    <span>Xác nhận &amp; Ký giao dịch trên ví Phantom</span>
                   </button>
                 ) : (
                   <button
