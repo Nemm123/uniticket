@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Globe, ChevronDown, Check } from 'lucide-react';
+import { Globe, Check } from 'lucide-react';
 import { useTranslation, Language } from '../../i18n';
 
 interface LanguageSwitcherProps {
@@ -39,7 +39,6 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ compact = fa
   };
 
   const labelText = language === 'vi' ? 'VI' : 'EN';
-  const flagEmoji = language === 'vi' ? '🇻🇳' : '🇬🇧';
 
   return (
     <div className="relative inline-block text-left" ref={dropdownRef}>
@@ -50,18 +49,12 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ compact = fa
         aria-haspopup="true"
         aria-expanded={isOpen}
         aria-label="Chọn ngôn ngữ / Select language"
-        className={`inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#150E35]/80 px-2.5 py-2 text-xs font-semibold text-slate-200 transition-all hover:border-solana-purple/50 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-solana-cyan/50 active:scale-95 shadow-sm ${
-          compact ? 'h-11 min-w-11 justify-center' : ''
+        className={`inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#150E35]/80 px-2.5 py-1.5 text-xs font-semibold text-slate-200 transition-all hover:border-solana-purple/50 hover:bg-white/10 hover:text-white focus:outline-none active:scale-95 shadow-sm ${
+          compact ? 'h-9 px-2 justify-center' : ''
         }`}
       >
-        <Globe className="h-4 w-4 text-solana-cyan shrink-0" />
-        <span className="text-sm shrink-0">{flagEmoji}</span>
-        <span className="font-bold tracking-wider">{labelText}</span>
-        <ChevronDown
-          className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-200 ${
-            isOpen ? 'rotate-180 text-solana-cyan' : ''
-          }`}
-        />
+        <Globe className="h-3.5 w-3.5 text-solana-cyan shrink-0" />
+        <span className="font-bold tracking-wider text-xs">{labelText}</span>
       </button>
 
       {/* Dropdown Menu */}

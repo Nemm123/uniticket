@@ -3,7 +3,6 @@ import {
   X,
   Ticket,
   Sparkles,
-  ShieldCheck,
   User,
   Mail,
   Minus,
@@ -23,12 +22,13 @@ import { createOrder, demoPayOrder, type OrderSummary } from '../../services/ord
 import { listGuestTicketsApi } from '../../services/ticketsApi';
 import { isApiEventId } from '../../services/eventsApi';
 import { useTranslation } from '../../i18n';
-import { useWallet } from '@solana/wallet-adapter-react';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import {
-  executeBuyTicketOnSolana,
   parseSolanaTxError,
   getSolanaExplorerUrl,
-  getWalletSolBalance
+  getWalletSolBalance,
+  SOLANA_TREASURY_WALLET_STR,
 } from '../../services/solanaClient';
 import { getPhantomProvider, safeConnectPhantom } from '../common/WalletModal';
 import { PhantomLogo } from '../common/PhantomLogo';
@@ -63,6 +63,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onNavigateToMyTickets,
 }) => {
   const { t } = useTranslation();
+  const { connection } = useConnection();
   const { publicKey, sendTransaction } = useWallet();
   const [step, setStep] = useState<'FORM' | 'PAYMENT' | 'SUCCESS'>('FORM');
   const [customerName, setCustomerName] = useState('');
@@ -217,7 +218,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
-  // BƯỚC 2: KÝ & GỬI TRANSACTION TRÊN SOLANA DEVNET (BẮT BUỘC MỞ VÍ PHANTOM)
+  // BƯỚC 2: KÝ & GỬI TRANSACTION CHUYỂN SOL THẬT TRÊN SOLANA DEVNET QUA VÍ PHANTOM
   const handleBuyWithSolana = async () => {
     if (!reservation) return;
     if (isExpired) {
@@ -225,9 +226,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       return;
     }
 
-    const provider = getPhantomProvider();
-    const buyer = activeWallet;
-    if (!buyer) {
+    if (!publicKey) {
       onError('Vui lòng kết nối ví Phantom trước khi thanh toán.');
       await handleConnectWalletFromModal();
       return;
@@ -238,28 +237,38 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setVerificationMessage('Vui lòng ký giao dịch trên ví Phantom...');
 
     try {
-      // 1. Tạo SystemProgram.transfer transaction chuyển 0.05 SOL và kích hoạt popup ví Phantom bằng sendTransaction
-      const { signature } = await executeBuyTicketOnSolana({
-        eventId: event.id,
-        tierId: tier.id,
-        quantity: selectedQuantity,
-        unitPriceSol: 0.05,
-        buyerWallet: buyer,
-        provider: provider || undefined,
-        sendTransaction: sendTransaction,
-        onStatusChange: (_status, message) => {
-          setVerificationMessage(message);
-        },
-      });
+      // 1. Tạo transaction chuyển SOL thật trên Devnet bằng SystemProgram.transfer
+      const treasuryPubKey = new PublicKey(SOLANA_TREASURY_WALLET_STR);
+      const lamportsToSend = Math.round(0.05 * LAMPORTS_PER_SOL * selectedQuantity);
+
+      const transaction = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: publicKey,
+          toPubkey: treasuryPubKey,
+          lamports: lamportsToSend,
+        })
+      );
+
+      // BẮT BUỘC gọi sendTransaction để ví Phantom hiển thị popup yêu cầu người dùng xác nhận chuyển SOL
+      const signature = await sendTransaction(transaction, connection);
 
       setSolanaTxSignature(signature);
       setVerificationMessage('Đang xác nhận giao dịch trên Solana Devnet...');
-      await new Promise((r) => setTimeout(r, 600));
+
+      const latestBlockHash = await connection.getLatestBlockhash('confirmed');
+      await connection.confirmTransaction(
+        {
+          signature,
+          blockhash: latestBlockHash.blockhash,
+          lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
+        },
+        'confirmed'
+      );
 
       setVerificationMessage('Giao dịch đã xác nhận on-chain! Đang cấp phát mã QR NFT...');
       setVerificationSuccess(true);
 
-      // 2. Kích hoạt vé trên hệ thống backend kèm transaction signature
+      // 2. Kích hoạt vé trên hệ thống backend kèm transaction signature thật
       const completed = await demoPayOrder(
         reservation.id,
         guestAccessToken || undefined,
@@ -287,56 +296,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setVerificationMessage('');
       const friendlyError = parseSolanaTxError(err);
       onError(friendlyError);
-    }
-  };
-
-  // Demo simulation mode dành riêng cho ban giám khảo chấm thi khi không cài Phantom
-  const handleSimulateWebhookSuccess = async () => {
-    if (!reservation) return;
-    if (isExpired) {
-      onError('Đơn hàng đã hết hạn giữ vé. Vui lòng tạo đơn mới.');
-      return;
-    }
-
-    setIsVerifying(true);
-    setVerificationSuccess(false);
-    setVerificationMessage('Vui lòng ký giao dịch trên ví...');
-
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 700));
-      setVerificationMessage('Đang xác nhận giao dịch trên Solana Devnet...');
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      const demoSignature = `5U${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}7KqL${Math.random().toString(36).slice(2, 10)}8xDevnet`;
-      setSolanaTxSignature(demoSignature);
-
-      setVerificationMessage('Giao dịch đã xác nhận! Đang cấp mã QR NFT...');
-      const completed = await demoPayOrder(
-        reservation.id,
-        guestAccessToken || undefined,
-        demoSignature
-      );
-
-      setVerificationSuccess(true);
-      await new Promise((resolve) => setTimeout(resolve, 600));
-
-      let orderTickets: PurchasedTicket[] = [];
-      if (guestAccessToken) {
-        try {
-          orderTickets = await listGuestTicketsApi(completed.id, guestAccessToken);
-        } catch {
-          // Tickets are already issued on backend
-        }
-      }
-      setIsVerifying(false);
-      setCreatedTickets(orderTickets);
-      setStep('SUCCESS');
-      onSuccess(orderTickets, demoSignature);
-    } catch (error) {
-      setIsVerifying(false);
-      setVerificationSuccess(false);
-      setVerificationMessage('');
-      onError(parseSolanaTxError(error));
     }
   };
 
@@ -681,17 +640,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <span>Kết nối ví Phantom để tiếp tục</span>
                   </button>
                 )}
-
-                {/* Nút mô phỏng ký giao dịch nhanh dành cho ban giám khảo */}
-                <button
-                  type="button"
-                  onClick={handleSimulateWebhookSuccess}
-                  disabled={isVerifying || isExpired}
-                  className="w-full py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-solana-cyan font-medium text-xs flex items-center justify-center gap-1.5 transition-all"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-solana-green" />
-                  <span>Mô phỏng ký giao dịch Devnet (Chấm thi Hackathon)</span>
-                </button>
 
                 <button
                   type="button"
