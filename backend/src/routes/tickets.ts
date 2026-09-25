@@ -128,29 +128,41 @@ function mapGuestTicket(row: TicketRow) {
   };
 }
 
-function extractIdentifier(raw: unknown): string {
-  if (!raw || typeof raw !== 'string') return '';
-  const trimmed = raw.trim();
-  if (!trimmed) return '';
+interface ParsedQrIdentifier {
+  raw: string;
+  tokenHash?: string;
+  parsedCode?: string;
+}
 
-  // Attempt to parse as JSON QR payload
+function parseTicketIdentifier(rawInput: unknown): ParsedQrIdentifier {
+  if (!rawInput || typeof rawInput !== 'string') return { raw: '' };
+  const trimmed = rawInput.trim();
+  if (!trimmed) return { raw: '' };
+
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
     try {
       const parsed = JSON.parse(trimmed);
       if (parsed && typeof parsed === 'object') {
+        let tokenHash: string | undefined;
+        let parsedCode: string | undefined;
+
+        if (typeof parsed.token === 'string' && parsed.token.trim()) {
+          tokenHash = sha256(parsed.token.trim());
+        }
         if (typeof parsed.ticketCode === 'string' && parsed.ticketCode.trim()) {
-          return parsed.ticketCode.trim();
+          parsedCode = parsed.ticketCode.trim();
         }
         if (typeof parsed.ticketId === 'string' && parsed.ticketId.trim()) {
-          return parsed.ticketId.trim();
+          parsedCode = parsed.ticketId.trim();
         }
+        return { raw: trimmed, tokenHash, parsedCode };
       }
     } catch {
-      // Not JSON, continue with raw string
+      // not JSON, continue with raw
     }
   }
 
-  return trimmed;
+  return { raw: trimmed };
 }
 
 async function canManageTicketCheckIn(ticket: TicketRow, request: Request): Promise<boolean> {
@@ -260,11 +272,11 @@ ticketsRouter.get('/guest', async (request: Request, response: Response) => {
  */
 ticketsRouter.post('/verify', requireAuth, requireRole('organizer', 'admin'), async (request: Request, response: Response) => {
   try {
-    const identifier = extractIdentifier(
+    const { raw, tokenHash, parsedCode } = parseTicketIdentifier(
       request.body?.code ?? request.body?.ticketCode ?? request.body?.qrPayload ?? request.body?.input
     );
 
-    if (!identifier) {
+    if (!raw && !tokenHash && !parsedCode) {
       response.status(400).json({
         status: 'invalid',
         message: 'Mã QR hoặc mã vé không hợp lệ.',
@@ -273,8 +285,15 @@ ticketsRouter.post('/verify', requireAuth, requireRole('organizer', 'admin'), as
     }
 
     const result = await pool.query<TicketRow>(
-      `SELECT * FROM tickets WHERE ticket_code = $1 OR id::text = $1 LIMIT 1;`,
-      [identifier]
+      `SELECT * FROM tickets
+       WHERE ticket_code = $1
+          OR id::text = $1
+          OR qr_payload = $1
+          OR ($2 <> '' AND ticket_code = $2)
+          OR ($2 <> '' AND id::text = $2)
+          OR ($3 <> '' AND qr_token_hash = $3)
+       LIMIT 1;`,
+      [raw, parsedCode || '', tokenHash || '']
     );
 
     if (result.rowCount === 0) {
@@ -338,11 +357,11 @@ ticketsRouter.post('/check-in', requireAuth, requireRole('organizer', 'admin'), 
       return;
     }
 
-    const identifier = extractIdentifier(
-      request.body?.code ?? request.body?.ticketCode ?? request.body?.ticketId ?? request.body?.input
+    const { raw, tokenHash, parsedCode } = parseTicketIdentifier(
+      request.body?.code ?? request.body?.ticketCode ?? request.body?.ticketId ?? request.body?.qrPayload ?? request.body?.input
     );
 
-    if (!identifier) {
+    if (!raw && !tokenHash && !parsedCode) {
       response.status(400).json({
         status: 'invalid',
         message: 'Mã vé hoặc QR payload không hợp lệ.',
@@ -351,18 +370,29 @@ ticketsRouter.post('/check-in', requireAuth, requireRole('organizer', 'admin'), 
     }
 
     const ticketResult = await pool.query<TicketRow>(
-      'SELECT * FROM tickets WHERE ticket_code = $1 OR id::text = $1 LIMIT 1;',
-      [identifier]
+      `SELECT * FROM tickets
+       WHERE ticket_code = $1
+          OR id::text = $1
+          OR qr_payload = $1
+          OR ($2 <> '' AND ticket_code = $2)
+          OR ($2 <> '' AND id::text = $2)
+          OR ($3 <> '' AND qr_token_hash = $3)
+       LIMIT 1;`,
+      [raw, parsedCode || '', tokenHash || '']
     );
+
     if (ticketResult.rowCount === 0) {
       response.status(200).json({ status: 'invalid', message: 'Ticket was not found.' });
       return;
     }
-    if (!(await canManageTicketCheckIn(ticketResult.rows[0], request))) {
+
+    const ticketToUpdate = ticketResult.rows[0];
+
+    if (!(await canManageTicketCheckIn(ticketToUpdate, request))) {
       response.status(403).json({ status: 'error', message: 'You do not have access to tickets for this event.' });
       return;
     }
-    if (!(await isEligibleForCheckIn(ticketResult.rows[0]))) {
+    if (!(await isEligibleForCheckIn(ticketToUpdate))) {
       response.status(200).json({ status: 'invalid', message: 'Vé chưa được kích hoạt, đã hết hạn hoặc thanh toán chưa được xác nhận.' });
       return;
     }
@@ -377,7 +407,7 @@ ticketsRouter.post('/check-in', requireAuth, requireRole('organizer', 'admin'), 
          checked_in_at = NOW(),
          checked_in_by = $2,
          updated_at = NOW()
-       WHERE (ticket_code = $1 OR id::text = $1)
+       WHERE id = $1
          AND is_checked_in = FALSE
          AND status = 'valid'
          AND (expires_at IS NULL OR expires_at > NOW())
@@ -388,7 +418,7 @@ ticketsRouter.post('/check-in', requireAuth, requireRole('organizer', 'admin'), 
              AND o.payment_status = 'PAID'
          )
        RETURNING *;`,
-      [identifier, organizerWallet]
+      [ticketToUpdate.id, organizerWallet]
     );
 
     if (updateResult.rowCount && updateResult.rowCount > 0) {
@@ -403,8 +433,8 @@ ticketsRouter.post('/check-in', requireAuth, requireRole('organizer', 'admin'), 
 
     // 0 rows updated: check whether ticket exists or was already checked in
     const checkResult = await pool.query<TicketRow>(
-      `SELECT * FROM tickets WHERE ticket_code = $1 OR id::text = $1 LIMIT 1;`,
-      [identifier]
+      `SELECT * FROM tickets WHERE id = $1 LIMIT 1;`,
+      [ticketToUpdate.id]
     );
 
     if (checkResult.rowCount === 0) {

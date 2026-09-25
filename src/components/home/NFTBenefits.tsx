@@ -1,33 +1,36 @@
 import React from 'react';
 import { ShieldCheck, Zap, Repeat, Award, Sparkles } from 'lucide-react';
+import { useTranslation } from '../../i18n';
 
 export const NFTBenefits: React.FC = () => {
+  const { t } = useTranslation();
+
   const benefits = [
     {
       icon: ShieldCheck,
-      title: 'Chống Vé Giả 100%',
-      desc: 'Mỗi vé là một token NFT độc nhất được ghi nhận minh bạch trên sổ cái Solana. Không thể sao chép, làm giả hay chụp màn hình bán nhiều lần.',
+      title: t('nftBenefits.antiScalpingTitle'),
+      desc: t('nftBenefits.antiScalpingDesc'),
       color: 'from-solana-purple to-purple-600',
       badge: 'Solana Mint',
     },
     {
       icon: Zap,
-      title: 'Check-in Tức Thì',
-      desc: 'Mã QR động xác thực ví chỉ trong 400ms tại cổng soát vé, giúp giải tỏa ùn tắc hàng ngàn khán giả tại sân vận động.',
+      title: t('nftBenefits.checkInTitle'),
+      desc: t('nftBenefits.checkInDesc'),
       color: 'from-solana-green to-emerald-600',
       badge: '< 400ms',
     },
     {
       icon: Repeat,
-      title: 'Bảo Vệ Giá & Chống Phe Vé',
-      desc: 'Quy định trần giá bán lại và tự động chia sẻ tiền bản quyền (Royalty Fee) về cho ban tổ chức cùng nghệ sĩ khi vé sang tay.',
+      title: t('nftBenefits.priceProtectionTitle'),
+      desc: t('nftBenefits.priceProtectionDesc'),
       color: 'from-neon-pink to-rose-600',
       badge: 'Smart Contract',
     },
     {
       icon: Award,
-      title: 'Kỷ Niệm Số Độc Bản',
-      desc: 'Sau concert, vé NFT biến thành kỷ niệm chương số có thể airdrop quà tặng, merchandise độc quyền và ưu tiên mua vé show tiếp theo.',
+      title: t('nftBenefits.digitalSouvenirTitle'),
+      desc: t('nftBenefits.digitalSouvenirDesc'),
       color: 'from-solana-cyan to-blue-600',
       badge: 'Fan Rewards',
     },
@@ -39,13 +42,13 @@ export const NFTBenefits: React.FC = () => {
         <div className="text-center max-w-3xl mx-auto mb-10 sm:mb-14">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-solana-purple/20 border border-solana-purple/40 text-[11px] sm:text-xs font-semibold text-solana-cyan mb-3">
             <Sparkles className="w-3.5 h-3.5 text-solana-green" />
-            <span>TẠI SAO CHỌN VÉ NFT SOLANA?</span>
+            <span>{t('nftBenefits.badge')}</span>
           </div>
           <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
-            Giải Quyết Nỗi Lo <span className="text-gradient-solana">Của Bán Vé Truyền Thống</span>
+            {t('nftBenefits.title')} <span className="text-gradient-solana">{t('nftBenefits.titleGradient')}</span>
           </h2>
           <p className="text-xs sm:text-base text-slate-300 mt-2 max-w-2xl mx-auto leading-relaxed">
-            Công nghệ Web3 mang lại sự minh bạch, công bằng và trải nghiệm đẳng cấp cho cả khán giả lẫn nhà tổ chức sự kiện.
+            {t('nftBenefits.subtitle')}
           </p>
         </div>
 

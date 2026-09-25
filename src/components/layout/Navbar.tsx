@@ -13,16 +13,20 @@ import {
   ScanLine,
   ShieldCheck,
   Eye,
-  LayoutDashboard
+  LayoutDashboard,
+  Search
 } from 'lucide-react';
 import { UserRole } from '../../types';
 import { ViewMode } from '../../utils/viewMode';
 import { PhantomLogo } from '../common/PhantomLogo';
+import { LanguageSwitcher } from '../common/LanguageSwitcher';
+import { useTranslation } from '../../i18n';
 
 interface NavbarProps {
   currentPage: string;
   onNavigate: (page: string) => void;
   onOpenWalletModal: () => void;
+  onOpenSearch?: () => void;
   authRole: UserRole | null;
   viewMode: ViewMode;
   onToggleViewMode: () => void;
@@ -35,11 +39,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentPage,
   onNavigate,
   onOpenWalletModal,
+  onOpenSearch,
   authRole,
   viewMode,
   onToggleViewMode,
   walletAddress,
 }) => {
+  const { t } = useTranslation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Khóa cuộn body khi menu mobile đang mở
@@ -77,17 +83,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const navItems = isOrganizerView
     ? [
-        { id: 'home', label: 'Trang Chủ', icon: Home },
-        { id: 'events', label: 'Sự Kiện', icon: Compass },
-        { id: 'organizer', label: 'Dashboard', icon: BarChart3 },
-        { id: 'organizer-events', label: 'Manage Events', icon: CalendarDays },
-        { id: 'create-event', label: 'Create Event', icon: PlusCircle },
-        { id: 'check-in', label: 'Check-in', icon: ScanLine },
+        { id: 'home', label: t('nav.home'), icon: Home },
+        { id: 'events', label: t('nav.events'), icon: Compass },
+        { id: 'organizer', label: t('nav.dashboard'), icon: BarChart3 },
+        { id: 'organizer-events', label: t('nav.manageEvents'), icon: CalendarDays },
+        { id: 'create-event', label: t('nav.createEvent'), icon: PlusCircle },
+        { id: 'check-in', label: t('nav.checkIn'), icon: ScanLine },
       ]
     : [
-        { id: 'home', label: 'Trang Chủ', icon: Home },
-        { id: 'events', label: 'Sự Kiện', icon: Compass },
-        { id: 'my-tickets', label: 'Vé Của Tôi', icon: Ticket },
+        { id: 'home', label: t('nav.home'), icon: Home },
+        { id: 'events', label: t('nav.events'), icon: Compass },
+        { id: 'my-tickets', label: t('nav.myTickets'), icon: Ticket },
       ];
 
   const handleNavClick = (id: string) => {
@@ -127,15 +133,20 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         <div className="mt-auto space-y-3 border-t border-white/10 pt-6">
+          <div className="flex items-center justify-between px-1 py-1">
+            <span className="text-xs text-slate-300 font-medium">Ngôn ngữ / Language</span>
+            <LanguageSwitcher />
+          </div>
+
           {authRole === 'organizer' && (
             <div className="rounded-xl border border-solana-green/30 bg-solana-green/10 p-3.5 space-y-2.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-solana-green flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4" />
-                  Quyền Organizer (Đã xác thực)
+                  {t('nav.organizerRoleVerified')}
                 </span>
                 <span className="text-[11px] text-slate-300">
-                  {viewMode === 'organizer' ? 'Chế độ BTC' : 'Chế độ Khách'}
+                  {viewMode === 'organizer' ? t('nav.organizerMode') : t('nav.attendeeMode')}
                 </span>
               </div>
               <button
@@ -149,12 +160,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {viewMode === 'organizer' ? (
                   <>
                     <Eye className="w-4 h-4 text-solana-cyan" />
-                    <span>Chuyển sang Chế độ Người tham dự</span>
+                    <span>{t('nav.switchToAttendee')}</span>
                   </>
                 ) : (
                   <>
                     <LayoutDashboard className="w-4 h-4 text-solana-green" />
-                    <span>Chuyển sang Chế độ Ban tổ chức</span>
+                    <span>{t('nav.switchToOrganizer')}</span>
                   </>
                 )}
               </button>
@@ -170,7 +181,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-solana-purple via-neon-pink to-solana-cyan py-3.5 text-base font-bold text-white shadow-xl shadow-purple-950/60 transition-all active:scale-95"
           >
             <PhantomLogo className="h-5 w-5" />
-            <span>{walletAddress ? shortAddress(walletAddress) : 'Kết nối Phantom'}</span>
+            <span>{walletAddress ? shortAddress(walletAddress) : t('nav.connectWallet')}</span>
           </button>
         </div>
       </div>
@@ -231,29 +242,44 @@ export const Navbar: React.FC<NavbarProps> = ({
             })}
           </nav>
 
-          {/* Right Action: Connect Wallet & View Mode Toggle */}
+          {/* Right Action: Search, Connect Wallet, Language & View Mode Toggle */}
           <div className="hidden lg:flex items-center gap-2 lg:gap-3 shrink-0">
+            {onOpenSearch && (
+              <button
+                type="button"
+                onClick={onOpenSearch}
+                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-[#150E35]/80 hover:bg-white/10 px-3.5 py-2 text-xs font-medium text-slate-300 hover:text-white transition-all active:scale-95 shadow-inner"
+                title={t('search.title')}
+              >
+                <Search className="h-4 w-4 text-solana-cyan" />
+                <span>{t('nav.searchPlaceholder')}</span>
+                <kbd className="rounded bg-black/40 px-1.5 py-0.5 text-[10px] text-slate-400 border border-white/10">{t('nav.searchShortcut')}</kbd>
+              </button>
+            )}
+
+            <LanguageSwitcher />
+
             {authRole === 'organizer' && (
               <div className="flex items-center gap-2">
-                <span className="rounded-xl border border-solana-green/40 bg-solana-green/10 px-2.5 py-1.5 text-xs font-semibold text-solana-green flex items-center gap-1.5" title="Ví có quyền Ban tổ chức (xác thực từ server)">
+                <span className="rounded-xl border border-solana-green/40 bg-solana-green/10 px-2.5 py-1.5 text-xs font-semibold text-solana-green flex items-center gap-1.5" title={t('nav.organizerRoleVerified')}>
                   <ShieldCheck className="w-3.5 h-3.5" />
-                  Organizer
+                  {t('nav.organizerBadge')}
                 </span>
                 <button
                   type="button"
                   onClick={onToggleViewMode}
                   className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:text-white transition-all active:scale-95 shadow-sm"
-                  title={viewMode === 'organizer' ? 'Chuyển sang chế độ xem Người tham dự (không đăng xuất)' : 'Chuyển sang chế độ xem Ban tổ chức'}
+                  title={viewMode === 'organizer' ? t('nav.switchToAttendee') : t('nav.switchToOrganizer')}
                 >
                   {viewMode === 'organizer' ? (
                     <>
                       <Eye className="w-3.5 h-3.5 text-solana-cyan" />
-                      <span>Xem Người tham dự</span>
+                      <span>{t('nav.switchToAttendee')}</span>
                     </>
                   ) : (
                     <>
                       <LayoutDashboard className="w-3.5 h-3.5 text-solana-green" />
-                      <span>Xem Ban tổ chức</span>
+                      <span>{t('nav.switchToOrganizer')}</span>
                     </>
                   )}
                 </button>
@@ -269,7 +295,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="relative flex items-center gap-2">
                 <PhantomLogo className="h-4 w-4" />
                 <span className="max-w-[150px] truncate tracking-wide">
-                  {walletAddress ? shortAddress(walletAddress) : 'Kết nối Phantom'}
+                  {walletAddress ? shortAddress(walletAddress) : t('nav.connectWallet')}
                 </span>
               </div>
             </button>
@@ -277,12 +303,23 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Mobile Right Actions */}
           <div className="flex lg:hidden items-center gap-1.5 shrink-0">
+            {onOpenSearch && (
+              <button
+                type="button"
+                onClick={onOpenSearch}
+                aria-label={t('search.title')}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 hover:text-white active:scale-95"
+              >
+                <Search className="w-5 h-5 text-solana-cyan" />
+              </button>
+            )}
+            <LanguageSwitcher compact />
             {authRole === 'organizer' && (
               <button
                 type="button"
                 onClick={onToggleViewMode}
                 className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 hover:text-white active:scale-95"
-                title={viewMode === 'organizer' ? 'Chuyển sang chế độ xem Người tham dự' : 'Chuyển sang chế độ xem Ban tổ chức'}
+                title={viewMode === 'organizer' ? t('nav.switchToAttendee') : t('nav.switchToOrganizer')}
               >
                 {viewMode === 'organizer' ? (
                   <Eye className="w-5 h-5 text-solana-cyan" />
@@ -293,7 +330,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
             <button
               onClick={onOpenWalletModal}
-              aria-label={walletAddress ? `Ví Phantom ${shortAddress(walletAddress)}` : 'Kết nối Phantom'}
+              aria-label={walletAddress ? `${t('nav.connectedWallet')} ${shortAddress(walletAddress)}` : t('nav.connectWallet')}
               className="inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl border border-solana-purple/40 bg-solana-purple/20 px-2 text-solana-cyan active:scale-95 transition-transform"
             >
               <PhantomLogo className="h-5 w-5" />

@@ -10,12 +10,38 @@ export interface TicketTier {
   colorHex?: string;
 }
 
+export type EventCategory =
+  | 'Nhạc sống'
+  | 'Sân khấu & Nghệ thuật'
+  | 'Hội thảo & Workshop'
+  | 'Tham quan & Trải nghiệm'
+  | 'Thể thao'
+  | 'Công nghệ'
+  | 'Web3'
+  | 'Khác'
+  | 'Concert'
+  | 'EDM Festival'
+  | 'Web3 Hackathon'
+  | 'Rock Arena'
+  | 'DJ Night'
+  | (string & {});
+
+export interface EventSession {
+  id: string;
+  name: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  status: 'on_sale' | 'upcoming' | 'sold_out' | 'closed';
+  remainingQuantity?: number;
+}
+
 export interface EventItem {
   id: string;
   title: string;
   subtitle: string;
   description: string;
-  category: 'Concert' | 'EDM Festival' | 'Web3 Hackathon' | 'Rock Arena' | 'DJ Night';
+  category: EventCategory;
   bannerImage: string;
   thumbnailImage: string;
   date: string;

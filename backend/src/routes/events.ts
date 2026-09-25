@@ -237,9 +237,80 @@ function sendError(response: Response, status: number, message: string): void {
   response.status(status).json({ error: message });
 }
 
-eventsRouter.get('/', async (_request, response) => {
+eventsRouter.get('/', async (request, response) => {
   try {
-    const result = await pool.query<EventRow>(`${eventSelect} GROUP BY e.id ORDER BY e.created_at DESC`);
+    const { q, category, city, timeRange, minPrice, maxPrice, featured, status } = request.query;
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+
+    if (typeof status === 'string' && EVENT_STATUSES.has(status)) {
+      values.push(status);
+      conditions.push(`e.status = $${values.length}`);
+    }
+
+    if (typeof category === 'string' && category.trim() && category !== 'All' && category !== 'Tất cả') {
+      values.push(category.trim());
+      conditions.push(`LOWER(e.category) = LOWER($${values.length})`);
+    }
+
+    if (typeof city === 'string' && city.trim() && city !== 'All' && city !== 'Tất cả') {
+      values.push(city.trim());
+      conditions.push(`LOWER(e.city) LIKE LOWER('%' || $${values.length} || '%')`);
+    }
+
+    if (typeof featured === 'string') {
+      if (featured === 'true') {
+        conditions.push(`e.featured = TRUE`);
+      } else if (featured === 'false') {
+        conditions.push(`e.featured = FALSE`);
+      }
+    }
+
+    if (typeof q === 'string' && q.trim()) {
+      values.push(`%${q.trim()}%`);
+      const idx = values.length;
+      conditions.push(`(
+        e.title ILIKE $${idx} OR
+        e.subtitle ILIKE $${idx} OR
+        e.description ILIKE $${idx} OR
+        e.venue ILIKE $${idx} OR
+        e.city ILIKE $${idx} OR
+        e.organizer_wallet ILIKE $${idx} OR
+        EXISTS (SELECT 1 FROM unnest(e.tags) tag WHERE tag ILIKE $${idx}) OR
+        EXISTS (SELECT 1 FROM unnest(e.lineup) artist WHERE artist ILIKE $${idx})
+      )`);
+    }
+
+    if (typeof timeRange === 'string') {
+      if (timeRange === 'today') {
+        conditions.push(`e.event_date = CURRENT_DATE`);
+      } else if (timeRange === 'this-week') {
+        conditions.push(`e.event_date >= CURRENT_DATE AND e.event_date <= (CURRENT_DATE + INTERVAL '7 days')::date`);
+      } else if (timeRange === 'this-weekend') {
+        conditions.push(`e.event_date >= CURRENT_DATE AND e.event_date <= (CURRENT_DATE + INTERVAL '5 days')::date AND EXTRACT(DOW FROM e.event_date) IN (0, 5, 6)`);
+      } else if (timeRange === 'this-month') {
+        conditions.push(`EXTRACT(MONTH FROM e.event_date) = EXTRACT(MONTH FROM CURRENT_DATE) AND EXTRACT(YEAR FROM e.event_date) = EXTRACT(YEAR FROM CURRENT_DATE)`);
+      }
+    }
+
+    let havingClause = '';
+    const havingConditions: string[] = [];
+    if (typeof minPrice === 'string' && !Number.isNaN(Number(minPrice))) {
+      values.push(Number(minPrice));
+      havingConditions.push(`COALESCE(MIN(t.price_vnd), 0) >= $${values.length}`);
+    }
+    if (typeof maxPrice === 'string' && !Number.isNaN(Number(maxPrice))) {
+      values.push(Number(maxPrice));
+      havingConditions.push(`COALESCE(MIN(t.price_vnd), 0) <= $${values.length}`);
+    }
+    if (havingConditions.length > 0) {
+      havingClause = `HAVING ${havingConditions.join(' AND ')}`;
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const query = `${eventSelect} ${whereClause} GROUP BY e.id ${havingClause} ORDER BY e.created_at DESC`;
+
+    const result = await pool.query<EventRow>(query, values);
     response.json({ data: result.rows.map(eventResponse) });
   } catch (error) {
     console.error('[UniTicket Events] Failed to list events:', error);

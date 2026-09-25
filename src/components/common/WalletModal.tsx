@@ -3,6 +3,7 @@ import { Check, Copy, ExternalLink, ShieldCheck, X, Loader2 } from 'lucide-react
 import { authenticatePhantomWallet, AuthApiError } from '../../services/authApi';
 import { WalletSession } from '../../services/authSession';
 import { PhantomLogo } from './PhantomLogo';
+import { useTranslation } from '../../i18n';
 
 interface PhantomProvider {
   isPhantom?: boolean;
@@ -173,6 +174,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   onAuthenticated,
   onConnectionCancelled,
 }) => {
+  const { t } = useTranslation();
   const [walletAddress, setWalletAddress] = useState<string | null>(currentWalletAddress ?? null);
   const [walletError, setWalletError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -269,8 +271,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       logPhantomDebug('connectPhantom: provider missing');
       setWalletError(
         isMobileDevice()
-          ? 'Hãy mở UniTicket trong trình duyệt tích hợp của ứng dụng Phantom rồi thử lại.'
-          : 'Chưa phát hiện tiện ích Phantom. Vui lòng cài đặt extension Phantom từ phantom.com rồi thử lại.'
+          ? t('walletModal.mobilePrompt')
+          : t('walletModal.installPrompt')
       );
       isConnectingRef.current = false;
       setIsConnecting(false);
@@ -397,17 +399,17 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         <div className="flex items-start justify-between border-b border-white/10 pb-4">
           <div>
             <h2 id="wallet-modal-title" className="text-lg font-bold text-white">
-              Kết Nối Ví Phantom
+              {t('walletModal.title')}
             </h2>
             <p className="mt-1 text-xs text-slate-300">
-              Xác thực danh tính Web3 an toàn qua chữ ký mã hóa.
+              {t('walletModal.subtitle')}
             </p>
           </div>
           {!isConnecting && (
             <button
               type="button"
               onClick={onClose}
-              aria-label="Đóng modal"
+              aria-label={t('common.close')}
               className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-300 hover:bg-white/10 hover:text-white"
             >
               <X className="h-5 w-5" />
@@ -424,7 +426,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 <p className="text-sm font-mono text-solana-green">{shortAddress(walletAddress)}</p>
               </div>
               <span className="ml-auto rounded-full border border-solana-green/30 px-2 py-1 text-[10px] font-bold text-solana-green">
-                Đã kết nối
+                {t('walletModal.connectedBadge')}
               </span>
             </div>
             <div className="mt-4 flex gap-3">
@@ -434,14 +436,14 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-white/15 px-3 text-xs font-semibold text-slate-200 hover:bg-white/5 active:scale-95 transition-all"
               >
                 {isCopied ? <Check className="h-4 w-4 text-solana-green" /> : <Copy className="h-4 w-4" />}
-                {isCopied ? 'Đã sao chép' : 'Sao chép địa chỉ'}
+                {isCopied ? t('common.copied') : t('walletModal.copyAddress')}
               </button>
               <button
                 type="button"
                 onClick={() => void disconnectPhantom()}
                 className="min-h-11 flex-1 rounded-xl border border-neon-pink/40 px-3 text-xs font-bold text-neon-pink hover:bg-neon-pink/10 active:scale-95 transition-all"
               >
-                Ngắt kết nối
+                {t('walletModal.disconnect')}
               </button>
             </div>
           </div>
@@ -461,7 +463,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
               <span className="min-w-0 flex-1">
                 <span className="block text-base font-bold text-white">Phantom</span>
                 <span className="mt-1 block text-xs text-slate-300">
-                  {isConnecting ? 'Đang kết nối & ký xác thực…' : 'Kết nối ví Phantom ngay'}
+                  {isConnecting ? t('walletModal.connecting') : t('walletModal.connectNow')}
                 </span>
               </span>
               <span className="rounded-full border border-solana-cyan/30 bg-solana-cyan/10 px-2 py-1 text-[10px] font-bold text-solana-cyan">
@@ -471,14 +473,15 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
             {!isPhantomAvailable && (
               <p className="rounded-xl border border-yellow-400/30 bg-yellow-950/30 p-3 text-xs leading-relaxed text-yellow-100">
-                Chưa phát hiện tiện ích Phantom. {isMobileDevice() ? 'Vui lòng mở UniTicket trong ứng dụng Phantom.' : 'Hãy cài đặt tiện ích Phantom và thử lại.'}{' '}
+                {t('walletModal.notInstalled')}{' '}
+                {isMobileDevice() ? t('walletModal.mobilePrompt') : t('walletModal.installPrompt')}{' '}
                 <a
                   href="https://phantom.com/download"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-semibold text-solana-cyan underline inline-flex items-center gap-1"
                 >
-                  Tải Phantom <ExternalLink className="inline h-3 w-3" />
+                  {t('walletModal.downloadPhantom')} <ExternalLink className="inline h-3 w-3" />
                 </a>
               </p>
             )}
@@ -493,7 +496,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
         <div className="mt-5 flex items-center gap-2 border-t border-white/10 pt-4 text-[11px] leading-relaxed text-slate-400">
           <ShieldCheck className="h-4 w-4 shrink-0 text-solana-green" />
-          UniTicket chỉ yêu cầu chữ ký xác thực danh tính ví (không mất phí, không giao dịch tiền).
+          {t('walletModal.safetyNotice')}
         </div>
       </section>
     </div>

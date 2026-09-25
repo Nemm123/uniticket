@@ -50,8 +50,8 @@ function toApiDate(value: string): string {
 }
 
 function category(value: string): EventItem['category'] {
-  const known: EventItem['category'][] = ['Concert', 'EDM Festival', 'Web3 Hackathon', 'Rock Arena', 'DJ Night'];
-  return known.includes(value as EventItem['category']) ? value as EventItem['category'] : 'Concert';
+  if (!value || typeof value !== 'string') return 'Nhạc sống';
+  return value.trim() as EventItem['category'];
 }
 
 function mapEvent(value: ApiEvent): EventItem {
@@ -136,8 +136,31 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return (body as ApiEnvelope<T> | null)?.data as T;
 }
 
-export async function listEvents(): Promise<EventItem[]> {
-  const data = await request<ApiEvent[]>('/api/events');
+export interface EventFilterParams {
+  q?: string;
+  category?: string;
+  city?: string;
+  timeRange?: 'all' | 'today' | 'this-weekend' | 'this-week' | 'this-month';
+  minPrice?: number;
+  maxPrice?: number;
+  featured?: boolean;
+  status?: 'draft' | 'published' | 'cancelled';
+}
+
+export async function listEvents(filters?: EventFilterParams): Promise<EventItem[]> {
+  const query = new URLSearchParams();
+  if (filters?.q) query.set('q', filters.q);
+  if (filters?.category && filters.category !== 'All' && filters.category !== 'Tất cả') query.set('category', filters.category);
+  if (filters?.city && filters.city !== 'All' && filters.city !== 'Tất cả') query.set('city', filters.city);
+  if (filters?.timeRange && filters.timeRange !== 'all') query.set('timeRange', filters.timeRange);
+  if (typeof filters?.minPrice === 'number') query.set('minPrice', String(filters.minPrice));
+  if (typeof filters?.maxPrice === 'number') query.set('maxPrice', String(filters.maxPrice));
+  if (typeof filters?.featured === 'boolean') query.set('featured', String(filters.featured));
+  if (filters?.status) query.set('status', filters.status);
+
+  const queryString = query.toString();
+  const path = queryString ? `/api/events?${queryString}` : '/api/events';
+  const data = await request<ApiEvent[]>(path);
   return data.map(mapEvent);
 }
 
