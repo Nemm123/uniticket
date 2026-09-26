@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, CheckCircle2, Keyboard, Loader2, RefreshCw, ScanLine, ShieldAlert, Ticket, XCircle } from 'lucide-react';
-import QrScanner from 'qr-scanner';
+import { Camera, CheckCircle2, Keyboard, Loader2, RefreshCw, ScanLine, ShieldAlert, Ticket } from 'lucide-react';
 import { CheckInResult, PurchasedTicket, UserRole } from '../../types';
-import { checkInTicketApi, listTicketsApi, verifyTicketApi } from '../../services/ticketsApi';
+import * as api from '../../services/api';
 import { useTranslation } from '../../i18n';
+import { QRScanner } from '../../components/organizer/QRScanner';
 
 interface CheckInPageProps {
   currentRole: UserRole | null;
@@ -17,24 +17,21 @@ const ticketIsCheckedIn = (ticket: PurchasedTicket) => ticket.isCheckedIn || tic
 
 export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizerAddress, onShowToast, onTicketsChanged }) => {
   const { t, formatDate } = useTranslation();
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const scannerRef = useRef<QrScanner | null>(null);
   const processingRef = useRef(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraError] = useState<string | null>(null);
   const [manualPayload, setManualPayload] = useState('');
   const [result, setResult] = useState<CheckInResult | null>(null);
   const [tickets, setTickets] = useState<PurchasedTicket[]>([]);
   const [filter, setFilter] = useState<TicketFilter>('all');
   const [search, setSearch] = useState('');
   const [isValidating, setIsValidating] = useState(false);
-  const [isConfirming, setIsConfirming] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const refreshTickets = async () => {
     setIsRefreshing(true);
     try {
-      const remoteTickets = await listTicketsApi();
+      const remoteTickets = await api.fetchMyTickets();
       setTickets(remoteTickets);
       return;
     } catch (err) {
@@ -54,21 +51,34 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
     processingRef.current = true;
     setIsValidating(true);
     setCameraEnabled(false);
-    scannerRef.current?.stop();
 
     try {
-      const backendValidation = await verifyTicketApi(input);
+      const backendValidation = await api.verifyTicketCheckIn(input);
 
-      if (backendValidation.status !== 'error') {
-        setResult(backendValidation);
-        onShowToast(
-          backendValidation.status === 'valid' ? 'info' : backendValidation.status === 'used' ? 'info' : 'error',
-          backendValidation.message
-        );
+      if (backendValidation.status === 'valid') {
+        // Tự động check-in
+        const ticketId = backendValidation.ticket?.id;
+        if (!ticketId) {
+          onShowToast('error', 'Không tìm thấy ID vé.');
+          return;
+        }
+        const confirmResult = await api.confirmCheckIn(ticketId);
+        
+        if (confirmResult.status !== 'error') {
+          setResult({ ...confirmResult, message: 'Hợp lệ - Cho phép qua cổng' });
+          await refreshTickets();
+          onTicketsChanged();
+          onShowToast('success', 'Hợp lệ - Cho phép qua cổng');
+        } else {
+          setResult(confirmResult);
+          onShowToast('error', confirmResult.message);
+        }
+      } else if (backendValidation.status === 'used') {
+        setResult({ ...backendValidation, message: 'Vé đã được sử dụng! (Cảnh báo vé giả/quét trùng)' });
+        onShowToast('error', 'Vé đã được sử dụng! (Cảnh báo vé giả/quét trùng)');
       } else {
-        setResult(backendValidation);
-        onShowToast('error', backendValidation.message);
-        return;
+        setResult({ ...backendValidation, message: 'Mã vé không hợp lệ' });
+        onShowToast('error', 'Mã vé không hợp lệ');
       }
     } finally {
       setIsValidating(false);
@@ -76,49 +86,9 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
     }
   };
 
-  useEffect(() => {
-    if (!cameraEnabled || !videoRef.current) return;
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraError('Camera không được hỗ trợ trên trình duyệt này. Vui lòng dán mã QR hoặc mã vé bên dưới.');
-      setCameraEnabled(false);
-      return;
-    }
-    const scanner = new QrScanner(videoRef.current, (scanResult) => void validateInput(scanResult.data), {
-      preferredCamera: 'environment', maxScansPerSecond: 5, highlightScanRegion: true, highlightCodeOutline: true,
-    });
-    scannerRef.current = scanner;
-    setCameraError(null);
-    void scanner.start().catch(() => {
-      setCameraError('Quyền truy cập camera bị từ chối hoặc camera đang bận. Vui lòng dán mã QR bên dưới.');
-      setCameraEnabled(false);
-    });
-    return () => { void scanner.destroy(); scannerRef.current = null; };
-  }, [cameraEnabled]);
+  // camera logic handled by QRScanner component
 
-  const confirmCheckIn = async () => {
-    if (!result?.ticket || currentRole !== 'organizer') {
-      onShowToast('error', 'Chỉ vai trò Ban Tổ Chức mới có thể xác nhận check-in.');
-      return;
-    }
-    setIsConfirming(true);
-    try {
-      const code = result.ticket.ticketCode || result.ticket.id;
-      const backendConfirmation = await checkInTicketApi(code);
 
-      if (backendConfirmation.status !== 'error') {
-        setResult(backendConfirmation);
-        await refreshTickets();
-        onTicketsChanged();
-        onShowToast(backendConfirmation.status === 'valid' ? 'success' : 'error', backendConfirmation.message);
-      } else {
-        setResult(backendConfirmation);
-        onShowToast('error', backendConfirmation.message);
-        return;
-      }
-    } finally {
-      setIsConfirming(false);
-    }
-  };
 
   if (currentRole !== 'organizer') {
     return (
@@ -172,22 +142,11 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
                 <Camera className="h-5 w-5 text-solana-cyan" />
                 <h2 className="font-bold text-white">{t('checkIn.cameraTitle')}</h2>
               </div>
-              {cameraEnabled && (
-                <button
-                  type="button"
-                  onClick={() => setCameraEnabled(false)}
-                  className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-white/10 px-3 text-xs text-slate-300 hover:bg-white/5"
-                >
-                  <XCircle className="h-4 w-4" />
-                  {t('checkIn.cameraStop')}
-                </button>
-              )}
             </div>
 
-            <div className="relative aspect-video overflow-hidden rounded-xl border border-white/10 bg-black/50">
-              <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
-              {!cameraEnabled && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
+            <div className="relative overflow-hidden rounded-xl bg-black/50">
+              {!cameraEnabled ? (
+                <div className="flex flex-col items-center justify-center gap-3 p-8 text-center border border-white/10 rounded-xl aspect-video">
                   <ScanLine className="h-10 w-10 text-solana-purple" />
                   <p className="text-xs text-slate-400">{t('checkIn.cameraHint')}</p>
                   <button
@@ -199,6 +158,12 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
                     {t('checkIn.cameraStart')}
                   </button>
                 </div>
+              ) : (
+                <QRScanner 
+                  isEnabled={cameraEnabled} 
+                  onScanSuccess={(data) => void validateInput(data)} 
+                  onClose={() => setCameraEnabled(false)} 
+                />
               )}
             </div>
 
@@ -270,22 +235,7 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
                     )}
                   </div>
                 )}
-                {result.status === 'valid' && (
-                  <button
-                    type="button"
-                    onClick={() => void confirmCheckIn()}
-                    disabled={isConfirming}
-                    className="mt-5 inline-flex min-h-11 items-center rounded-xl bg-gradient-to-r from-solana-green to-solana-cyan px-5 py-2.5 text-sm font-bold text-[#070412] disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {isConfirming ? (
-                      <span className="inline-flex items-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin" /> {t('checkIn.confirming')}
-                      </span>
-                    ) : (
-                      t('checkIn.confirmCheckIn')
-                    )}
-                  </button>
-                )}
+
               </div>
             </div>
           </section>

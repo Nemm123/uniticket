@@ -27,7 +27,8 @@ import { EventItem, PurchasedTicket, TicketTier, ToastMessage, UserRole } from '
 import { getStoredEvents, getStoredPurchasedTickets, saveStoredEvents, savePurchasedTickets } from './utils/storage';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { getEvent as getEventFromApi, isApiEventId, listEvents } from './services/eventsApi';
-import { listTicketsApi, listGuestTicketsApi } from './services/ticketsApi';
+
+import * as api from './services/api';
 import { clearWalletSession, getWalletSession, setWalletSession, WalletSession } from './services/authSession';
 import { logoutWalletSession } from './services/authApi';
 import { getWalletSolBalance, SOLANA_TREASURY_WALLET_STR } from './services/solanaClient';
@@ -260,11 +261,10 @@ export function App() {
   const fetchMyTickets = useCallback(async () => {
     try {
       let remoteTickets: PurchasedTicket[] = [];
-      const currentToken = localStorage.getItem('guest_access_token') || guestAccessToken;
       if (walletAddress) {
-        remoteTickets = await listTicketsApi({ wallet: walletAddress });
-      } else if (currentToken) {
-        remoteTickets = await listGuestTicketsApi('', currentToken);
+        remoteTickets = await api.fetchMyTickets({ wallet: walletAddress });
+      } else {
+        remoteTickets = await api.fetchMyTickets();
       }
       setPurchasedTickets(remoteTickets);
       return remoteTickets;
@@ -272,7 +272,7 @@ export function App() {
       console.warn('[UniTicket App] Could not load tickets from API:', err);
       return [];
     }
-  }, [walletAddress, guestAccessToken]);
+  }, [walletAddress]);
 
   useEffect(() => {
     if (currentPage === 'my-tickets' || walletAddress || guestAccessToken) {

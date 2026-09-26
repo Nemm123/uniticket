@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { EventItem, TicketTier, PurchasedTicket } from '../../types';
 import { demoPayOrder, type OrderSummary } from '../../services/ordersApi';
-import { savePurchasedTickets, savePurchaseAtomically } from '../../utils/storage';
+import * as api from '../../services/api';
 import { useTranslation } from '../../i18n';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
@@ -262,9 +262,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         });
       }
 
-      // Lưu vé vào LocalStorage để hiển thị tức thì ở tab "Vé Của Tôi"
-      savePurchasedTickets(newTickets);
-      savePurchaseAtomically(event.id, tier.id, selectedQuantity, newTickets);
+      // Lưu vé thông qua MOCK API Data Layer
+      await api.createTickets(event.id, tier.id, selectedQuantity, newTickets);
 
       if (reservation?.id) {
         demoPayOrder(reservation.id, guestAccessToken || undefined, signature).catch(() => undefined);
