@@ -108,6 +108,10 @@ export interface PurchasedTicket {
   purchaseDate: string;      // ISO string nghiệp vụ
   status: 'valid' | 'checked_in' | 'transferred' | 'VALID' | 'CHECKED_IN';
   isCheckedIn: boolean;
+  isUsed?: boolean;
+  transferredAt?: string;
+  transferredTo?: string;
+  transferredFrom?: string;
   checkInTime?: string;
   checkedInBy?: string;
   /** Explicit demo QR/check-in fields; legacy properties remain for stored tickets. */

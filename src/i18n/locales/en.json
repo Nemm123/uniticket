@@ -302,7 +302,23 @@
     "qrDemoNotice": "Digital ticket with QR code authenticated by UniTicket cryptosystem.",
     "statusCheckedIn": "CHECKED-IN",
     "statusUnused": "UNUSED",
-    "checkedInAt": "Checked-in: {{time}}"
+    "checkedInAt": "Checked-in: {{time}}",
+    "transferTicket": "Transfer Ticket"
+  },
+  "transferModal": {
+    "title": "On-chain Ticket Transfer (P2P Transfer)",
+    "subtitle": "Transfer NFT ticket ownership to another Solana wallet",
+    "ticketInfo": "Ticket Information",
+    "receiverWalletLabel": "Receiver Solana Wallet Address",
+    "receiverWalletPlaceholder": "e.g.: 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+    "warningTitle": "Important Warning",
+    "warningNotice": "Once transferred, ticket ownership belongs to the new wallet and cannot be undone.",
+    "cancel": "Cancel",
+    "confirmTransfer": "Confirm Transfer",
+    "transferring": "Processing transfer...",
+    "invalidAddress": "Invalid Solana wallet address (32-44 Base58 characters required).",
+    "cannotTransferToSelf": "Cannot transfer ticket to your own connected wallet.",
+    "transferSuccess": "Ticket transferred successfully to wallet {{address}}!"
   },
   "qrModal": {
     "title": "Check-in QR Code",

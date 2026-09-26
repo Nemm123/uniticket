@@ -302,7 +302,23 @@
     "qrDemoNotice": "Vé điện tử kèm mã QR check-in được bảo chứng bằng chữ ký hệ thống UniTicket.",
     "statusCheckedIn": "CHECKED-IN",
     "statusUnused": "UNUSED",
-    "checkedInAt": "Checked-in: {{time}}"
+    "checkedInAt": "Checked-in: {{time}}",
+    "transferTicket": "Chuyển nhượng vé"
+  },
+  "transferModal": {
+    "title": "Chuyển Nhượng Vé On-chain (P2P Transfer)",
+    "subtitle": "Chuyển quyền sở hữu vé NFT cho ví Solana khác",
+    "ticketInfo": "Thông tin vé",
+    "receiverWalletLabel": "Địa chỉ ví Solana người nhận (Receiver Wallet Address)",
+    "receiverWalletPlaceholder": "Ví dụ: 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+    "warningTitle": "Cảnh báo quan trọng",
+    "warningNotice": "Vé sau khi chuyển sẽ thuộc quyền sở hữu của ví mới và không thể hoàn tác.",
+    "cancel": "Hủy",
+    "confirmTransfer": "Xác nhận chuyển nhượng",
+    "transferring": "Đang xử lý chuyển nhượng...",
+    "invalidAddress": "Địa chỉ ví Solana không hợp lệ (cần 32-44 ký tự Base58).",
+    "cannotTransferToSelf": "Không thể chuyển vé cho chính địa chỉ ví hiện tại.",
+    "transferSuccess": "Chuyển nhượng vé thành công tới ví {{address}}!"
   },
   "qrModal": {
     "title": "Mã QR Check-in",

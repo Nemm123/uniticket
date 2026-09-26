@@ -55,6 +55,14 @@ export async function confirmCheckIn(ticketId: string): Promise<CheckInResult> {
   return storage.confirmTicketCheckIn(ticketId, checkedInBy);
 }
 
+export async function transferTicket(
+  ticketId: string,
+  toWalletAddress: string
+): Promise<{ ok: boolean; message: string; ticket?: PurchasedTicket }> {
+  await delay(MOCK_DELAY);
+  return storage.transferStoredTicket(ticketId, toWalletAddress);
+}
+
 // -------------------------------------
 // EVENTS
 // -------------------------------------

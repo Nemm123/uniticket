@@ -237,6 +237,22 @@ assert(
   'TEST 18 — Storage v2 migration and automatic event merge for missing IDs'
 );
 
+// -------------------------------------------------------------
+// TEST 19 — P2P On-chain Ticket Transfer Validation
+// -------------------------------------------------------------
+const apiCode = fs.readFileSync('src/services/api.ts', 'utf8');
+const transferModalCode = fs.readFileSync('src/components/tickets/TransferTicketModal.tsx', 'utf8');
+const mainAppCode = fs.readFileSync('src/App.tsx', 'utf8');
+
+assert(
+  apiCode.includes('export async function transferTicket') &&
+  storageCode.includes('export function transferStoredTicket') &&
+  transferModalCode.includes('isValidSolanaAddress') &&
+  mainAppCode.includes('TransferTicketModal') &&
+  mainAppCode.includes('transferTicketTarget'),
+  'TEST 19 — P2P On-chain Ticket Transfer API, validation, and UI integration'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);

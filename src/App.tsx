@@ -20,9 +20,12 @@ import {
   ArrowUp, 
   Sparkles,
   ExternalLink,
-  X
+  X,
+  Send,
+  QrCode
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { TransferTicketModal } from './components/tickets/TransferTicketModal';
 import { EventItem, PurchasedTicket, TicketTier, ToastMessage, UserRole } from './types';
 import { getStoredEvents, getStoredPurchasedTickets, saveStoredEvents, savePurchasedTickets } from './utils/storage';
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -145,6 +148,15 @@ export function App() {
   const [purchasedTickets, setPurchasedTickets] = useState<PurchasedTicket[]>(() => getStoredPurchasedTickets());
   const [guestAccessToken, setGuestAccessToken] = useState<string>(() => localStorage.getItem('guest_access_token') ?? '');
   const [selectedQrTicket, setSelectedQrTicket] = useState<PurchasedTicket | null>(null);
+  const [transferTicketTarget, setTransferTicketTarget] = useState<PurchasedTicket | null>(null);
+
+  const myTickets = useMemo(() => {
+    if (!walletAddress) return purchasedTickets;
+    return purchasedTickets.filter((ticket) => {
+      if (!ticket.customerWallet) return true;
+      return ticket.customerWallet.toLowerCase() === walletAddress.toLowerCase();
+    });
+  }, [purchasedTickets, walletAddress]);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutEvent, setCheckoutEvent] = useState<EventItem | null>(null);
   const [checkoutTier, setCheckoutTier] = useState<TicketTier | null>(null);
@@ -798,7 +810,7 @@ export function App() {
               </button>
             </div>
 
-            {purchasedTickets.length === 0 ? (
+            {myTickets.length === 0 ? (
               <div className="mx-auto max-w-xl rounded-2xl border border-white/10 bg-[#120B30] p-8 text-center shadow-2xl">
                 <Ticket className="mx-auto mb-3 h-10 w-10 text-solana-cyan" />
                 <h2 className="text-xl font-bold text-white">{t('myTickets.emptyTitle')}</h2>
@@ -812,7 +824,7 @@ export function App() {
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-                {purchasedTickets.map((ticket) => (
+                {myTickets.map((ticket) => (
                   <div key={ticket.id} className="rounded-2xl border border-solana-purple/30 bg-[#120B30] p-4 shadow-xl">
                     <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
                       <div className="min-w-0">
@@ -832,7 +844,27 @@ export function App() {
                         <p><span className="text-slate-500">{t('myTickets.venue')}</span> {ticket.venue}, {ticket.city}</p>
                       </div>
                       <div className="flex flex-col items-start gap-2 sm:items-end">
-                        <button onClick={() => setSelectedQrTicket(ticket)} className="min-h-11 rounded-xl border border-solana-cyan/40 bg-solana-cyan/10 px-4 py-2 text-xs font-bold text-solana-cyan hover:bg-solana-cyan/20">{t('myTickets.showQr')}</button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            onClick={() => setSelectedQrTicket(ticket)}
+                            className="min-h-11 rounded-xl border border-solana-cyan/40 bg-solana-cyan/10 px-4 py-2 text-xs font-bold text-solana-cyan hover:bg-solana-cyan/20 transition-colors flex items-center gap-1.5"
+                          >
+                            <QrCode className="h-3.5 w-3.5" />
+                            <span>{t('myTickets.showQr')}</span>
+                          </button>
+
+                          {/* Nút Chuyển nhượng vé chỉ khả dụng khi vé chưa check-in */}
+                          {!ticket.isCheckedIn && !ticket.isUsed && ticket.status !== 'checked_in' && ticket.status !== 'CHECKED_IN' && (
+                            <button
+                              onClick={() => setTransferTicketTarget(ticket)}
+                              className="min-h-11 rounded-xl border border-solana-purple/40 bg-solana-purple/20 px-3.5 py-2 text-xs font-bold text-purple-200 hover:bg-solana-purple/35 hover:text-white hover:border-solana-cyan/40 transition-colors flex items-center gap-1.5"
+                              title="Chuyển nhượng vé cho ví Solana khác"
+                            >
+                              <Send className="h-3.5 w-3.5 text-solana-cyan" />
+                              <span>{t('myTickets.transferTicket')}</span>
+                            </button>
+                          )}
+                        </div>
                         {ticket.isCheckedIn && ticket.checkInTime && <span className="text-[11px] text-solana-green">{t('myTickets.checkedInAt', { time: formatDate(ticket.checkInTime, { dateStyle: 'short', timeStyle: 'short' }) })}</span>}
                       </div>
                     </div>
@@ -1007,6 +1039,20 @@ export function App() {
           </div>
         </div>
       )}
+
+      {/* Modal Chuyển nhượng vé On-chain */}
+      <TransferTicketModal
+        isOpen={Boolean(transferTicketTarget)}
+        ticket={transferTicketTarget}
+        currentWallet={walletAddress}
+        onClose={() => setTransferTicketTarget(null)}
+        onSuccess={(transferredTicket) => {
+          const updated = getStoredPurchasedTickets();
+          setPurchasedTickets(updated);
+          const truncated = `${transferredTicket.customerWallet.slice(0, 4)}...${transferredTicket.customerWallet.slice(-4)}`;
+          showToast('success', t('transferModal.transferSuccess', { address: truncated }));
+        }}
+      />
 
       {/* Chân trang toàn cục */}
       <Footer onNavigate={(p) => handleNavigate(p)} />

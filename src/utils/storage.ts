@@ -489,3 +489,82 @@ export function getStoredCheckInHistory(): CheckInRecord[] {
     return [];
   }
 }
+
+/**
+ * Chuyển quyền sở hữu vé (P2P Transfer) sang địa chỉ ví mới
+ */
+export function transferStoredTicket(
+  ticketId: string,
+  toWalletAddress: string
+): { ok: boolean; message: string; ticket?: PurchasedTicket } {
+  try {
+    if (!ticketId || !toWalletAddress) {
+      return { ok: false, message: 'Mã vé và địa chỉ ví người nhận là bắt buộc.' };
+    }
+
+    const trimmedWallet = toWalletAddress.trim();
+    if (trimmedWallet.length < 32 || trimmedWallet.length > 44) {
+      return { ok: false, message: 'Địa chỉ ví Solana không hợp lệ (cần 32-44 ký tự Base58).' };
+    }
+
+    const tickets = getStoredPurchasedTickets();
+    const index = tickets.findIndex((t) => t.id === ticketId || t.ticketCode === ticketId);
+    if (index === -1) {
+      return { ok: false, message: 'Không tìm thấy vé trong hệ thống.' };
+    }
+
+    const ticket = tickets[index];
+
+    // Kiểm tra xem vé đã check-in hay chưa
+    const isAlreadyUsed = Boolean(
+      ticket.isUsed ||
+      ticket.isCheckedIn ||
+      ticket.status === 'checked_in' ||
+      ticket.status === 'CHECKED_IN'
+    );
+    if (isAlreadyUsed) {
+      return { ok: false, message: 'Vé đã được check-in/sử dụng, không thể chuyển nhượng.' };
+    }
+
+    // Không cho chuyển cho chính ví hiện tại nếu trùng
+    if (ticket.customerWallet && ticket.customerWallet.trim().toLowerCase() === trimmedWallet.toLowerCase()) {
+      return { ok: false, message: 'Không thể chuyển nhượng cho chính địa chỉ ví hiện tại.' };
+    }
+
+    const previousOwner = ticket.customerWallet;
+    const nowIso = new Date().toISOString();
+    const updatedTicket: PurchasedTicket = {
+      ...ticket,
+      customerWallet: trimmedWallet,
+      status: 'valid',
+      isCheckedIn: false,
+      isUsed: false,
+      transferredAt: nowIso,
+      transferredTo: trimmedWallet,
+      transferredFrom: previousOwner,
+      qrPayload: JSON.stringify({
+        ticketId: ticket.id,
+        ticketCode: ticket.ticketCode,
+        eventId: ticket.eventId,
+        tierId: ticket.tierId,
+        wallet: trimmedWallet,
+        transferredAt: nowIso,
+        v: 'p2p-v2',
+      }),
+    };
+
+    const updatedTickets = [...tickets];
+    updatedTickets[index] = updatedTicket;
+
+    localStorage.setItem(TICKETS_KEY, JSON.stringify(updatedTickets));
+
+    return {
+      ok: true,
+      message: 'Chuyển nhượng vé thành công!',
+      ticket: updatedTicket,
+    };
+  } catch (error) {
+    console.error('[UniTicket Storage] Lỗi chuyển nhượng vé:', error);
+    return { ok: false, message: 'Đã xảy ra lỗi khi lưu thông tin chuyển nhượng.' };
+  }
+}
