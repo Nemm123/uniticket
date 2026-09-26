@@ -236,21 +236,29 @@ export function App() {
     };
   }, [refreshSolBalance]);
 
-  // Backend is the source of truth for events when available.
+  // Backend is the source of truth for events when available, merged with mockEvents.
   useEffect(() => {
     let cancelled = false;
     const loadEvents = async () => {
       setEventsLoading(true);
       setEventsError(null);
       try {
+        const stored = getStoredEvents();
+        setEvents(stored);
+
         const remoteEvents = await listEvents();
         if (cancelled) return;
         if (remoteEvents.length > 0) {
-          // Khi backend trả về sự kiện: sử dụng sự kiện PostgreSQL làm nguồn chính xác duy nhất
-          setEvents(remoteEvents);
-          saveStoredEvents(remoteEvents);
+          // Luôn đảm bảo nạp đè và giữ trọn vẹn 4 sự kiện mới từ mockEvents
+          const merged = [...remoteEvents];
+          for (const m of stored) {
+            if (!merged.some((r) => r.id === m.id || r.title.toLowerCase().trim() === m.title.toLowerCase().trim())) {
+              merged.push(m);
+            }
+          }
+          setEvents(merged);
+          saveStoredEvents(merged);
         } else {
-          // Fallback cục bộ chỉ dùng khi backend trống
           setEvents(getStoredEvents());
         }
       } catch (error) {

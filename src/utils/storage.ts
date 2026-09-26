@@ -1,10 +1,24 @@
 import { CheckInRecord, CheckInResult, EventItem, PurchasedTicket } from '../types';
 import { mockEvents } from '../data/mockEvents';
 
-const INVENTORY_KEY = 'uniticket_events_inventory_v2';
-const LEGACY_INVENTORY_KEY = 'uniticket_events_inventory';
+export const NEW_MOCK_EVENTS = mockEvents;
+export const INVENTORY_KEY = 'uniticket_events_inventory';
+export const INVENTORY_KEY_V2 = 'uniticket_events_inventory_v2';
 const TICKETS_KEY = 'uniticket_purchased_tickets';
 const CHECKIN_HISTORY_KEY = 'uniticket_checkin_history';
+
+/**
+ * Ghi đồng bộ danh sách sự kiện vào cả 2 key localStorage (v1 và v2)
+ */
+export function syncInventoryStorage(events: EventItem[]): void {
+  try {
+    const serialized = JSON.stringify(events);
+    localStorage.setItem(INVENTORY_KEY, serialized);
+    localStorage.setItem(INVENTORY_KEY_V2, serialized);
+  } catch (err) {
+    console.warn('[UniTicket Storage] Lỗi ghi localStorage inventory:', err);
+  }
+}
 
 /**
  * Mapping các ID sự kiện cũ/khác định dạng sang ID chuẩn mới
@@ -29,7 +43,7 @@ function normalizeEvents(events: EventItem[]): EventItem[] {
     return event;
   });
 
-  const canonicalMap = new Map(mockEvents.map((e) => [e.id, e]));
+  const canonicalMap = new Map(NEW_MOCK_EVENTS.map((e) => [e.id, e]));
 
   // 2. Chuẩn hóa giá VND & Tier của từng sự kiện
   const normalized: EventItem[] = migratedEvents.map((event) => {
@@ -53,7 +67,7 @@ function normalizeEvents(events: EventItem[]): EventItem[] {
   const existingIds = new Set(normalized.map((e) => e.id));
   const existingTitles = new Set(normalized.map((e) => e.title.toLowerCase().trim()));
 
-  for (const canonical of mockEvents) {
+  for (const canonical of NEW_MOCK_EVENTS) {
     const hasId = existingIds.has(canonical.id);
     const hasTitle = existingTitles.has(canonical.title.toLowerCase().trim());
 
@@ -65,50 +79,64 @@ function normalizeEvents(events: EventItem[]): EventItem[] {
     }
   }
 
-  // 4. Lưu lại vào localStorage v2 nếu có thay đổi hoặc v2 chưa được lưu
-  if (modified || localStorage.getItem(INVENTORY_KEY) === null) {
-    try {
-      localStorage.setItem(INVENTORY_KEY, JSON.stringify(normalized));
-    } catch {
-      // Best-effort storage sync
-    }
+  // 4. Lưu lại vào localStorage nếu có thay đổi hoặc key chưa được lưu
+  if (modified || localStorage.getItem(INVENTORY_KEY) === null || localStorage.getItem(INVENTORY_KEY_V2) === null) {
+    syncInventoryStorage(normalized);
   }
 
   return normalized;
 }
 
 /**
- * Đọc danh sách sự kiện và trạng thái tồn kho an toàn từ localStorage (v2).
- * Tự động migrate dữ liệu từ v1 sang v2 và tự động gộp (merge) danh sách mockEvents mới
- * vào localStorage nếu trong storage chưa có hoặc thiếu các ID sự kiện mới.
+ * Đọc danh sách sự kiện và trạng thái tồn kho an toàn từ localStorage.
+ * CƠ CHẾ NẠP ĐÈ BẮT BUỘC (FORCE REHYDRATE):
+ * Nếu trong storage chưa có hoặc thiếu sự kiện có id 'event-anh-trai-say-hi-2026',
+ * ngay lập tức lấy toàn bộ danh sách NEW_MOCK_EVENTS ghi đè vào localStorage.
  */
 export function getStoredEvents(): EventItem[] {
   try {
     let data = localStorage.getItem(INVENTORY_KEY);
-
-    // Nếu v2 chưa có trong storage, kiểm tra key v1 cũ để migrate
     if (!data) {
-      const legacyData = localStorage.getItem(LEGACY_INVENTORY_KEY);
-      if (legacyData) {
-        data = legacyData;
-      }
+      data = localStorage.getItem(INVENTORY_KEY_V2);
     }
 
     if (!data) {
-      localStorage.setItem(INVENTORY_KEY, JSON.stringify(mockEvents));
-      return mockEvents;
+      syncInventoryStorage(NEW_MOCK_EVENTS);
+      return NEW_MOCK_EVENTS;
     }
 
-    const parsed = JSON.parse(data);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return normalizeEvents(parsed);
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      syncInventoryStorage(NEW_MOCK_EVENTS);
+      return NEW_MOCK_EVENTS;
     }
 
-    localStorage.setItem(INVENTORY_KEY, JSON.stringify(mockEvents));
-    return mockEvents;
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      syncInventoryStorage(NEW_MOCK_EVENTS);
+      return NEW_MOCK_EVENTS;
+    }
+
+    const eventsList = parsed as EventItem[];
+
+    // CƠ CHẾ NẠP ĐÈ BẮT BUỘC (FORCE REHYDRATE):
+    // Nếu trong danh sách sự kiện hiện tại thiếu sự kiện có id 'event-anh-trai-say-hi-2026',
+    // ngay lập tức lấy toàn bộ danh sách NEW_MOCK_EVENTS ghi đè vào localStorage.
+    const hasAnhTraiSayHi = eventsList.some(
+      (e) => e.id === 'event-anh-trai-say-hi-2026' || e.id === 'anh-trai-say-hi-all-star-2026'
+    );
+    if (!hasAnhTraiSayHi || eventsList.length < NEW_MOCK_EVENTS.length) {
+      console.info('[UniTicket Storage] FORCE REHYDRATE: Thiếu sự kiện mới, ghi đè NEW_MOCK_EVENTS vào localStorage');
+      syncInventoryStorage(NEW_MOCK_EVENTS);
+      return NEW_MOCK_EVENTS;
+    }
+
+    return normalizeEvents(eventsList);
   } catch (error) {
-    console.warn('[UniTicket Storage] Lỗi đọc localStorage inventory, sử dụng fallback mockEvents:', error);
-    return mockEvents;
+    console.warn('[UniTicket Storage] Lỗi đọc localStorage inventory, nạp đè NEW_MOCK_EVENTS:', error);
+    syncInventoryStorage(NEW_MOCK_EVENTS);
+    return NEW_MOCK_EVENTS;
   }
 }
 
@@ -148,7 +176,20 @@ function isValidEvent(event: EventItem): boolean {
 export function saveStoredEvents(events: EventItem[]): boolean {
   try {
     if (!Array.isArray(events) || !events.every(isValidEvent)) return false;
-    localStorage.setItem(INVENTORY_KEY, JSON.stringify(events));
+
+    // Đảm bảo không vô tình làm mất 4 sự kiện mới nếu caller truyền vào danh sách cũ
+    let eventsToSave = events;
+    if (!events.some((e) => e.id === 'event-anh-trai-say-hi-2026' || e.id === 'anh-trai-say-hi-all-star-2026')) {
+      const merged = [...events];
+      for (const m of NEW_MOCK_EVENTS) {
+        if (!merged.some((e) => e.id === m.id || e.title.toLowerCase().trim() === m.title.toLowerCase().trim())) {
+          merged.push(m);
+        }
+      }
+      eventsToSave = merged;
+    }
+
+    syncInventoryStorage(eventsToSave);
     return true;
   } catch (error) {
     console.error('[UniTicket Storage] Failed to save event inventory:', error);
@@ -231,7 +272,7 @@ export function updateEventInventory(eventId: string, tierId: string, quantityPu
     event.soldTickets += quantityPurchased;
 
     events[eventIndex] = event;
-    localStorage.setItem(INVENTORY_KEY, JSON.stringify(events));
+    syncInventoryStorage(events);
     return true;
   } catch (error) {
     console.error('[UniTicket Storage] Lỗi cập nhật tồn kho:', error);

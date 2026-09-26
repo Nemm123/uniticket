@@ -94,7 +94,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   // Sự kiện nổi bật (deduplicate theo ID, giới hạn 4 cards)
   const featuredEvents = useMemo(() => {
     const list = events.filter((e) => e.featured);
-    const selected = list.length > 0 ? list : events.slice(0, 4);
+    const selected = list.length > 0 ? list : events;
     const seen = new Set<string>();
     const unique: EventItem[] = [];
     for (const item of selected) {
@@ -103,7 +103,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         unique.push(item);
       }
     }
-    return unique.slice(0, 4);
+    return unique;
   }, [events]);
 
   // Tabbed Event Discovery Showcase (Lọc client-side thuần túy, deduplicate theo ID)
@@ -237,7 +237,7 @@ export const HomePage: React.FC<HomePageProps> = ({
           {/* Tab Content: Event Cards Grid or Empty State */}
           {tabFilteredEvents.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-              {tabFilteredEvents.slice(0, 8).map((event) => (
+              {tabFilteredEvents.map((event) => (
                 <EventCard
                   key={event.id}
                   event={event}
