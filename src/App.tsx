@@ -92,7 +92,17 @@ export function App() {
   }, []);
 
   // Sử dụng useWallet() từ @solana/wallet-adapter-react làm nguồn định danh Web3
-  const { publicKey, connected, disconnect: walletDisconnect } = useWallet();
+  const { publicKey, connected, disconnect: walletDisconnect, select, wallets, connect: adapterConnect } = useWallet();
+
+  // Tự động chọn Phantom adapter nếu phát hiện ví trong danh sách wallets
+  useEffect(() => {
+    if (!connected && wallets.length > 0) {
+      const phantom = wallets.find((w) => w.adapter.name.toLowerCase().includes('phantom'));
+      if (phantom) {
+        select(phantom.adapter.name);
+      }
+    }
+  }, [connected, wallets, select]);
 
   // Đồng bộ trạng thái ví từ Solana Wallet Adapter:
   // - Chưa connect: ở trạng thái khách bình thường, KHÔNG bắn popup lỗi "Không thể kết nối máy chủ xác thực"
@@ -445,6 +455,16 @@ export function App() {
 
     setIsConnectingWallet(true);
     try {
+      try {
+        const phantom = wallets.find((w) => w.adapter.name.toLowerCase().includes('phantom'));
+        if (phantom) {
+          select(phantom.adapter.name);
+          await adapterConnect();
+        }
+      } catch (adapterErr) {
+        console.warn('Wallet adapter connection notice:', adapterErr);
+      }
+
       let pubKey = provider.publicKey;
       if (!pubKey || !provider.isConnected) {
         const resp = await safeConnectPhantom();

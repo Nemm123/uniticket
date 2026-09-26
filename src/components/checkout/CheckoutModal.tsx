@@ -29,7 +29,6 @@ import {
   getWalletSolBalance,
   SOLANA_TREASURY_WALLET_STR,
 } from '../../services/solanaClient';
-import { getPhantomProvider, safeConnectPhantom } from '../common/WalletModal';
 import { PhantomLogo } from '../common/PhantomLogo';
 
 interface CheckoutModalProps {
@@ -53,7 +52,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   event,
   tier,
   quantity,
-  walletAddress,
+  walletAddress: _walletAddress,
   solBalance,
   onSuccess,
   onError,
@@ -63,7 +62,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const { connection } = useConnection();
-  const { publicKey, sendTransaction } = useWallet();
+  const { publicKey, connected, sendTransaction, select, wallets, connect: adapterConnect } = useWallet();
   const [step, setStep] = useState<'FORM' | 'PAYMENT' | 'SUCCESS'>('FORM');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -80,7 +79,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [createdTickets, setCreatedTickets] = useState<PurchasedTicket[]>([]);
   const [internalSolBalance, setInternalSolBalance] = useState<number | null>(solBalance ?? null);
 
-  const activeWallet = publicKey ? publicKey.toBase58() : (walletAddress || getPhantomProvider()?.publicKey?.toString());
+  const activeWallet = publicKey ? publicKey.toBase58() : null;
   const unitPriceSol = 0.05;
   const totalSol = unitPriceSol * selectedQuantity;
 
@@ -91,14 +90,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   }, [solBalance]);
 
   useEffect(() => {
-    if (activeWallet) {
-      void getWalletSolBalance(activeWallet).then((bal) => {
+    if (publicKey) {
+      void getWalletSolBalance(publicKey.toBase58()).then((bal) => {
         if (bal !== null) {
           setInternalSolBalance(bal);
         }
       });
     }
-  }, [activeWallet]);
+  }, [publicKey]);
+
+  // Tự động kết nối Solana Wallet Adapter nếu đã kết nối Phantom trên cửa sổ
+  useEffect(() => {
+    if (isOpen && !connected && wallets.length > 0) {
+      const phantom = wallets.find((w) => w.adapter.name.toLowerCase().includes('phantom'));
+      if (phantom) {
+        select(phantom.adapter.name);
+        adapterConnect().catch(() => undefined);
+      }
+    }
+  }, [isOpen, connected, wallets, select, adapterConnect]);
 
   useEffect(() => {
     if (isOpen) {
@@ -150,7 +160,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Hàm thực hiện chuyển 0.05 SOL trực tiếp trên Solana Devnet qua ví Phantom
   const executeSolanaPayment = async () => {
-    if (!publicKey) {
+    if (!connected || !publicKey) {
       onError('Vui lòng kết nối ví Phantom trước khi thanh toán.');
       await handleConnectWalletFromModal();
       return;
@@ -284,7 +294,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       return;
     }
 
-    if (!publicKey) {
+    if (!connected || !publicKey) {
+      try {
+        const phantom = wallets.find((w) => w.adapter.name.toLowerCase().includes('phantom'));
+        if (phantom) {
+          select(phantom.adapter.name);
+          await adapterConnect();
+        }
+      } catch (err) {
+        console.warn('Auto adapter connect attempt:', err);
+      }
+    }
+
+    if (!connected || !publicKey) {
       onError('Vui lòng kết nối ví Phantom trước khi tiếp tục thanh toán.');
       await handleConnectWalletFromModal();
       return;
@@ -295,23 +317,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   };
 
   const handleConnectWalletFromModal = async () => {
+    try {
+      const phantom = wallets.find((w) => w.adapter.name.toLowerCase().includes('phantom'));
+      if (phantom) {
+        select(phantom.adapter.name);
+        await adapterConnect();
+      }
+    } catch (err) {
+      console.warn('Modal adapter connect notice:', err);
+    }
     if (onConnectWallet) {
       await onConnectWallet();
-      return;
-    }
-    const provider = getPhantomProvider();
-    if (provider?.isPhantom) {
-      try {
-        const resp = await safeConnectPhantom();
-        const pubKey = resp?.publicKey || provider.publicKey;
-        if (pubKey) {
-          const addr = pubKey.toString();
-          const bal = await getWalletSolBalance(addr);
-          setInternalSolBalance(bal);
-        }
-      } catch (err) {
-        console.warn('Connect error:', err);
-      }
     } else {
       onOpenWalletModal?.();
     }
