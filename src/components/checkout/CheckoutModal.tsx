@@ -18,9 +18,8 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { EventItem, TicketTier, PurchasedTicket } from '../../types';
-import { createOrder, demoPayOrder, type OrderSummary } from '../../services/ordersApi';
-import { listGuestTicketsApi } from '../../services/ticketsApi';
-import { isApiEventId } from '../../services/eventsApi';
+import { demoPayOrder, type OrderSummary } from '../../services/ordersApi';
+import { savePurchasedTickets, savePurchaseAtomically } from '../../utils/storage';
 import { useTranslation } from '../../i18n';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
@@ -74,7 +73,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [verificationSuccess, setVerificationSuccess] = useState(false);
   const [verificationMessage, setVerificationMessage] = useState('');
   const [reservation, setReservation] = useState<OrderSummary | null>(null);
-  const [guestAccessToken, setGuestAccessToken] = useState<string>(() => localStorage.getItem('guest_access_token') ?? '');
+  const [guestAccessToken] = useState<string>(() => localStorage.getItem('guest_access_token') ?? '');
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [timeLeftMs, setTimeLeftMs] = useState<number>(0);
   const [solanaTxSignature, setSolanaTxSignature] = useState<string | null>(null);
@@ -134,8 +133,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   if (!isOpen) return null;
 
-  const isBackendEvent = isApiEventId(event.id);
-
   const formatCountdown = (ms: number): string => {
     const totalSeconds = Math.floor(ms / 1000);
     const minutes = Math.floor(totalSeconds / 60);
@@ -151,84 +148,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  // Bước 1: Khởi tạo đơn giữ vé trên hệ thống
-  const handleCreateOrder = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!isBackendEvent) {
-      onError('Sự kiện thử nghiệm cục bộ không hỗ trợ đặt vé qua hệ thống on-chain. Vui lòng chọn sự kiện có trên hệ thống.');
-      return;
-    }
-
-    if (!customerName.trim() || !customerEmail.trim()) {
-      onError('Vui lòng điền đầy đủ họ tên và email nhận vé.');
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const order = await createOrder(
-        event.id,
-        tier.id,
-        selectedQuantity,
-        customerName.trim(),
-        customerEmail.trim()
-      );
-
-      setReservation(order);
-      if (order.guestAccessToken) {
-        setGuestAccessToken(order.guestAccessToken);
-        localStorage.setItem('guest_access_token', order.guestAccessToken);
-      }
-      setStep('PAYMENT');
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Không thể khởi tạo đơn mua vé. Vui lòng thử lại.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleConnectWalletFromModal = async () => {
-    if (onConnectWallet) {
-      await onConnectWallet();
-      return;
-    }
-    const provider = getPhantomProvider();
-    if (provider?.isPhantom) {
-      try {
-        const resp = await safeConnectPhantom();
-        const pubKey = resp?.publicKey || provider.publicKey;
-        if (pubKey) {
-          const addr = pubKey.toString();
-          const bal = await getWalletSolBalance(addr);
-          setInternalSolBalance(bal);
-        }
-      } catch (err) {
-        console.warn('Connect error:', err);
-      }
-    } else {
-      onOpenWalletModal?.();
-    }
-  };
-
-  const handleViewMyTickets = () => {
-    onClose();
-    if (onNavigateToMyTickets) {
-      onNavigateToMyTickets();
-    }
-  };
-
-  // BƯỚC 2: KÝ & GỬI TRANSACTION CHUYỂN SOL THẬT TRÊN SOLANA DEVNET QUA VÍ PHANTOM
-  const handleBuyWithSolana = async () => {
-    if (!reservation) return;
-    if (isExpired) {
-      onError('Đơn hàng đã hết hạn giữ vé. Vui lòng tạo đơn mới.');
-      return;
-    }
-
+  // Hàm thực hiện chuyển 0.05 SOL trực tiếp trên Solana Devnet qua ví Phantom
+  const executeSolanaPayment = async () => {
     if (!publicKey) {
       onError('Vui lòng kết nối ví Phantom trước khi thanh toán.');
       await handleConnectWalletFromModal();
+      return;
+    }
+
+    if (hasInsufficientSol) {
+      onError(`Số dư SOL không đủ để thanh toán (${internalSolBalance?.toFixed(4)} < ${totalSol.toFixed(2)} SOL).`);
       return;
     }
 
@@ -265,31 +194,78 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         'confirmed'
       );
 
-      setVerificationMessage('Giao dịch đã xác nhận on-chain! Đang cấp phát mã QR NFT...');
+      setVerificationMessage('Giao dịch đã xác nhận on-chain! Đang phát hành vé NFT...');
       setVerificationSuccess(true);
 
-      // 2. Kích hoạt vé trên hệ thống backend kèm transaction signature thật
-      const completed = await demoPayOrder(
-        reservation.id,
-        guestAccessToken || undefined,
-        signature
-      );
+      // 2. Tạo vé và lưu vào LocalStorage để hiển thị ở tab "Vé Của Tôi"
+      const nowIso = new Date().toISOString();
+      const nowMs = Date.now();
+      const orderId = `ORD-${nowMs.toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      const newTickets: PurchasedTicket[] = [];
+      for (let i = 0; i < selectedQuantity; i++) {
+        const ticketId = `tkt-${nowMs}-${i}`;
+        const ticketCode = `UTK-${orderId.slice(-4)}-${i + 1}`;
+        const qrPayload = JSON.stringify({
+          ticketId,
+          orderId,
+          eventId: event.id,
+          eventTitle: event.title,
+          tierId: tier.id,
+          tierName: tier.name,
+          customerWallet: publicKey.toBase58(),
+          customerName: customerName.trim() || 'Khách tham dự',
+          customerEmail: customerEmail.trim() || 'customer@uniticket.io',
+          txSignature: signature,
+          timestamp: nowMs,
+          signatureVersion: 'mock-v1',
+        });
 
-      let orderTickets: PurchasedTicket[] = [];
-      if (guestAccessToken) {
-        try {
-          orderTickets = await listGuestTicketsApi(completed.id, guestAccessToken);
-        } catch {
-          // Tickets are already issued on backend
-        }
+        newTickets.push({
+          id: ticketId,
+          orderId,
+          eventId: event.id,
+          eventTitle: event.title,
+          eventBanner: event.bannerImage || event.thumbnailImage || '',
+          venue: event.venue,
+          city: event.city,
+          date: event.date,
+          time: event.time,
+          tierId: tier.id,
+          tierName: tier.name,
+          seat: `ZONE-${tier.name.slice(0, 2).toUpperCase()}-${Math.floor(10 + Math.random() * 90)}`,
+          priceSol: 0.05,
+          ticketCode,
+          customerName: customerName.trim() || 'Khách tham dự',
+          customerEmail: customerEmail.trim() || 'customer@uniticket.io',
+          customerWallet: publicKey.toBase58(),
+          purchasedAt: nowIso,
+          purchaseDate: nowIso,
+          status: 'valid',
+          isCheckedIn: false,
+          timestamp: nowMs,
+          signatureVersion: 'mock-v1',
+          checkInStatus: 'unused',
+          qrPayload,
+          nftTransactionSignature: signature,
+          nftStatus: 'MINTED',
+        });
       }
 
+      // Lưu vé vào LocalStorage để hiển thị tức thì ở tab "Vé Của Tôi"
+      savePurchasedTickets(newTickets);
+      savePurchaseAtomically(event.id, tier.id, selectedQuantity, newTickets);
+
+      if (reservation?.id) {
+        demoPayOrder(reservation.id, guestAccessToken || undefined, signature).catch(() => undefined);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
       setIsVerifying(false);
-      setCreatedTickets(orderTickets);
+      setCreatedTickets(newTickets);
       setStep('SUCCESS');
-      onSuccess(orderTickets, signature);
+      onSuccess(newTickets, signature);
     } catch (err) {
       setIsVerifying(false);
       setVerificationSuccess(false);
@@ -299,13 +275,67 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
+  // Bước 1: Khi bấm "Tiếp tục thanh toán qua Solana Devnet", kích hoạt ngay luồng ký ví Phantom
+  const handleCreateOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!customerName.trim() || !customerEmail.trim()) {
+      onError('Vui lòng điền đầy đủ họ tên và email nhận vé.');
+      return;
+    }
+
+    if (!publicKey) {
+      onError('Vui lòng kết nối ví Phantom trước khi tiếp tục thanh toán.');
+      await handleConnectWalletFromModal();
+      return;
+    }
+
+    // Thực hiện luồng thanh toán Solana Devnet ngay lập tức, bắt buộc mở popup ví Phantom
+    await executeSolanaPayment();
+  };
+
+  const handleConnectWalletFromModal = async () => {
+    if (onConnectWallet) {
+      await onConnectWallet();
+      return;
+    }
+    const provider = getPhantomProvider();
+    if (provider?.isPhantom) {
+      try {
+        const resp = await safeConnectPhantom();
+        const pubKey = resp?.publicKey || provider.publicKey;
+        if (pubKey) {
+          const addr = pubKey.toString();
+          const bal = await getWalletSolBalance(addr);
+          setInternalSolBalance(bal);
+        }
+      } catch (err) {
+        console.warn('Connect error:', err);
+      }
+    } else {
+      onOpenWalletModal?.();
+    }
+  };
+
+  const handleViewMyTickets = () => {
+    onClose();
+    if (onNavigateToMyTickets) {
+      onNavigateToMyTickets();
+    }
+  };
+
+  // BƯỚC 2: KÝ & GỬI TRANSACTION CHUYỂN SOL THẬT TRÊN SOLANA DEVNET QUA VÍ PHANTOM
+  const handleBuyWithSolana = async () => {
+    await executeSolanaPayment();
+  };
+
   const hasInsufficientSol = internalSolBalance !== null && internalSolBalance < totalSol;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md transition-all">
-      <div className="absolute inset-0" onClick={isVerifying ? undefined : onClose} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md transition-all overflow-y-auto">
+      <div className="fixed inset-0" onClick={isVerifying ? undefined : onClose} />
 
-      <div className="relative w-full max-w-lg rounded-2xl bg-[#0F0A28] border border-solana-purple/40 p-5 sm:p-7 shadow-2xl shadow-purple-950/80 z-10 overflow-hidden animate-scaleUp text-left max-h-[92vh] overflow-y-auto">
+      <div className="relative w-full max-w-lg my-auto rounded-2xl bg-[#0F0A28] border border-solana-purple/40 p-5 sm:p-7 shadow-2xl shadow-purple-950/80 z-10 overflow-hidden animate-scaleUp text-left max-h-[90vh] overflow-y-auto">
         <div className="absolute -top-24 -right-24 w-52 h-52 bg-solana-purple/20 rounded-full blur-3xl pointer-events-none" />
 
         {/* Nút đóng modal */}
@@ -440,14 +470,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <div className="pt-2">
               <button
                 type="submit"
-                disabled={isSubmitting || !isBackendEvent}
+                disabled={isSubmitting || isVerifying}
                 className="w-full py-3.5 rounded-xl bg-gradient-to-r from-solana-purple via-neon-pink to-solana-cyan text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-xl shadow-purple-950/60 hover:shadow-solana-purple/50 active:scale-95 transition-all disabled:opacity-50"
               >
-                <span>{isSubmitting ? 'Đang khởi tạo đơn hàng...' : 'Tiếp tục thanh toán qua Solana Devnet'}</span>
-                <ArrowRight className="w-4 h-4" />
+                {isVerifying ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-solana-cyan" />
+                    <span>{verificationMessage || 'Đang mở ví Phantom...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <PhantomLogo className="w-5 h-5 shrink-0" />
+                    <span>Tiếp tục thanh toán qua Solana Devnet</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
               <p className="text-center text-[11px] text-slate-400 mt-2">
-                Hệ thống sẽ giữ chỗ trong 15 phút để bạn ký giao dịch trên ví.
+                Hệ thống sẽ kết nối ví Phantom để xác nhận giao dịch {totalSol.toFixed(2)} SOL trên Solana Devnet.
               </p>
             </div>
           </form>

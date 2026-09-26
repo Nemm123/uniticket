@@ -322,8 +322,13 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
                         </span>
                       </div>
 
-                      <div className="text-2xl font-black text-solana-cyan mb-2">
-                        {formatCurrency(tier.priceVnd)}
+                      <div className="flex items-baseline gap-2 mb-2">
+                        <span className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-solana-cyan to-solana-green font-mono">
+                          0.05 SOL
+                        </span>
+                        <span className="text-xs text-slate-400 font-medium">
+                          Devnet ({formatCurrency(tier.priceVnd)})
+                        </span>
                       </div>
 
                       {tier.description && (
@@ -354,7 +359,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
                           : 'bg-gradient-to-r from-solana-purple to-neon-pink hover:shadow-solana-purple/50 text-white'
                       }`}
                     >
-                      {tierSoldOut ? t('common.soldOut').toUpperCase() : t('eventDetail.selectTier')}
+                      {tierSoldOut ? t('common.soldOut').toUpperCase() : `${t('eventDetail.selectTier')} (0.05 SOL)`}
                     </button>
                   </div>
                 );

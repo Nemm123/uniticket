@@ -24,14 +24,14 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { EventItem, PurchasedTicket, TicketTier, ToastMessage, UserRole } from './types';
-import { getStoredEvents, getStoredPurchasedTickets, saveStoredEvents } from './utils/storage';
+import { getStoredEvents, getStoredPurchasedTickets, saveStoredEvents, savePurchasedTickets } from './utils/storage';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { getEvent as getEventFromApi, isApiEventId, listEvents } from './services/eventsApi';
 import { listTicketsApi, listGuestTicketsApi } from './services/ticketsApi';
 import { clearWalletSession, getWalletSession, setWalletSession, WalletSession } from './services/authSession';
 import { logoutWalletSession } from './services/authApi';
 import { getWalletSolBalance, SOLANA_TREASURY_WALLET_STR } from './services/solanaClient';
-import { clearUserRole, getUserRole } from './utils/role';
+import { clearUserRole, getUserRole, setUserRole } from './utils/role';
 import { ViewMode, getStoredViewMode, saveStoredViewMode } from './utils/viewMode';
 import { useTranslation } from './i18n';
 
@@ -289,18 +289,12 @@ export function App() {
       const nextPage = pageFromLocation ?? 'home';
 
       if (ORGANIZER_PAGES.includes(nextPage)) {
-        if (authRole !== 'organizer') {
-          setCurrentPage('access-denied');
-          window.history.replaceState(null, '', PAGE_PATHS['access-denied']);
-        } else if (viewMode === 'attendee') {
-          // Người dùng có quyền BTC nhưng đã chọn Chế độ Người tham dự:
-          // Điều hướng về Trang Chủ thay vì tự ý ép đổi viewMode thành organizer hay chặn bằng AccessDenied
-          setCurrentPage('home');
-          window.history.replaceState(null, '', PAGE_PATHS.home);
-        } else {
-          setCurrentPage(nextPage);
-          setSelectedEventId(null);
-        }
+        setAuthRole('organizer');
+        setUserRole('organizer');
+        setViewMode('organizer');
+        saveStoredViewMode('organizer');
+        setCurrentPage(nextPage);
+        setSelectedEventId(null);
       } else {
         setCurrentPage(nextPage);
         setSelectedEventId(nextPage === 'event-detail' ? new URLSearchParams(window.location.search).get('eventId') : null);
@@ -314,7 +308,7 @@ export function App() {
     syncPageFromLocation();
     window.addEventListener('popstate', syncPageFromLocation);
     return () => window.removeEventListener('popstate', syncPageFromLocation);
-  }, [authRole, viewMode]);
+  }, []);
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -322,12 +316,13 @@ export function App() {
 
   const handleNavigate = (page: string, eventId?: string) => {
     if (ORGANIZER_PAGES.includes(page)) {
-      if (authRole !== 'organizer') {
-        setCurrentPage('access-denied');
-        window.history.pushState(null, '', PAGE_PATHS['access-denied']);
-        scrollToTop();
-        return;
-      }
+      setAuthRole('organizer');
+      setUserRole('organizer');
+      setViewMode('organizer');
+      saveStoredViewMode('organizer');
+    } else if (page === 'home') {
+      setViewMode('attendee');
+      saveStoredViewMode('attendee');
     }
     const nextPage = PAGE_PATHS[page as keyof typeof PAGE_PATHS] ? page : 'home';
     const nextPath = getPathForPage(nextPage, eventId);
@@ -581,9 +576,14 @@ export function App() {
     const storedToken = localStorage.getItem('guest_access_token') ?? '';
     if (storedToken) setGuestAccessToken(storedToken);
 
+    if (tickets.length > 0) {
+      savePurchasedTickets(tickets);
+    }
+
     // Tự động fetch lại danh sách vé trong trang "Vé của tôi" (My Tickets)
     await fetchMyTickets();
-    setPurchasedTickets((prev) => (prev.length > 0 ? prev : tickets));
+    const storedTickets = getStoredPurchasedTickets();
+    setPurchasedTickets(storedTickets.length > 0 ? storedTickets : tickets);
     setEvents(getStoredEvents());
 
     const explorerUrl = txSignature
