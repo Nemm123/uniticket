@@ -9,7 +9,7 @@ function normalizeEvents(events: EventItem[]): EventItem[] {
   const canonicalMap = new Map(mockEvents.map((e) => [e.id, e]));
   let modified = false;
 
-  const normalized = events.map((event) => {
+  const normalized: EventItem[] = events.map((event) => {
     const canonical = canonicalMap.get(event.id);
     const tiers = (event.tiers || []).map((tier) => {
       if (typeof tier.priceVnd === 'number' && tier.priceVnd > 0) return tier;
@@ -25,6 +25,14 @@ function normalizeEvents(events: EventItem[]): EventItem[] {
 
     return { ...event, minPriceVnd, tiers };
   });
+
+  const existingIds = new Set(events.map((e) => e.id));
+  for (const canonical of mockEvents) {
+    if (!existingIds.has(canonical.id)) {
+      normalized.push(canonical);
+      modified = true;
+    }
+  }
 
   if (modified) {
     try {

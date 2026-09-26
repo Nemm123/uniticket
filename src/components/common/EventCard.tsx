@@ -2,6 +2,7 @@ import React from 'react';
 import { Calendar, MapPin, Sparkles, Flame, ArrowUpRight } from 'lucide-react';
 import { EventItem } from '../../types';
 import { useTranslation } from '../../i18n';
+import { formatEventCategory, formatEventCity, getEventStatusBadge } from '../../utils/eventHelpers';
 
 interface EventCardProps {
   event: EventItem;
@@ -58,7 +59,7 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
           <div className="absolute top-2.5 left-2.5 flex flex-wrap items-center gap-1.5">
             {/* Category */}
             <span className="rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-semibold text-solana-cyan backdrop-blur-md border border-white/15">
-              {event.category}
+              {formatEventCategory(event.category)}
             </span>
 
             {/* Featured badge */}
@@ -80,15 +81,15 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
 
           {/* Badges bottom */}
           <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2">
-            {isSoldOut ? (
-              <span className="rounded-lg bg-red-600/90 px-2.5 py-1 text-xs font-bold text-white shadow-md backdrop-blur-md">
-                {t('common.soldOut')}
-              </span>
-            ) : isUpcoming ? (
-              <span className="rounded-lg bg-solana-purple/70 px-2 py-0.5 text-[11px] font-semibold text-purple-200 backdrop-blur-md border border-solana-purple/30">
-                {t('common.upcoming')}
-              </span>
-            ) : null}
+            {(() => {
+              const badge = getEventStatusBadge(event.status, isSoldOut, isUpcoming);
+              if (!badge) return null;
+              return (
+                <span className={`rounded-lg ${badge.bgClass} ${badge.textClass} px-2.5 py-0.5 text-[11px] font-semibold backdrop-blur-md border ${badge.borderClass}`}>
+                  {badge.label}
+                </span>
+              );
+            })()}
 
             <span className="ml-auto rounded-lg bg-black/85 px-2.5 py-1 text-xs font-bold text-solana-green shadow-md backdrop-blur-md border border-solana-green/40">
               {t('hero.startingFrom')} {formatPrice(event.minPriceVnd, event.minPriceSol)}
@@ -118,7 +119,7 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
             <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-neon-pink/20 text-neon-pink">
               <MapPin className="h-3.5 w-3.5" />
             </div>
-            <span className="truncate font-medium text-slate-200">{event.venue}, {event.city}</span>
+            <span className="truncate font-medium text-slate-200">{event.venue}, {formatEventCity(event.city)}</span>
           </div>
         </div>
       </div>

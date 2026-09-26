@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { EventItem, TicketTier } from '../../types';
 import { useTranslation } from '../../i18n';
+import { formatEventCategory, formatEventCity, getEventStatusBadge } from '../../utils/eventHelpers';
 
 interface EventDetailPageProps {
   event: EventItem | null;
@@ -115,10 +116,22 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
 
           {/* Badges on Banner */}
           <div className="absolute top-4 left-4 right-4 flex items-center justify-between gap-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/70 backdrop-blur-md border border-solana-green/40 text-solana-green text-xs font-bold shrink-0">
-              <Tag className="w-3.5 h-3.5" />
-              <span>{event.category}</span>
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/70 backdrop-blur-md border border-solana-green/40 text-solana-green text-xs font-bold shrink-0">
+                <Tag className="w-3.5 h-3.5" />
+                <span>{formatEventCategory(event.category)}</span>
+              </span>
+
+              {(() => {
+                const badge = getEventStatusBadge(event.status);
+                if (!badge) return null;
+                return (
+                  <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold backdrop-blur-md border ${badge.bgClass} ${badge.textClass} ${badge.borderClass}`}>
+                    {badge.label}
+                  </span>
+                );
+              })()}
+            </div>
 
             <div className="flex items-center gap-2">
               {event.featured && (
@@ -171,7 +184,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
               <div className="min-w-0 flex-1">
                 <div className="text-[11px] text-slate-400">{t('eventDetail.venueLabel')}</div>
                 <div className="text-xs sm:text-sm font-bold text-white truncate block">{event.venue}</div>
-                <div className="text-[11px] text-slate-300 truncate block">{event.city}</div>
+                <div className="text-[11px] text-slate-300 truncate block">{formatEventCity(event.city)}</div>
               </div>
             </div>
 

@@ -23,18 +23,18 @@ const TIME_OPTIONS = [
 
 const CATEGORY_OPTIONS = [
   { id: 'all', labelKey: 'eventsPage.categoryOptions.all', dbValue: 'all' },
-  { id: 'music', labelKey: 'eventsPage.categoryOptions.music', dbValue: 'Âm nhạc' },
-  { id: 'tech', labelKey: 'eventsPage.categoryOptions.tech', dbValue: 'Công nghệ' },
-  { id: 'workshop', labelKey: 'eventsPage.categoryOptions.workshop', dbValue: 'Workshop' },
-  { id: 'entertainment', labelKey: 'eventsPage.categoryOptions.entertainment', dbValue: 'Giải trí' },
+  { id: 'music', labelKey: 'eventsPage.categoryOptions.music', dbValue: 'music' },
+  { id: 'tech', labelKey: 'eventsPage.categoryOptions.tech', dbValue: 'tech' },
+  { id: 'workshop', labelKey: 'eventsPage.categoryOptions.workshop', dbValue: 'workshop' },
+  { id: 'entertainment', labelKey: 'eventsPage.categoryOptions.entertainment', dbValue: 'entertainment' },
 ];
 
 const CITY_OPTIONS = [
   { id: 'all', labelKey: 'eventsPage.cityOptions.all', dbValue: 'all' },
-  { id: 'hcm', labelKey: 'eventsPage.cityOptions.hcm', dbValue: 'TP. Hồ Chí Minh' },
-  { id: 'hanoi', labelKey: 'eventsPage.cityOptions.hanoi', dbValue: 'Hà Nội' },
-  { id: 'danang', labelKey: 'eventsPage.cityOptions.danang', dbValue: 'Đà Nẵng' },
-  { id: 'online', labelKey: 'eventsPage.cityOptions.online', dbValue: 'Trực tuyến' },
+  { id: 'hcm', labelKey: 'eventsPage.cityOptions.hcm', dbValue: 'hcm' },
+  { id: 'hanoi', labelKey: 'eventsPage.cityOptions.hanoi', dbValue: 'hanoi' },
+  { id: 'danang', labelKey: 'eventsPage.cityOptions.danang', dbValue: 'danang' },
+  { id: 'online', labelKey: 'eventsPage.cityOptions.online', dbValue: 'online' },
 ];
 
 const PRICE_OPTIONS = [
@@ -43,6 +43,26 @@ const PRICE_OPTIONS = [
   { id: 'under01Sol', labelKey: 'eventsPage.priceOptions.under01Sol' },
   { id: 'over01Sol', labelKey: 'eventsPage.priceOptions.over01Sol' },
 ];
+
+function normalizeInitialCategory(cat?: string): string {
+  if (!cat || cat === 'All' || cat === 'all') return 'all';
+  const lower = cat.toLowerCase().trim();
+  if (lower === 'music' || lower === 'âm nhạc' || lower.includes('nhạc')) return 'music';
+  if (lower === 'tech' || lower === 'công nghệ' || lower.includes('web3')) return 'tech';
+  if (lower === 'workshop' || lower.includes('thảo')) return 'workshop';
+  if (lower === 'entertainment' || lower === 'giải trí') return 'entertainment';
+  return cat;
+}
+
+function normalizeInitialCity(city?: string): string {
+  if (!city || city === 'All' || city === 'all') return 'all';
+  const lower = city.toLowerCase().trim();
+  if (lower === 'hcm' || lower.includes('hồ chí minh')) return 'hcm';
+  if (lower === 'hanoi' || lower.includes('hà nội') || lower.includes('ha noi')) return 'hanoi';
+  if (lower === 'danang' || lower.includes('đà nẵng') || lower.includes('da nang')) return 'danang';
+  if (lower === 'online' || lower.includes('tuyến')) return 'online';
+  return city;
+}
 
 export const EventsPage: React.FC<EventsPageProps> = ({
   onSelectEvent,
@@ -60,12 +80,8 @@ export const EventsPage: React.FC<EventsPageProps> = ({
   const [searchTerm, setSearchTerm] = useState(initialQuery);
   const [selectedTime, setSelectedTime] = useState<string>('all');
   const [selectedCustomDate, setSelectedCustomDate] = useState<string>('');
-  const [selectedCategory, setSelectedCategory] = useState<string>(
-    initialCategory && initialCategory !== 'All' ? initialCategory : 'all'
-  );
-  const [selectedCity, setSelectedCity] = useState<string>(
-    initialCity && initialCity !== 'All' ? initialCity : 'all'
-  );
+  const [selectedCategory, setSelectedCategory] = useState<string>(() => normalizeInitialCategory(initialCategory));
+  const [selectedCity, setSelectedCity] = useState<string>(() => normalizeInitialCity(initialCity));
   const [selectedPrice, setSelectedPrice] = useState<string>('all');
 
   // Debounced search term
@@ -143,22 +159,40 @@ export const EventsPage: React.FC<EventsPageProps> = ({
       // 2. Category
       if (selectedCategory !== 'all') {
         const catLower = selectedCategory.toLowerCase();
+        const evtCat = (evt.category || '').toLowerCase();
         const matchesCategory =
-          evt.category.toLowerCase() === catLower ||
-          (catLower === 'âm nhạc' && (evt.category.toLowerCase().includes('nhạc') || evt.category.toLowerCase().includes('music') || evt.category === 'Concert' || evt.category === 'EDM Festival' || evt.category === 'Rock Arena' || evt.category === 'DJ Night')) ||
-          (catLower === 'công nghệ' && (evt.category.toLowerCase().includes('công nghệ') || evt.category.toLowerCase().includes('tech') || evt.category === 'Web3 Hackathon' || evt.category === 'Web3')) ||
-          (catLower === 'workshop' && (evt.category.toLowerCase().includes('workshop') || evt.category.toLowerCase().includes('hội thảo'))) ||
-          (catLower === 'giải trí' && (evt.category.toLowerCase().includes('giải trí') || evt.category.toLowerCase().includes('entertainment') || evt.category === 'Concert' || evt.category === 'Comedy Show'));
+          evtCat === catLower ||
+          ((catLower === 'âm nhạc' || catLower === 'music') && (
+            evtCat.includes('nhạc') || evtCat.includes('music') || evtCat === 'concert' || evtCat === 'edm festival' || evtCat === 'rock arena' || evtCat === 'dj night'
+          )) ||
+          ((catLower === 'công nghệ' || catLower === 'tech') && (
+            evtCat.includes('công nghệ') || evtCat.includes('tech') || evtCat === 'web3 hackathon' || evtCat === 'web3' || evtCat.includes('hackathon') || evtCat.includes('solana')
+          )) ||
+          ((catLower === 'workshop') && (
+            evtCat.includes('workshop') || evtCat.includes('hội thảo')
+          )) ||
+          ((catLower === 'giải trí' || catLower === 'entertainment') && (
+            evtCat.includes('giải trí') || evtCat.includes('entertainment') || evtCat === 'concert' || evtCat === 'comedy show' || evtCat.includes('festival')
+          ));
         if (!matchesCategory) return false;
       }
 
       // 3. City
       if (selectedCity !== 'all') {
-        if (selectedCity === 'Trực tuyến' || selectedCity.toLowerCase() === 'online') {
-          const isOnline = evt.city.toLowerCase().includes('online') || evt.city.toLowerCase().includes('trực tuyến') || evt.venue.toLowerCase().includes('online');
+        const cityLower = selectedCity.toLowerCase();
+        const evtCity = (evt.city || '').toLowerCase();
+        const evtVenue = (evt.venue || '').toLowerCase();
+        if (cityLower === 'trực tuyến' || cityLower === 'online') {
+          const isOnline = evtCity.includes('online') || evtCity.includes('trực tuyến') || evtVenue.includes('online');
           if (!isOnline) return false;
+        } else if (cityLower.includes('hồ chí minh') || cityLower === 'hcm') {
+          if (!evtCity.includes('hồ chí minh') && !evtCity.includes('hcm') && !evtVenue.includes('hồ chí minh') && !evtVenue.includes('hcm')) return false;
+        } else if (cityLower.includes('hà nội') || cityLower === 'hanoi') {
+          if (!evtCity.includes('hà nội') && !evtCity.includes('hanoi') && !evtVenue.includes('hà nội')) return false;
+        } else if (cityLower.includes('đà nẵng') || cityLower === 'danang') {
+          if (!evtCity.includes('đà nẵng') && !evtCity.includes('danang') && !evtVenue.includes('đà nẵng')) return false;
         } else {
-          if (!evt.city.toLowerCase().includes(selectedCity.toLowerCase())) return false;
+          if (!evtCity.includes(cityLower) && !evtVenue.includes(cityLower)) return false;
         }
       }
 

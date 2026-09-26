@@ -5,7 +5,7 @@ import { deleteStoredEvent, getStoredPurchasedTickets, getStoredEvents, saveStor
 import { createEvent as createEventApi, deleteEvent as deleteEventApi, updateEvent as updateEventApi } from '../../services/eventsApi';
 import { useTranslation } from '../../i18n';
 
-type EventStatus = 'draft' | 'published' | 'cancelled';
+type EventStatus = NonNullable<EventItem['status']>;
 type Category = EventItem['category'];
 type TierDraft = Pick<TicketTier, 'id' | 'name' | 'priceSol' | 'description' | 'totalQuantity' | 'remainingQuantity'> & { perks: string };
 interface EventFormState {

@@ -59,7 +59,7 @@ export interface EventItem {
   soldTickets: number;
   featured: boolean;
   tags: string[];
-  status?: 'draft' | 'published' | 'cancelled';
+  status?: 'draft' | 'published' | 'cancelled' | 'upcoming' | 'happening_soon' | (string & {});
   createdBy?: string;
   lineup?: string[];
   tiers?: TicketTier[];
