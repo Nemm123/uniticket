@@ -180,29 +180,31 @@
     "noEvents": "No matching events found",
     "noEventsHint": "There are no events matching your active filters. Try adjusting category, city, or time range.",
     "resetAndShowAll": "Reset Filters & View All Events",
-    "time": {
+    "timeOptions": {
       "all": "All Time",
       "today": "Today",
-      "thisWeekend": "This Weekend",
       "thisWeek": "This Week",
       "thisMonth": "This Month"
     },
-    "categories": {
-      "all": "All Categories"
+    "categoryOptions": {
+      "all": "All Categories",
+      "music": "Music",
+      "tech": "Technology",
+      "workshop": "Workshop",
+      "entertainment": "Entertainment"
     },
-    "cities": {
+    "cityOptions": {
       "all": "All Locations",
       "hcm": "Ho Chi Minh City",
-      "hn": "Hanoi",
-      "dn": "Da Nang",
-      "other": "Other Cities"
+      "hanoi": "Hanoi",
+      "danang": "Da Nang",
+      "online": "Online"
     },
-    "prices": {
-      "all": "All Price Ranges",
+    "priceOptions": {
+      "all": "All Prices",
       "free": "Free",
-      "under500k": "Under ₫500,000",
-      "from500kTo1m": "₫500,000 – ₫1,000,000",
-      "over1m": "Over ₫1,000,000"
+      "under01Sol": "Under 0.1 SOL",
+      "over01Sol": "Over 0.1 SOL"
     },
     "clearSearch": "Clear search",
     "timeFilter": "Time",

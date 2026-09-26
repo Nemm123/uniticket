@@ -180,29 +180,31 @@
     "noEvents": "Không tìm thấy sự kiện phù hợp",
     "noEventsHint": "Không có sự kiện hoặc hòa nhạc nào khớp với bộ lọc hiện tại của bạn. Thử thay đổi thể loại, thành phố hoặc khoảng thời gian khác.",
     "resetAndShowAll": "Xóa Bộ Lọc & Xem Tất Cả Sự Kiện",
-    "time": {
+    "timeOptions": {
       "all": "Tất cả thời gian",
       "today": "Hôm nay",
-      "thisWeekend": "Cuối tuần này",
       "thisWeek": "Tuần này",
       "thisMonth": "Tháng này"
     },
-    "categories": {
-      "all": "Tất cả thể loại"
+    "categoryOptions": {
+      "all": "Tất cả thể loại",
+      "music": "Âm nhạc",
+      "tech": "Công nghệ",
+      "workshop": "Workshop",
+      "entertainment": "Giải trí"
     },
-    "cities": {
+    "cityOptions": {
       "all": "Tất cả địa điểm",
       "hcm": "TP. Hồ Chí Minh",
-      "hn": "Hà Nội",
-      "dn": "Đà Nẵng",
-      "other": "Thành phố khác"
+      "hanoi": "Hà Nội",
+      "danang": "Đà Nẵng",
+      "online": "Trực tuyến"
     },
-    "prices": {
+    "priceOptions": {
       "all": "Tất cả mức giá",
       "free": "Miễn phí",
-      "under500k": "Dưới 500.000 ₫",
-      "from500kTo1m": "500.000 ₫ – 1.000.000 ₫",
-      "over1m": "Trên 1.000.000 ₫"
+      "under01Sol": "Dưới 0.1 SOL",
+      "over01Sol": "Trên 0.1 SOL"
     },
     "clearSearch": "Xóa tìm kiếm",
     "timeFilter": "Thời Gian",

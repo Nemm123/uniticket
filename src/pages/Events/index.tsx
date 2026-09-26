@@ -17,37 +17,31 @@ interface EventsPageProps {
 const TIME_OPTIONS = [
   { id: 'all', labelKey: 'eventsPage.timeOptions.all' },
   { id: 'today', labelKey: 'eventsPage.timeOptions.today' },
-  { id: 'this-weekend', labelKey: 'eventsPage.timeOptions.thisWeekend' },
   { id: 'this-week', labelKey: 'eventsPage.timeOptions.thisWeek' },
   { id: 'this-month', labelKey: 'eventsPage.timeOptions.thisMonth' },
 ];
 
 const CATEGORY_OPTIONS = [
   { id: 'all', labelKey: 'eventsPage.categoryOptions.all', dbValue: 'all' },
-  { id: 'live-music', labelKey: 'eventsPage.categoryOptions.liveMusic', dbValue: 'Nhạc sống' },
-  { id: 'theater-art', labelKey: 'eventsPage.categoryOptions.theaterArt', dbValue: 'Sân khấu & Nghệ thuật' },
-  { id: 'workshop', labelKey: 'eventsPage.categoryOptions.workshop', dbValue: 'Hội thảo & Workshop' },
-  { id: 'tours', labelKey: 'eventsPage.categoryOptions.tours', dbValue: 'Tham quan & Trải nghiệm' },
-  { id: 'sports', labelKey: 'eventsPage.categoryOptions.sports', dbValue: 'Thể thao' },
+  { id: 'music', labelKey: 'eventsPage.categoryOptions.music', dbValue: 'Âm nhạc' },
   { id: 'tech', labelKey: 'eventsPage.categoryOptions.tech', dbValue: 'Công nghệ' },
-  { id: 'web3', labelKey: 'eventsPage.categoryOptions.web3', dbValue: 'Web3' },
-  { id: 'other', labelKey: 'eventsPage.categoryOptions.other', dbValue: 'Khác' },
+  { id: 'workshop', labelKey: 'eventsPage.categoryOptions.workshop', dbValue: 'Workshop' },
+  { id: 'entertainment', labelKey: 'eventsPage.categoryOptions.entertainment', dbValue: 'Giải trí' },
 ];
 
 const CITY_OPTIONS = [
   { id: 'all', labelKey: 'eventsPage.cityOptions.all', dbValue: 'all' },
   { id: 'hcm', labelKey: 'eventsPage.cityOptions.hcm', dbValue: 'TP. Hồ Chí Minh' },
-  { id: 'hn', labelKey: 'eventsPage.cityOptions.hn', dbValue: 'Hà Nội' },
-  { id: 'dn', labelKey: 'eventsPage.cityOptions.dn', dbValue: 'Đà Nẵng' },
-  { id: 'other', labelKey: 'eventsPage.cityOptions.other', dbValue: 'Thành phố khác' },
+  { id: 'hanoi', labelKey: 'eventsPage.cityOptions.hanoi', dbValue: 'Hà Nội' },
+  { id: 'danang', labelKey: 'eventsPage.cityOptions.danang', dbValue: 'Đà Nẵng' },
+  { id: 'online', labelKey: 'eventsPage.cityOptions.online', dbValue: 'Trực tuyến' },
 ];
 
 const PRICE_OPTIONS = [
   { id: 'all', labelKey: 'eventsPage.priceOptions.all' },
   { id: 'free', labelKey: 'eventsPage.priceOptions.free' },
-  { id: 'under-500k', labelKey: 'eventsPage.priceOptions.under500k' },
-  { id: '500k-1m', labelKey: 'eventsPage.priceOptions.from500kTo1m' },
-  { id: 'over-1m', labelKey: 'eventsPage.priceOptions.over1m' },
+  { id: 'under01Sol', labelKey: 'eventsPage.priceOptions.under01Sol' },
+  { id: 'over01Sol', labelKey: 'eventsPage.priceOptions.over01Sol' },
 ];
 
 export const EventsPage: React.FC<EventsPageProps> = ({
@@ -102,14 +96,11 @@ export const EventsPage: React.FC<EventsPageProps> = ({
     if (selectedPrice === 'free') {
       apiFilters.minPrice = 0;
       apiFilters.maxPrice = 0;
-    } else if (selectedPrice === 'under-500k') {
+    } else if (selectedPrice === 'under01Sol' || selectedPrice === 'under-500k') {
       apiFilters.minPrice = 0;
       apiFilters.maxPrice = 499999;
-    } else if (selectedPrice === '500k-1m') {
+    } else if (selectedPrice === 'over01Sol' || selectedPrice === 'over-1m') {
       apiFilters.minPrice = 500000;
-      apiFilters.maxPrice = 1000000;
-    } else if (selectedPrice === 'over-1m') {
-      apiFilters.minPrice = 1000001;
     }
 
     try {
@@ -151,18 +142,21 @@ export const EventsPage: React.FC<EventsPageProps> = ({
 
       // 2. Category
       if (selectedCategory !== 'all') {
+        const catLower = selectedCategory.toLowerCase();
         const matchesCategory =
-          evt.category.toLowerCase() === selectedCategory.toLowerCase() ||
-          (selectedCategory === 'Nhạc sống' && (evt.category === 'Concert' || evt.category === 'EDM Festival' || evt.category === 'Rock Arena' || evt.category === 'DJ Night')) ||
-          (selectedCategory === 'Web3' && (evt.category === 'Web3 Hackathon' || evt.category === 'Công nghệ'));
+          evt.category.toLowerCase() === catLower ||
+          (catLower === 'âm nhạc' && (evt.category.toLowerCase().includes('nhạc') || evt.category.toLowerCase().includes('music') || evt.category === 'Concert' || evt.category === 'EDM Festival' || evt.category === 'Rock Arena' || evt.category === 'DJ Night')) ||
+          (catLower === 'công nghệ' && (evt.category.toLowerCase().includes('công nghệ') || evt.category.toLowerCase().includes('tech') || evt.category === 'Web3 Hackathon' || evt.category === 'Web3')) ||
+          (catLower === 'workshop' && (evt.category.toLowerCase().includes('workshop') || evt.category.toLowerCase().includes('hội thảo'))) ||
+          (catLower === 'giải trí' && (evt.category.toLowerCase().includes('giải trí') || evt.category.toLowerCase().includes('entertainment') || evt.category === 'Concert' || evt.category === 'Comedy Show'));
         if (!matchesCategory) return false;
       }
 
       // 3. City
       if (selectedCity !== 'all') {
-        if (selectedCity === 'Thành phố khác') {
-          const isMainCity = evt.city.includes('Hồ Chí Minh') || evt.city.includes('Hà Nội') || evt.city.includes('Đà Nẵng');
-          if (isMainCity) return false;
+        if (selectedCity === 'Trực tuyến' || selectedCity.toLowerCase() === 'online') {
+          const isOnline = evt.city.toLowerCase().includes('online') || evt.city.toLowerCase().includes('trực tuyến') || evt.venue.toLowerCase().includes('online');
+          if (!isOnline) return false;
         } else {
           if (!evt.city.toLowerCase().includes(selectedCity.toLowerCase())) return false;
         }
@@ -180,12 +174,10 @@ export const EventsPage: React.FC<EventsPageProps> = ({
       // 5. Price
       if (selectedPrice === 'free') {
         if (evt.minPriceVnd && evt.minPriceVnd > 0) return false;
-      } else if (selectedPrice === 'under-500k') {
+      } else if (selectedPrice === 'under01Sol' || selectedPrice === 'under-500k') {
         if (evt.minPriceVnd !== undefined && evt.minPriceVnd >= 500000) return false;
-      } else if (selectedPrice === '500k-1m') {
-        if (evt.minPriceVnd !== undefined && (evt.minPriceVnd < 500000 || evt.minPriceVnd > 1000000)) return false;
-      } else if (selectedPrice === 'over-1m') {
-        if (evt.minPriceVnd !== undefined && evt.minPriceVnd <= 1000000) return false;
+      } else if (selectedPrice === 'over01Sol' || selectedPrice === 'over-1m') {
+        if (evt.minPriceVnd !== undefined && evt.minPriceVnd < 500000) return false;
       }
 
       return true;
