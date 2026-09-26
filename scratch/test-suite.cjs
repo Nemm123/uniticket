@@ -225,6 +225,18 @@ assert(
   'TEST 17 — Navbar provides responsive mobile drawer navigation and mobile LanguageSwitcher'
 );
 
+// -------------------------------------------------------------
+// TEST 18 — Storage V2 & Event Auto-Merge on Missing IDs
+// -------------------------------------------------------------
+const storageCode = fs.readFileSync('src/utils/storage.ts', 'utf8');
+assert(
+  storageCode.includes('uniticket_events_inventory_v2') &&
+  storageCode.includes('getEvents') &&
+  storageCode.includes('event-anh-trai-say-hi-2026') &&
+  storageCode.includes('event-solana-vietnam-build-2026'),
+  'TEST 18 — Storage v2 migration and automatic event merge for missing IDs'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);

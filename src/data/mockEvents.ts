@@ -198,7 +198,7 @@ export const mockEvents: EventItem[] = [
     ]
   },
   {
-    id: 'anh-trai-say-hi-all-star-2026',
+    id: 'event-anh-trai-say-hi-2026',
     title: 'Anh Trai Say Hi - All-Star Concert 2026',
     subtitle: 'Đại nhạc hội quy tụ trọn vẹn dàn nghệ sĩ All-Star bước ra từ Anh Trai Say Hi',
     description: 'Sự kiện âm nhạc hoành tráng bậc nhất năm 2026 quy tụ trọn vẹn dàn nghệ sĩ All-Star được yêu thích nhất. Sân khấu được dàn dựng với hệ thống ánh sáng kinetic, âm thanh tiêu chuẩn quốc tế và visual công nghệ cao. Sở hữu vé NFT trên Solana để nhận đặc quyền check-in làn riêng và lưu giữ kỷ niệm kỹ thuật số độc bản.',
@@ -259,7 +259,7 @@ export const mockEvents: EventItem[] = [
     ],
   },
   {
-    id: 'solana-vietnam-hacker-house-2026',
+    id: 'event-solana-vietnam-build-2026',
     title: 'Solana Vietnam Hacker House & Demo Day',
     subtitle: 'Tuần lễ ươm mầm startup Web3 và ngày hội trình diễn công nghệ Solana lớn nhất Việt Nam',
     description: 'Sự kiện công nghệ Web3 quy mô lớn dành cho các lập trình viên, nhà sáng lập và quỹ đầu tư mạo hiểm hệ sinh thái Solana. 5 ngày coding marathon, workshop chuyên sâu về Solana SVM, Anchor framework, và kết thúc bằng ngày hội Demo Day trao giải thưởng 50,000 USD.',
@@ -309,7 +309,7 @@ export const mockEvents: EventItem[] = [
     ],
   },
   {
-    id: 'monsoon-music-festival-2026',
+    id: 'event-monsoon-music-festival-2026',
     title: 'Monsoon Music Festival 2026',
     subtitle: 'Lễ hội âm nhạc quốc tế Gió Mùa trở lại với không gian nghệ thuật đa giác quan',
     description: 'Lễ hội âm nhạc quốc tế biểu tượng của thủ đô Hà Nội. Nơi giao thoa giữa các nghệ sĩ Indie, Rock, Pop đương đại Việt Nam và các ban nhạc quốc tế đình đám đến từ Anh, Pháp, Hàn Quốc, Nhật Bản. Trải nghiệm không gian ẩm thực, triển lãm nghệ thuật và âm nhạc ngoài trời đỉnh cao.',
@@ -359,7 +359,7 @@ export const mockEvents: EventItem[] = [
     ],
   },
   {
-    id: 'da-nang-international-beach-edm-2026',
+    id: 'event-da-nang-beach-edm-2026',
     title: 'Da Nang International Beach EDM Festival',
     subtitle: 'Lễ hội EDM bãi biển cuồng nhiệt kết hợp trình diễn Drone Light Show ngoạn mục',
     description: 'Đắm chìm trong những giai điệu bùng nổ của dòng nhạc Big Room, Progressive House và Trance ngay bên bờ biển Mỹ Khê xinh đẹp. Dàn Line-up quy tụ các DJ trong Top 100 DJ Mag cùng màn trình diễn 1,000 drone ánh sáng trên bầu trời đêm Đà Nẵng.',

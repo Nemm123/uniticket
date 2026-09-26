@@ -1,15 +1,38 @@
 import { CheckInRecord, CheckInResult, EventItem, PurchasedTicket } from '../types';
 import { mockEvents } from '../data/mockEvents';
 
-const INVENTORY_KEY = 'uniticket_events_inventory';
+const INVENTORY_KEY = 'uniticket_events_inventory_v2';
+const LEGACY_INVENTORY_KEY = 'uniticket_events_inventory';
 const TICKETS_KEY = 'uniticket_purchased_tickets';
 const CHECKIN_HISTORY_KEY = 'uniticket_checkin_history';
 
+/**
+ * Mapping các ID sự kiện cũ/khác định dạng sang ID chuẩn mới
+ */
+export const EVENT_ID_ALIASES: Record<string, string> = {
+  'anh-trai-say-hi-all-star-2026': 'event-anh-trai-say-hi-2026',
+  'solana-vietnam-hacker-house-2026': 'event-solana-vietnam-build-2026',
+  'monsoon-music-festival-2026': 'event-monsoon-music-festival-2026',
+  'da-nang-international-beach-edm-2026': 'event-da-nang-beach-edm-2026',
+};
+
 function normalizeEvents(events: EventItem[]): EventItem[] {
-  const canonicalMap = new Map(mockEvents.map((e) => [e.id, e]));
   let modified = false;
 
-  const normalized: EventItem[] = events.map((event) => {
+  // 1. Chuyển đổi các ID cũ sang ID chuẩn nếu cần
+  const migratedEvents = events.map((event) => {
+    const alias = EVENT_ID_ALIASES[event.id];
+    if (alias && alias !== event.id) {
+      modified = true;
+      return { ...event, id: alias };
+    }
+    return event;
+  });
+
+  const canonicalMap = new Map(mockEvents.map((e) => [e.id, e]));
+
+  // 2. Chuẩn hóa giá VND & Tier của từng sự kiện
+  const normalized: EventItem[] = migratedEvents.map((event) => {
     const canonical = canonicalMap.get(event.id);
     const tiers = (event.tiers || []).map((tier) => {
       if (typeof tier.priceVnd === 'number' && tier.priceVnd > 0) return tier;
@@ -26,15 +49,24 @@ function normalizeEvents(events: EventItem[]): EventItem[] {
     return { ...event, minPriceVnd, tiers };
   });
 
-  const existingIds = new Set(events.map((e) => e.id));
+  // 3. Tự động kiểm tra và gộp (merge) danh sách mockEvents mới nếu trong storage chưa có hoặc thiếu
+  const existingIds = new Set(normalized.map((e) => e.id));
+  const existingTitles = new Set(normalized.map((e) => e.title.toLowerCase().trim()));
+
   for (const canonical of mockEvents) {
-    if (!existingIds.has(canonical.id)) {
+    const hasId = existingIds.has(canonical.id);
+    const hasTitle = existingTitles.has(canonical.title.toLowerCase().trim());
+
+    if (!hasId && !hasTitle) {
       normalized.push(canonical);
+      existingIds.add(canonical.id);
+      existingTitles.add(canonical.title.toLowerCase().trim());
       modified = true;
     }
   }
 
-  if (modified) {
+  // 4. Lưu lại vào localStorage v2 nếu có thay đổi hoặc v2 chưa được lưu
+  if (modified || localStorage.getItem(INVENTORY_KEY) === null) {
     try {
       localStorage.setItem(INVENTORY_KEY, JSON.stringify(normalized));
     } catch {
@@ -46,25 +78,44 @@ function normalizeEvents(events: EventItem[]): EventItem[] {
 }
 
 /**
- * Đọc danh sách sự kiện và trạng thái tồn kho an toàn từ localStorage
+ * Đọc danh sách sự kiện và trạng thái tồn kho an toàn từ localStorage (v2).
+ * Tự động migrate dữ liệu từ v1 sang v2 và tự động gộp (merge) danh sách mockEvents mới
+ * vào localStorage nếu trong storage chưa có hoặc thiếu các ID sự kiện mới.
  */
 export function getStoredEvents(): EventItem[] {
   try {
-    const data = localStorage.getItem(INVENTORY_KEY);
+    let data = localStorage.getItem(INVENTORY_KEY);
+
+    // Nếu v2 chưa có trong storage, kiểm tra key v1 cũ để migrate
+    if (!data) {
+      const legacyData = localStorage.getItem(LEGACY_INVENTORY_KEY);
+      if (legacyData) {
+        data = legacyData;
+      }
+    }
+
     if (!data) {
       localStorage.setItem(INVENTORY_KEY, JSON.stringify(mockEvents));
       return mockEvents;
     }
+
     const parsed = JSON.parse(data);
-    if (Array.isArray(parsed)) {
+    if (Array.isArray(parsed) && parsed.length > 0) {
       return normalizeEvents(parsed);
     }
+
+    localStorage.setItem(INVENTORY_KEY, JSON.stringify(mockEvents));
     return mockEvents;
   } catch (error) {
     console.warn('[UniTicket Storage] Lỗi đọc localStorage inventory, sử dụng fallback mockEvents:', error);
     return mockEvents;
   }
 }
+
+/**
+ * Alias getEvents theo đúng yêu cầu
+ */
+export const getEvents = getStoredEvents;
 
 function isValidEvent(event: EventItem): boolean {
   return Boolean(
@@ -108,8 +159,9 @@ export function saveStoredEvents(events: EventItem[]): boolean {
 export function updateStoredEvent(event: EventItem): boolean {
   try {
     if (!isValidEvent(event)) return false;
+    const targetId = EVENT_ID_ALIASES[event.id] || event.id;
     const events = getStoredEvents();
-    const index = events.findIndex((item) => item.id === event.id);
+    const index = events.findIndex((item) => item.id === targetId || item.id === event.id);
     if (index === -1) return false;
     const updated = [...events];
     updated[index] = event;
@@ -123,8 +175,9 @@ export function updateStoredEvent(event: EventItem): boolean {
 export function createStoredEvent(event: EventItem): boolean {
   try {
     if (!isValidEvent(event)) return false;
+    const targetId = EVENT_ID_ALIASES[event.id] || event.id;
     const events = getStoredEvents();
-    if (events.some((item) => item.id === event.id)) return false;
+    if (events.some((item) => item.id === targetId || item.id === event.id)) return false;
     return saveStoredEvents([event, ...events]);
   } catch (error) {
     console.error('[UniTicket Storage] Failed to create event:', error);
@@ -136,13 +189,14 @@ export function createStoredEvent(event: EventItem): boolean {
 export function deleteStoredEvent(eventId: string): { ok: boolean; message: string } {
   try {
     if (!eventId) return { ok: false, message: 'Event ID is required.' };
+    const targetId = EVENT_ID_ALIASES[eventId] || eventId;
     const tickets = getStoredPurchasedTickets();
-    if (tickets.some((ticket) => ticket.eventId === eventId)) {
+    if (tickets.some((ticket) => ticket.eventId === targetId || ticket.eventId === eventId)) {
       return { ok: false, message: 'This event has purchased tickets and cannot be deleted in the demo.' };
     }
     const events = getStoredEvents();
-    if (!events.some((event) => event.id === eventId)) return { ok: false, message: 'Event not found.' };
-    const saved = saveStoredEvents(events.filter((event) => event.id !== eventId));
+    if (!events.some((event) => event.id === targetId || event.id === eventId)) return { ok: false, message: 'Event not found.' };
+    const saved = saveStoredEvents(events.filter((event) => event.id !== targetId && event.id !== eventId));
     return saved
       ? { ok: true, message: 'Event deleted.' }
       : { ok: false, message: 'Could not save event changes.' };
@@ -157,8 +211,9 @@ export function deleteStoredEvent(eventId: string): { ok: boolean; message: stri
  */
 export function updateEventInventory(eventId: string, tierId: string, quantityPurchased: number): boolean {
   try {
+    const targetId = EVENT_ID_ALIASES[eventId] || eventId;
     const events = getStoredEvents();
-    const eventIndex = events.findIndex(e => e.id === eventId);
+    const eventIndex = events.findIndex(e => e.id === targetId || e.id === eventId);
     if (eventIndex === -1) return false;
 
     const event = events[eventIndex];
