@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 import { WalletModal, getPhantomProvider, safeConnectPhantom, logPhantomDebug, extractWalletErrorMessage } from './components/common/WalletModal';
@@ -74,11 +74,16 @@ export function App() {
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [selectedApiEvent, setSelectedApiEvent] = useState<EventItem | null>(null);
   const initialSession = getWalletSession();
-  const [walletAddress, setWalletAddress] = useState<string | null>(initialSession?.walletAddress ?? null);
+  const [walletAddress, setWalletAddress] = useState<string | null>(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem('wallet_disconnected') === 'true') {
+      return null;
+    }
+    return initialSession?.walletAddress ?? null;
+  });
   const [solBalance, setSolBalance] = useState<number | null>(null);
   const [isConnectingWallet, setIsConnectingWallet] = useState<boolean>(false);
   const [authRole, setAuthRole] = useState<UserRole | null>(() => {
-    if (!initialSession) return null;
+    if (!initialSession || (typeof window !== 'undefined' && localStorage.getItem('wallet_disconnected') === 'true')) return null;
     return initialSession.role === 'organizer' || initialSession.role === 'admin' ? 'organizer' : 'attendee';
   });
 
@@ -98,7 +103,7 @@ export function App() {
 
   // Tự động chọn Phantom adapter nếu phát hiện ví trong danh sách wallets (trừ khi người dùng vừa chủ động ngắt kết nối)
   useEffect(() => {
-    if (sessionStorage.getItem('user_explicitly_disconnected') === 'true') return;
+    if (localStorage.getItem('wallet_disconnected') === 'true' || sessionStorage.getItem('user_explicitly_disconnected') === 'true') return;
     if (!connected && wallets.length > 0) {
       const phantom = wallets.find((w) => w.adapter.name.toLowerCase().includes('phantom'));
       if (phantom) {
@@ -111,7 +116,7 @@ export function App() {
   // - Chưa connect: ở trạng thái khách bình thường, KHÔNG bắn popup lỗi "Không thể kết nối máy chủ xác thực"
   // - Đã connect: lấy publicKey làm định danh tài khoản Web3
   useEffect(() => {
-    if (isDisconnectingRef.current || sessionStorage.getItem('user_explicitly_disconnected') === 'true') {
+    if (isDisconnectingRef.current || localStorage.getItem('wallet_disconnected') === 'true' || sessionStorage.getItem('user_explicitly_disconnected') === 'true') {
       return;
     }
     if (connected && publicKey) {
@@ -177,14 +182,14 @@ export function App() {
     let hasAttempted = false;
 
     const checkEagerConnection = async () => {
-      if (hasAttempted || sessionStorage.getItem('user_explicitly_disconnected') === 'true') return;
+      if (hasAttempted || localStorage.getItem('wallet_disconnected') === 'true' || sessionStorage.getItem('user_explicitly_disconnected') === 'true') return;
       const provider = getPhantomProvider();
       if (!provider?.isPhantom) return;
       hasAttempted = true;
 
       try {
         const resp = await safeConnectPhantom({ onlyIfTrusted: true });
-        if (cancelled || sessionStorage.getItem('user_explicitly_disconnected') === 'true') return;
+        if (cancelled || localStorage.getItem('wallet_disconnected') === 'true' || sessionStorage.getItem('user_explicitly_disconnected') === 'true') return;
         const pubKey = resp?.publicKey || provider.publicKey;
         if (!pubKey) return;
         const address = pubKey.toString();
@@ -357,11 +362,12 @@ export function App() {
     ? selectedApiEvent
     : events.find((e) => e.id === selectedEventId) || events[0];
 
-  const showToast = (
+  const showToast = useCallback((
     type: ToastMessage['type'],
     message: string,
     actionUrl?: string,
-    actionLabel?: string
+    actionLabel?: string,
+    toastId?: string
   ) => {
     // Chặn triệt để mọi thông báo lỗi về máy chủ xác thực trong dApp Web3
     if (
@@ -373,11 +379,31 @@ export function App() {
       return;
     }
 
-    setToasts((current) => [
-      ...current,
-      { id: `${Date.now()}-${Math.random()}`, type, message, actionUrl, actionLabel }
-    ]);
-  };
+    const id = toastId || `${Date.now()}-${Math.random()}`;
+
+    setToasts((current) => {
+      // Nếu đã có toast với toastId này thì không xếp chồng nhiều thông báo lên nhau
+      if (toastId && current.some((t) => t.id === toastId)) {
+        return current;
+      }
+      return [
+        ...current,
+        { id, type, message, actionUrl, actionLabel }
+      ];
+    });
+  }, []);
+
+  const toast = useMemo(() => ({
+    info: (message: string, options?: { toastId?: string }) => {
+      showToast('info', message, undefined, undefined, options?.toastId);
+    },
+    success: (message: string, options?: { toastId?: string }) => {
+      showToast('success', message, undefined, undefined, options?.toastId);
+    },
+    error: (message: string, options?: { toastId?: string }) => {
+      showToast('error', message, undefined, undefined, options?.toastId);
+    },
+  }), [showToast]);
 
   const handleCloseToast = useCallback((id: string) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -522,40 +548,14 @@ export function App() {
   };
 
   const handleDisconnectWallet = async () => {
-    // Tránh spam lặp nếu đang trong tiến trình ngắt kết nối
-    if (isDisconnectingRef.current) return;
-    isDisconnectingRef.current = true;
-
-    // Ghi nhớ người dùng chủ động ngắt kết nối để các hook/eager không tự động reconnect
-    sessionStorage.setItem('user_explicitly_disconnected', 'true');
-
-    // 1. Reset toàn bộ state ví trong App/Navbar về rỗng ngay lập tức
-    setWalletAddress(null);
-    setSolBalance(null);
-    resetWalletSession();
-
-    // 2. Xóa các key lưu ví trong storage theo yêu cầu
     try {
-      localStorage.removeItem('connectedWallet');
-      localStorage.removeItem('walletAddress');
-      localStorage.removeItem('wallet_address');
-      localStorage.removeItem('walletName');
-      localStorage.removeItem('uniticket_wallet_session');
-    } catch (e) {
-      console.warn('Lỗi dọn dẹp storage khi ngắt kết nối:', e);
-    }
+      localStorage.setItem('wallet_disconnected', 'true');
+      sessionStorage.setItem('user_explicitly_disconnected', 'true');
 
-    // 3. Gọi disconnect() từ @solana/wallet-adapter-react
-    try {
+      // 1. Ngắt kết nối adapter
       if (walletDisconnect) {
         await walletDisconnect().catch(() => undefined);
       }
-    } catch (err) {
-      console.warn('Wallet adapter disconnect error:', err);
-    }
-
-    // 4. Nếu có đối tượng window?.phantom?.solana?.disconnect, gọi thêm window.phantom.solana.disconnect()
-    try {
       const phantomWindow = window as unknown as { phantom?: { solana?: { disconnect: () => Promise<void> } } };
       if (phantomWindow?.phantom?.solana?.disconnect) {
         await phantomWindow.phantom.solana.disconnect().catch(() => undefined);
@@ -565,14 +565,23 @@ export function App() {
           await provider.disconnect().catch(() => undefined);
         }
       }
-    } catch (err) {
-      console.warn('Phantom window disconnect error:', err);
-    } finally {
-      // 5. Chỉ bắn ĐÚNG 1 thông báo toast tại thời điểm người dùng click chủ động
-      showToast('info', 'Đã ngắt kết nối ví Phantom.');
-      setTimeout(() => {
-        isDisconnectingRef.current = false;
-      }, 400);
+
+      // 2. Dọn sạch toàn bộ state
+      setWalletAddress(null);
+      setSolBalance(null);
+      resetWalletSession();
+
+      // 3. Xóa sạch localStorage liên quan đến ví
+      localStorage.removeItem('walletAddress');
+      localStorage.removeItem('connectedWallet');
+      localStorage.removeItem('wallet_address');
+      localStorage.removeItem('uniticket_wallet_session');
+      localStorage.removeItem('walletName');
+
+      // 4. Bắn DUY NHẤT 1 toast với toastId cố định để chặn spam
+      toast.info("Đã ngắt kết nối ví Phantom.", { toastId: "disconnect-toast" });
+    } catch (error) {
+      console.error("Disconnect error:", error);
     }
   };
 
@@ -582,7 +591,7 @@ export function App() {
     if (!provider || !provider.on) return;
 
     const handleAccountChange = (publicKey?: { toString: () => string } | null) => {
-      if (isDisconnectingRef.current) return;
+      if (isDisconnectingRef.current || localStorage.getItem('wallet_disconnected') === 'true') return;
       if (publicKey) {
         sessionStorage.removeItem('user_explicitly_disconnected');
         const newAddress = publicKey.toString();
@@ -694,6 +703,9 @@ export function App() {
         onOpenWalletModal={() => setIsWalletModalOpen(true)}
         onConnectWallet={handleConnectWalletDirect}
         onDisconnectWallet={handleDisconnectWallet}
+        setWalletAddress={setWalletAddress}
+        setSolBalance={setSolBalance}
+        toast={toast}
         onOpenSearch={() => setIsSearchModalOpen(true)}
         authRole={authRole}
         viewMode={viewMode}

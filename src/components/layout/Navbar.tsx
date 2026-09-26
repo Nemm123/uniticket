@@ -22,6 +22,7 @@ import {
   Globe
 } from 'lucide-react';
 import { UserRole } from '../../types';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { ViewMode } from '../../utils/viewMode';
 import { PhantomLogo } from '../common/PhantomLogo';
 import { LanguageSwitcher } from '../common/LanguageSwitcher';
@@ -34,6 +35,13 @@ interface NavbarProps {
   onOpenWalletModal: () => void;
   onConnectWallet?: () => void;
   onDisconnectWallet?: () => void;
+  setWalletAddress?: (address: string | null) => void;
+  setSolBalance?: (balance: number | null) => void;
+  toast?: {
+    info: (msg: string, options?: { toastId?: string }) => void;
+    success: (msg: string, options?: { toastId?: string }) => void;
+    error: (msg: string, options?: { toastId?: string }) => void;
+  };
   onOpenSearch?: () => void;
   authRole: UserRole | null;
   viewMode: ViewMode;
@@ -51,6 +59,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenWalletModal,
   onConnectWallet,
   onDisconnectWallet,
+  setWalletAddress,
+  setSolBalance,
+  toast,
   onOpenSearch,
   authRole,
   viewMode,
@@ -60,6 +71,63 @@ export const Navbar: React.FC<NavbarProps> = ({
   isConnectingWallet,
 }) => {
   const { t } = useTranslation();
+  const { disconnect } = useWallet();
+  const [internalWalletAddress, setInternalWalletAddress] = useState<string | null>(walletAddress);
+  const [internalSolBalance, setInternalSolBalance] = useState<number | null>(solBalance ?? null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem('wallet_disconnected') === 'true') {
+      setInternalWalletAddress(null);
+      setInternalSolBalance(null);
+    } else {
+      setInternalWalletAddress(walletAddress);
+      setInternalSolBalance(solBalance ?? null);
+    }
+  }, [walletAddress, solBalance]);
+
+  const activeWallet = internalWalletAddress;
+  const activeBalance = internalSolBalance;
+
+  const handleDisconnect = async () => {
+    try {
+      localStorage.setItem('wallet_disconnected', 'true');
+      sessionStorage.setItem('user_explicitly_disconnected', 'true');
+
+      // 1. Ngắt kết nối adapter
+      if (disconnect) {
+        await disconnect().catch(() => undefined);
+      }
+      const phantomWindow = window as unknown as { phantom?: { solana?: { disconnect: () => Promise<void> } } };
+      if (phantomWindow?.phantom?.solana?.disconnect) {
+        await phantomWindow.phantom.solana.disconnect().catch(() => undefined);
+      }
+
+      // 2. Dọn sạch toàn bộ state
+      setInternalWalletAddress(null);
+      setInternalSolBalance(null);
+      if (setWalletAddress) setWalletAddress(null);
+      if (setSolBalance) setSolBalance(null);
+
+      // 3. Xóa sạch localStorage liên quan đến ví
+      localStorage.removeItem('walletAddress');
+      localStorage.removeItem('connectedWallet');
+      localStorage.removeItem('wallet_address');
+      localStorage.removeItem('uniticket_wallet_session');
+      localStorage.removeItem('walletName');
+
+      // 4. Bắn DUY NHẤT 1 toast với toastId cố định để chặn spam
+      if (toast?.info) {
+        toast.info("Đã ngắt kết nối ví Phantom.", { toastId: "disconnect-toast" });
+      }
+
+      if (onDisconnectWallet) {
+        onDisconnectWallet();
+      }
+    } catch (error) {
+      console.error("Disconnect error:", error);
+    }
+  };
+
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [manageDropdownOpen, setManageDropdownOpen] = useState(false);
   const manageDropdownRef = useRef<HTMLDivElement>(null);
@@ -302,12 +370,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Chi tiết ví kết nối nếu có */}
-          {walletAddress ? (
+          {activeWallet ? (
             <div className="rounded-xl border border-solana-purple/35 bg-[#120B30] p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <PhantomLogo className="h-4 w-4 shrink-0" />
-                  <span className="font-mono text-xs font-bold text-white">{shortAddress(walletAddress)}</span>
+                  <span className="font-mono text-xs font-bold text-white">{shortAddress(activeWallet)}</span>
                 </div>
                 <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-solana-purple/20 border border-solana-purple/40 text-[9px] font-bold text-solana-cyan">
                   <span className="w-1.5 h-1.5 rounded-full bg-solana-green animate-pulse" />
@@ -319,13 +387,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <Coins className="w-3 h-3 text-solana-cyan" />
                   <span>Số dư:</span>
                 </span>
-                <span className="font-mono text-xs font-bold text-solana-green">{formatSolBalance(solBalance)}</span>
+                <span className="font-mono text-xs font-bold text-solana-green">{formatSolBalance(activeBalance)}</span>
               </div>
             </div>
           ) : (
             <button
               type="button"
               onClick={() => {
+                localStorage.removeItem('wallet_disconnected');
+                sessionStorage.removeItem('user_explicitly_disconnected');
                 setMobileMenuOpen(false);
                 if (onConnectWallet) {
                   onConnectWallet();
@@ -369,12 +439,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           </a>
 
           {/* Ngắt kết nối ví (nếu đã kết nối) */}
-          {walletAddress && (
+          {activeWallet && (
             <button
               type="button"
-              onClick={() => {
+              onClick={async () => {
                 setMobileMenuOpen(false);
-                onDisconnectWallet?.();
+                await handleDisconnect();
               }}
               className="flex w-full items-center justify-between rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/20 transition-all"
             >
@@ -382,7 +452,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <LogOut className="w-4 h-4 text-red-400 shrink-0" />
                 <span>Ngắt kết nối ví</span>
               </div>
-              <span className="font-mono text-[10px] text-red-300/80">{shortAddress(walletAddress)}</span>
+              <span className="font-mono text-[10px] text-red-300/80">{shortAddress(activeWallet)}</span>
             </button>
           )}
         </div>
@@ -612,7 +682,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
 
             {/* CỤM VÍ GÓC PHẢI: Chỉ hiển thị [Chấm xanh Devnet | {balance} SOL] và Nút Địa chỉ ví */}
-            {walletAddress ? (
+            {activeWallet ? (
               <div className="flex items-center gap-1.5">
                 {/* [Chấm xanh Devnet | {balance} SOL] */}
                 <div
@@ -622,24 +692,24 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span className="w-2 h-2 rounded-full bg-solana-green animate-pulse shrink-0" />
                   <span className="text-[11px] font-bold text-solana-cyan">Devnet</span>
                   <span className="text-slate-600">|</span>
-                  <span className="font-bold text-white tracking-tight">{formatSolBalance(solBalance)}</span>
+                  <span className="font-bold text-white tracking-tight">{formatSolBalance(activeBalance)}</span>
                 </div>
 
                 {/* Connected Wallet Address Button */}
                 <button
                   type="button"
                   onClick={onOpenWalletModal}
-                  title={`Ví: ${walletAddress} (Click để xem chi tiết)`}
+                  title={`Ví: ${activeWallet} (Click để xem chi tiết)`}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-solana-purple/40 bg-[#120B30] hover:bg-white/10 text-xs font-mono font-bold text-white transition-all shadow-md active:scale-95"
                 >
                   <PhantomLogo className="h-3.5 w-3.5 shrink-0" />
-                  <span>{shortAddress(walletAddress)}</span>
+                  <span>{shortAddress(activeWallet)}</span>
                 </button>
 
                 {/* Disconnect Button */}
                 <button
                   type="button"
-                  onClick={onDisconnectWallet}
+                  onClick={handleDisconnect}
                   title="Ngắt kết nối ví Phantom"
                   aria-label={t('walletModal.disconnect')}
                   className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-all active:scale-95"
@@ -651,6 +721,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  localStorage.removeItem('wallet_disconnected');
+                  sessionStorage.removeItem('user_explicitly_disconnected');
                   if (onConnectWallet) {
                     onConnectWallet();
                   } else {
@@ -682,24 +754,26 @@ export const Navbar: React.FC<NavbarProps> = ({
               <LanguageSwitcher />
             </div>
 
-            {walletAddress ? (
+            {activeWallet ? (
               <button
                 type="button"
                 onClick={onOpenWalletModal}
-                aria-label={`${t('nav.connectedWallet')} ${shortAddress(walletAddress)}`}
+                aria-label={`${t('nav.connectedWallet')} ${shortAddress(activeWallet)}`}
                 className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-solana-purple/40 bg-[#120B30] px-2 text-white active:scale-95 transition-transform"
-                title={`Ví: ${walletAddress}`}
+                title={`Ví: ${activeWallet}`}
               >
                 <PhantomLogo className="h-3.5 w-3.5 shrink-0" />
-                <span className="font-mono text-xs font-bold text-white">{shortAddress(walletAddress)}</span>
+                <span className="font-mono text-xs font-bold text-white">{shortAddress(activeWallet)}</span>
                 <span className="text-[10px] font-mono text-solana-green font-bold pl-1 border-l border-white/10">
-                  {formatSolBalance(solBalance)}
+                  {formatSolBalance(activeBalance)}
                 </span>
               </button>
             ) : (
               <button
                 type="button"
                 onClick={() => {
+                  localStorage.removeItem('wallet_disconnected');
+                  sessionStorage.removeItem('user_explicitly_disconnected');
                   if (onConnectWallet) {
                     onConnectWallet();
                   } else {
