@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 import { WalletModal, getPhantomProvider, safeConnectPhantom, logPhantomDebug, extractWalletErrorMessage } from './components/common/WalletModal';
@@ -94,9 +94,11 @@ export function App() {
 
   // Sử dụng useWallet() từ @solana/wallet-adapter-react làm nguồn định danh Web3
   const { publicKey, connected, disconnect: walletDisconnect, select, wallets, connect: adapterConnect } = useWallet();
+  const isDisconnectingRef = useRef<boolean>(false);
 
-  // Tự động chọn Phantom adapter nếu phát hiện ví trong danh sách wallets
+  // Tự động chọn Phantom adapter nếu phát hiện ví trong danh sách wallets (trừ khi người dùng vừa chủ động ngắt kết nối)
   useEffect(() => {
+    if (sessionStorage.getItem('user_explicitly_disconnected') === 'true') return;
     if (!connected && wallets.length > 0) {
       const phantom = wallets.find((w) => w.adapter.name.toLowerCase().includes('phantom'));
       if (phantom) {
@@ -109,6 +111,9 @@ export function App() {
   // - Chưa connect: ở trạng thái khách bình thường, KHÔNG bắn popup lỗi "Không thể kết nối máy chủ xác thực"
   // - Đã connect: lấy publicKey làm định danh tài khoản Web3
   useEffect(() => {
+    if (isDisconnectingRef.current || sessionStorage.getItem('user_explicitly_disconnected') === 'true') {
+      return;
+    }
     if (connected && publicKey) {
       const address = publicKey.toBase58();
       setWalletAddress(address);
@@ -172,14 +177,14 @@ export function App() {
     let hasAttempted = false;
 
     const checkEagerConnection = async () => {
-      if (hasAttempted) return;
+      if (hasAttempted || sessionStorage.getItem('user_explicitly_disconnected') === 'true') return;
       const provider = getPhantomProvider();
       if (!provider?.isPhantom) return;
       hasAttempted = true;
 
       try {
         const resp = await safeConnectPhantom({ onlyIfTrusted: true });
-        if (cancelled) return;
+        if (cancelled || sessionStorage.getItem('user_explicitly_disconnected') === 'true') return;
         const pubKey = resp?.publicKey || provider.publicKey;
         if (!pubKey) return;
         const address = pubKey.toString();
@@ -422,6 +427,7 @@ export function App() {
   };
 
   const handleWalletAuthenticated = (session: WalletSession) => {
+    sessionStorage.removeItem('user_explicitly_disconnected');
     setWalletSession(session);
     setWalletAddress(session.walletAddress);
     void refreshSolBalance(session.walletAddress);
@@ -445,6 +451,7 @@ export function App() {
   };
 
   const handleConnectWalletDirect = async () => {
+    sessionStorage.removeItem('user_explicitly_disconnected');
     if (isConnectingWallet) return;
     const provider = getPhantomProvider();
     if (!provider?.isPhantom) {
@@ -515,21 +522,57 @@ export function App() {
   };
 
   const handleDisconnectWallet = async () => {
-    const provider = getPhantomProvider();
+    // Tránh spam lặp nếu đang trong tiến trình ngắt kết nối
+    if (isDisconnectingRef.current) return;
+    isDisconnectingRef.current = true;
+
+    // Ghi nhớ người dùng chủ động ngắt kết nối để các hook/eager không tự động reconnect
+    sessionStorage.setItem('user_explicitly_disconnected', 'true');
+
+    // 1. Reset toàn bộ state ví trong App/Navbar về rỗng ngay lập tức
+    setWalletAddress(null);
+    setSolBalance(null);
+    resetWalletSession();
+
+    // 2. Xóa các key lưu ví trong storage theo yêu cầu
+    try {
+      localStorage.removeItem('connectedWallet');
+      localStorage.removeItem('walletAddress');
+      localStorage.removeItem('wallet_address');
+      localStorage.removeItem('walletName');
+      localStorage.removeItem('uniticket_wallet_session');
+    } catch (e) {
+      console.warn('Lỗi dọn dẹp storage khi ngắt kết nối:', e);
+    }
+
+    // 3. Gọi disconnect() từ @solana/wallet-adapter-react
     try {
       if (walletDisconnect) {
         await walletDisconnect().catch(() => undefined);
       }
-      if (provider?.isPhantom && provider.disconnect) {
-        await provider.disconnect();
+    } catch (err) {
+      console.warn('Wallet adapter disconnect error:', err);
+    }
+
+    // 4. Nếu có đối tượng window?.phantom?.solana?.disconnect, gọi thêm window.phantom.solana.disconnect()
+    try {
+      const phantomWindow = window as unknown as { phantom?: { solana?: { disconnect: () => Promise<void> } } };
+      if (phantomWindow?.phantom?.solana?.disconnect) {
+        await phantomWindow.phantom.solana.disconnect().catch(() => undefined);
+      } else {
+        const provider = getPhantomProvider();
+        if (provider?.isPhantom && provider.disconnect) {
+          await provider.disconnect().catch(() => undefined);
+        }
       }
     } catch (err) {
-      console.warn('Disconnect error:', err);
+      console.warn('Phantom window disconnect error:', err);
     } finally {
-      resetWalletSession();
-      setWalletAddress(null);
-      setSolBalance(null);
+      // 5. Chỉ bắn ĐÚNG 1 thông báo toast tại thời điểm người dùng click chủ động
       showToast('info', 'Đã ngắt kết nối ví Phantom.');
+      setTimeout(() => {
+        isDisconnectingRef.current = false;
+      }, 400);
     }
   };
 
@@ -539,7 +582,9 @@ export function App() {
     if (!provider || !provider.on) return;
 
     const handleAccountChange = (publicKey?: { toString: () => string } | null) => {
+      if (isDisconnectingRef.current) return;
       if (publicKey) {
+        sessionStorage.removeItem('user_explicitly_disconnected');
         const newAddress = publicKey.toString();
         logPhantomDebug('App.tsx accountChanged', { newAddress });
         setWalletAddress(newAddress);
@@ -557,12 +602,19 @@ export function App() {
         };
         setWalletSession(session);
       } else {
-        void handleDisconnectWallet();
+        // Ví đổi sang rỗng hoặc ngắt từ extension: reset tĩnh lặng, TUYỆT ĐỐI KHÔNG GỌI handleDisconnectWallet VÀ KHÔNG BẮN TOAST
+        resetWalletSession();
+        setWalletAddress(null);
+        setSolBalance(null);
       }
     };
 
     const handleDisconnect = () => {
-      void handleDisconnectWallet();
+      if (isDisconnectingRef.current) return;
+      // Nhận event ngắt kết nối từ tiện ích: reset tĩnh lặng, TUYỆT ĐỐI KHÔNG GỌI handleDisconnectWallet VÀ KHÔNG BẮN TOAST
+      resetWalletSession();
+      setWalletAddress(null);
+      setSolBalance(null);
     };
 
     provider.on('accountChanged', handleAccountChange);
