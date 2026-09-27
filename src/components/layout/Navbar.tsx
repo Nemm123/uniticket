@@ -26,6 +26,7 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { ViewMode } from '../../utils/viewMode';
 import { PhantomLogo } from '../common/PhantomLogo';
 import { LanguageSwitcher } from '../common/LanguageSwitcher';
+import { DatabaseStatusBadge } from '../common/DatabaseStatusBadge';
 import { useTranslation } from '../../i18n';
 import { formatSolBalance, SOLANA_DEVNET_FAUCET_URL } from '../../services/solanaClient';
 
@@ -246,6 +247,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-solana-cyan/15 text-solana-cyan border border-solana-cyan/30">
             Không gian sự kiện
           </span>
+        </div>
+
+        {/* Database Status Badge trên Mobile */}
+        <div className="mt-2 flex items-center justify-center">
+          <DatabaseStatusBadge className="w-full justify-center py-1.5" />
         </div>
 
         {/* Ô tìm kiếm nhanh trên Mobile (nếu có) */}
@@ -655,6 +661,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <kbd className="rounded bg-black/40 px-1 py-0.5 text-[9px] text-slate-400 border border-white/10">{t('nav.searchShortcut')}</kbd>
               </button>
             )}
+
+            <DatabaseStatusBadge />
 
             <LanguageSwitcher />
 

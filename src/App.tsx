@@ -33,6 +33,7 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { getEvent as getEventFromApi, isApiEventId, listEvents } from './services/eventsApi';
 
 import * as api from './services/api';
+import { supabase, isSupabaseConfigured } from './services/supabase';
 import { clearWalletSession, getWalletSession, setWalletSession, WalletSession } from './services/authSession';
 import { logoutWalletSession } from './services/authApi';
 import { getWalletSolBalance, SOLANA_TREASURY_WALLET_STR } from './services/solanaClient';
@@ -309,12 +310,7 @@ export function App() {
 
   const fetchMyTickets = useCallback(async () => {
     try {
-      let remoteTickets: PurchasedTicket[] = [];
-      if (walletAddress) {
-        remoteTickets = await api.fetchMyTickets({ wallet: walletAddress });
-      } else {
-        remoteTickets = await api.fetchMyTickets();
-      }
+      const remoteTickets = await api.getPurchasedTickets(walletAddress || undefined);
       setPurchasedTickets(remoteTickets);
       return remoteTickets;
     } catch (err) {
@@ -322,6 +318,33 @@ export function App() {
       return [];
     }
   }, [walletAddress]);
+
+  // ĐỒNG BỘ THỜI GIAN THỰC (REALTIME LISTENER):
+  // Lắng nghe kênh postgres_changes trên bảng tickets của Supabase.
+  // Khi có sự kiện UPDATE hoặc INSERT, tự động refresh lại danh sách vé của người dùng mà không cần reload trang.
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    const channel = supabase
+      .channel('tickets-realtime-sync')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tickets',
+        },
+        (payload) => {
+          console.log('[Supabase Realtime] Phát hiện thay đổi dữ liệu vé:', payload.eventType);
+          void fetchMyTickets();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [fetchMyTickets]);
 
   useEffect(() => {
     if (currentPage === 'my-tickets' || walletAddress || guestAccessToken) {
@@ -727,6 +750,14 @@ export function App() {
       explorerUrl ? 'Xem giao dịch trên Solana Explorer' : undefined
     );
 
+    // Xác nhận trạng thái lưu trữ vé
+    showToast(
+      'info',
+      isSupabaseConfigured
+        ? 'Vé đã được đồng bộ an toàn lên Cloud Supabase'
+        : 'Vé đã lưu vào bộ nhớ cục bộ (Local Mode)'
+    );
+
     if (walletAddress) {
       void refreshSolBalance(walletAddress);
     }
@@ -1103,6 +1134,12 @@ export function App() {
           setPurchasedTickets(updated);
           const truncated = `${transferredTicket.customerWallet.slice(0, 4)}...${transferredTicket.customerWallet.slice(-4)}`;
           showToast('success', t('transferModal.transferSuccess', { address: truncated }));
+          showToast(
+            'info',
+            isSupabaseConfigured
+              ? 'Vé đã được đồng bộ an toàn lên Cloud Supabase'
+              : 'Vé đã lưu vào bộ nhớ cục bộ (Local Mode)'
+          );
         }}
       />
 

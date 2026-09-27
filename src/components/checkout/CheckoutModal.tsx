@@ -264,7 +264,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         });
       }
 
-      // Lưu vé thông qua MOCK API Data Layer
+      // Lưu vé thông qua Data Layer (Supabase + LocalStorage)
+      for (const t of newTickets) {
+        await api.createTicket(t);
+      }
       await api.createTickets(event.id, tier.id, selectedQuantity, newTickets);
 
       if (reservation?.id) {

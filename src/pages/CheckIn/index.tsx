@@ -83,7 +83,7 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
           onShowToast('error', 'Không tìm thấy ID vé.');
           return;
         }
-        const confirmResult = await api.confirmCheckIn(ticketId);
+        const confirmResult = await api.checkInTicket(ticketId, organizerAddress || undefined);
         
         if (confirmResult.status !== 'error') {
           setResult({ ...confirmResult, message: 'Hợp lệ - Cho phép qua cổng' });

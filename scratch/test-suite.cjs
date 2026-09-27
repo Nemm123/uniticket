@@ -294,6 +294,50 @@ assert(
   'TEST 21 — Dynamic QR Code (20s auto-refresh, anti-screenshot timestamp & 60s expiration check)'
 );
 
+// -------------------------------------------------------------
+// TEST 22 — Supabase Cloud Database Integration & Realtime Sync
+// -------------------------------------------------------------
+const supabaseClientCode = fs.readFileSync('src/services/supabase.ts', 'utf8');
+const freshApiCode = fs.readFileSync('src/services/api.ts', 'utf8');
+const freshAppCode = fs.readFileSync('src/App.tsx', 'utf8');
+
+assert(
+  supabaseClientCode.includes('createClient') &&
+  supabaseClientCode.includes('VITE_SUPABASE_URL') &&
+  supabaseClientCode.includes('VITE_SUPABASE_ANON_KEY') &&
+  supabaseClientCode.includes('isSupabaseConfigured') &&
+  freshApiCode.includes('getPurchasedTickets') &&
+  freshApiCode.includes('createTicket') &&
+  freshApiCode.includes('checkInTicket') &&
+  freshApiCode.includes('transferTicket') &&
+  freshApiCode.includes('customer_wallet') &&
+  freshApiCode.includes('is_used') &&
+  freshApiCode.includes('is_checked_in') &&
+  freshApiCode.includes('checked_in_at') &&
+  freshApiCode.includes('transferred_at') &&
+  freshAppCode.includes('postgres_changes') &&
+  freshAppCode.includes('tickets') &&
+  freshAppCode.includes('isSupabaseConfigured'),
+  'TEST 22 — Supabase Database Integration (client setup, CRUD API, safe fallback, and postgres_changes realtime sync)'
+);
+
+// -------------------------------------------------------------
+// TEST 23 — Supabase Cloud Health Check & Sync Status Badge
+// -------------------------------------------------------------
+const navbarCode2 = fs.readFileSync('src/components/layout/Navbar.tsx', 'utf8');
+const statusBadgeCode = fs.readFileSync('src/components/common/DatabaseStatusBadge.tsx', 'utf8');
+
+assert(
+  supabaseClientCode.includes('testSupabaseConnection') &&
+  statusBadgeCode.includes('Cloud Database: Online') &&
+  statusBadgeCode.includes('Local Mode: Fallback') &&
+  statusBadgeCode.includes('testSupabaseConnection') &&
+  navbarCode2.includes('DatabaseStatusBadge') &&
+  freshAppCode.includes('Vé đã được đồng bộ an toàn lên Cloud Supabase') &&
+  freshAppCode.includes('Vé đã lưu vào bộ nhớ cục bộ (Local Mode)'),
+  'TEST 23 — Supabase Cloud Health Check, DatabaseStatusBadge, and Sync status confirmation'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);
