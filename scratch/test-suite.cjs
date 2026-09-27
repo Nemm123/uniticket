@@ -253,6 +253,25 @@ assert(
   'TEST 19 — P2P On-chain Ticket Transfer API, validation, and UI integration'
 );
 
+// -------------------------------------------------------------
+// TEST 20 — Solana Explorer Link & Public Ticket Verification Page (/verify/:ticketId)
+// -------------------------------------------------------------
+const verifyPageCode = fs.readFileSync('src/pages/VerifyTicket/index.tsx', 'utf8');
+
+assert(
+  mainAppCode.includes('explorer.solana.com/tx') &&
+  mainAppCode.includes('viewOnExplorer') &&
+  mainAppCode.includes('viewPublicVerification') &&
+  mainAppCode.includes('VerifyTicketPage') &&
+  mainAppCode.includes("verify: '/verify'") &&
+  verifyPageCode.includes('Solana Devnet Verified') &&
+  verifyPageCode.includes('transferHistory') &&
+  verifyPageCode.includes('mintTransaction') &&
+  apiCode.includes('getTicketById') &&
+  storageCode.includes('getStoredTicketById'),
+  'TEST 20 — Solana Explorer link & Public Web3 Ticket Verification (/verify/:ticketId)'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);

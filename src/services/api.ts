@@ -63,6 +63,11 @@ export async function transferTicket(
   return storage.transferStoredTicket(ticketId, toWalletAddress);
 }
 
+export async function getTicketById(identifier: string): Promise<PurchasedTicket | null> {
+  await delay(MOCK_DELAY);
+  return storage.getStoredTicketById(identifier);
+}
+
 // -------------------------------------
 // EVENTS
 // -------------------------------------

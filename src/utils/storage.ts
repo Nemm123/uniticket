@@ -309,6 +309,19 @@ export function getStoredPurchasedTickets(): PurchasedTicket[] {
 }
 
 /**
+ * Tra cứu thông tin vé công khai theo ticketId hoặc ticketCode
+ */
+export function getStoredTicketById(identifier: string): PurchasedTicket | null {
+  if (!identifier) return null;
+  const trimmed = identifier.trim();
+  const tickets = getStoredPurchasedTickets();
+  const found = tickets.find(
+    (t) => t.id === trimmed || t.ticketCode === trimmed || t.orderId === trimmed
+  );
+  return found || null;
+}
+
+/**
  * Lưu các vé mới mua vào localStorage
  */
 export function savePurchasedTickets(newTickets: PurchasedTicket[]): boolean {

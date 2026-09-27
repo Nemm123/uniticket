@@ -22,8 +22,10 @@ import {
   ExternalLink,
   X,
   Send,
-  QrCode
+  QrCode,
+  ShieldCheck
 } from 'lucide-react';
+import { VerifyTicketPage } from './pages/VerifyTicket';
 import { QRCodeSVG } from 'qrcode.react';
 import { TransferTicketModal } from './components/tickets/TransferTicketModal';
 import { EventItem, PurchasedTicket, TicketTier, ToastMessage, UserRole } from './types';
@@ -44,6 +46,7 @@ const PAGE_PATHS = {
   events: '/events',
   'my-tickets': '/my-tickets',
   'event-detail': '/event-detail',
+  verify: '/verify',
   organizer: '/organizer',
   'organizer-events': '/organizer-events',
   'create-event': '/create-event',
@@ -55,13 +58,27 @@ const ORGANIZER_PAGES = ['organizer', 'organizer-events', 'create-event', 'check
 
 function getPageFromPathname(pathname: string): string | null {
   const normalizedPath = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  if (normalizedPath === '/verify' || normalizedPath.startsWith('/verify/')) {
+    return 'verify';
+  }
   return Object.entries(PAGE_PATHS).find(([, path]) => path === normalizedPath)?.[0] ?? null;
 }
 
-function getPathForPage(page: string, eventId?: string): string {
+function getTicketIdFromPathname(pathname: string): string | null {
+  if (pathname.startsWith('/verify/')) {
+    const raw = pathname.slice('/verify/'.length).trim();
+    return raw ? decodeURIComponent(raw) : null;
+  }
+  return null;
+}
+
+function getPathForPage(page: string, id?: string): string {
   const pathname = PAGE_PATHS[page as keyof typeof PAGE_PATHS] ?? PAGE_PATHS.home;
-  if (page === 'event-detail' && eventId) {
-    return `${pathname}?eventId=${encodeURIComponent(eventId)}`;
+  if (page === 'event-detail' && id) {
+    return `${pathname}?eventId=${encodeURIComponent(id)}`;
+  }
+  if (page === 'verify' && id) {
+    return `/verify/${encodeURIComponent(id)}`;
   }
   return pathname;
 }
@@ -70,6 +87,9 @@ export function App() {
   const { t, formatDate } = useTranslation();
   const [currentPage, setCurrentPage] = useState<string>(() => getPageFromPathname(window.location.pathname) ?? 'home');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('eventId'));
+  const [selectedVerifyTicketId, setSelectedVerifyTicketId] = useState<string | null>(() => {
+    return getTicketIdFromPathname(window.location.pathname) || new URLSearchParams(window.location.search).get('ticketId') || new URLSearchParams(window.location.search).get('id');
+  });
   const [isWalletModalOpen, setIsWalletModalOpen] = useState<boolean>(false);
   const [showBackToTop, setShowBackToTop] = useState<boolean>(false);
   const [events, setEvents] = useState<EventItem[]>(() => getStoredEvents());
@@ -335,9 +355,15 @@ export function App() {
         saveStoredViewMode('organizer');
         setCurrentPage(nextPage);
         setSelectedEventId(null);
+        setSelectedVerifyTicketId(null);
       } else {
         setCurrentPage(nextPage);
         setSelectedEventId(nextPage === 'event-detail' ? new URLSearchParams(window.location.search).get('eventId') : null);
+        setSelectedVerifyTicketId(
+          nextPage === 'verify'
+            ? getTicketIdFromPathname(window.location.pathname) || new URLSearchParams(window.location.search).get('ticketId') || new URLSearchParams(window.location.search).get('id')
+            : null
+        );
         if (!pageFromLocation) {
           window.history.replaceState(null, '', PAGE_PATHS.home);
         }
@@ -354,7 +380,7 @@ export function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleNavigate = (page: string, eventId?: string) => {
+  const handleNavigate = (page: string, targetId?: string) => {
     if (ORGANIZER_PAGES.includes(page)) {
       setAuthRole('organizer');
       setUserRole('organizer');
@@ -364,11 +390,13 @@ export function App() {
       setViewMode('attendee');
       saveStoredViewMode('attendee');
     }
-    const nextPage = PAGE_PATHS[page as keyof typeof PAGE_PATHS] ? page : 'home';
-    const nextPath = getPathForPage(nextPage, eventId);
+    const nextPage = (PAGE_PATHS[page as keyof typeof PAGE_PATHS] || page === 'verify') ? page : 'home';
+    const nextPath = getPathForPage(nextPage, targetId);
     setCurrentPage(nextPage);
-    if (eventId) {
-      setSelectedEventId(eventId);
+    if (nextPage === 'event-detail') {
+      setSelectedEventId(targetId ?? null);
+    } else if (nextPage === 'verify') {
+      setSelectedVerifyTicketId(targetId ?? null);
     }
     if (`${window.location.pathname}${window.location.search}` !== nextPath) {
       window.history.pushState(null, '', nextPath);
@@ -876,20 +904,36 @@ export function App() {
                         {ticket.isCheckedIn && ticket.checkInTime && <span className="text-[11px] text-solana-green">{t('myTickets.checkedInAt', { time: formatDate(ticket.checkInTime, { dateStyle: 'short', timeStyle: 'short' }) })}</span>}
                       </div>
                     </div>
-                    {ticket.nftTransactionSignature && (
-                      <div className="mt-3 flex items-center justify-between rounded-xl border border-solana-cyan/20 bg-solana-cyan/5 px-3 py-2 text-xs">
+                    {/* Solana Explorer & Tra cứu công khai */}
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-solana-cyan/20 bg-solana-cyan/5 px-3 py-2 text-xs">
+                      <div className="flex items-center gap-1.5">
                         <span className="text-slate-400">Solana Devnet:</span>
-                        <a
-                          href={`https://explorer.solana.com/tx/${ticket.nftTransactionSignature}?cluster=devnet`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 font-mono text-solana-cyan hover:underline"
-                        >
-                          <span>{ticket.nftTransactionSignature.slice(0, 8)}...{ticket.nftTransactionSignature.slice(-8)}</span>
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
+                        {(ticket.txSignature || ticket.signature || ticket.nftTransactionSignature) ? (
+                          <a
+                            href={`https://explorer.solana.com/tx/${ticket.txSignature || ticket.signature || ticket.nftTransactionSignature}?cluster=devnet`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 font-semibold text-solana-cyan hover:underline hover:text-white transition-colors"
+                          >
+                            <span>{t('myTickets.viewOnExplorer')}</span>
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        ) : (
+                          <span className="font-mono text-slate-300">
+                            Tra cứu ID: <span className="text-solana-cyan font-semibold">{ticket.ticketCode || ticket.id}</span>
+                          </span>
+                        )}
                       </div>
-                    )}
+
+                      <button
+                        onClick={() => handleNavigate('verify', ticket.id)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-solana-purple/40 bg-solana-purple/20 px-2.5 py-1 text-[11px] font-semibold text-purple-200 hover:bg-solana-purple/40 hover:text-white transition-colors"
+                      >
+                        <ShieldCheck className="h-3 w-3 text-solana-green" />
+                        <span>{t('myTickets.viewPublicVerification')}</span>
+                      </button>
+                    </div>
+
                     <p className="mt-4 border-t border-dashed border-white/10 pt-3 text-[11px] text-slate-400">
                       {t('myTickets.order')} {ticket.orderId} · {t('myTickets.qrDemoNotice')}
                     </p>
@@ -898,6 +942,13 @@ export function App() {
               </div>
             )}
           </div>
+        )}
+
+        {currentPage === 'verify' && (
+          <VerifyTicketPage
+            ticketId={selectedVerifyTicketId}
+            onNavigate={handleNavigate}
+          />
         )}
 
         {currentPage === 'check-in' && (
@@ -1044,6 +1095,19 @@ export function App() {
             <div className="mx-auto mt-5 inline-flex max-w-full rounded-2xl bg-white p-3"><QRCodeSVG value={selectedQrTicket.qrPayload} size={240} level="M" /></div>
             <p className="mt-4 text-xs text-solana-cyan">{t('qrModal.showToStaff')}</p>
             <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{t('qrModal.securityNotice')}</p>
+            <div className="mt-4 pt-3 border-t border-white/10 flex flex-col items-center">
+              <button
+                onClick={() => {
+                  const targetId = selectedQrTicket.id;
+                  setSelectedQrTicket(null);
+                  handleNavigate('verify', targetId);
+                }}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-solana-cyan hover:underline transition-colors"
+              >
+                <ShieldCheck className="h-3.5 w-3.5 text-solana-green" />
+                <span>{t('myTickets.viewPublicVerification')}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

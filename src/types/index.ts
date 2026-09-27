@@ -120,6 +120,8 @@ export interface PurchasedTicket {
   checkInStatus?: 'unused' | 'checked-in';
   checkedInAt?: number;
   qrPayload: string;        // JSON string mã hóa thông tin vé an toàn cho demo
+  txSignature?: string;
+  signature?: string;
   nftTransactionSignature?: string;
   nftMintAddress?: string;
   nftStatus?: 'PENDING' | 'MINTING' | 'MINTED' | 'MINT_FAILED';

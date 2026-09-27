@@ -257,6 +257,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           signatureVersion: 'mock-v1',
           checkInStatus: 'unused',
           qrPayload,
+          txSignature: signature,
+          signature,
           nftTransactionSignature: signature,
           nftStatus: 'MINTED',
         });
