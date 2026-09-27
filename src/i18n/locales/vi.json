@@ -359,9 +359,13 @@
     "transferSuccess": "Chuyển nhượng vé thành công tới ví {{address}}!"
   },
   "qrModal": {
-    "title": "Mã QR Check-in",
+    "title": "Mã QR Check-in Động",
     "showToStaff": "Xuất trình mã QR này tại cổng soát vé sự kiện.",
-    "securityNotice": "Mã QR được mã hóa bảo mật chống vé giả."
+    "securityNotice": "Mã QR được mã hóa bảo mật chống vé giả.",
+    "dynamicNotice": "Mã QR tự động đổi sau mỗi 20 giây để chống vé giả / chụp màn hình",
+    "refreshIn": "Tự động đổi sau {{seconds}}s",
+    "refreshNow": "Đổi mã ngay",
+    "expiredWarning": "Mã QR đã hết hạn! Vui lòng mở ứng dụng UniTicket trực tiếp"
   },
   "walletModal": {
     "title": "Kết Nối Ví Phantom",

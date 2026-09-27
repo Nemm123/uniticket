@@ -417,14 +417,6 @@ function restoreStorageValue(key: string, value: string | null): void {
  * Kiểm tra QR payload hoặc ticketCode và cập nhật trạng thái sử dụng một lần.
  * Đây chỉ là dữ liệu mô phỏng phía frontend, không phải cơ chế chống gian lận.
  */
-interface MockQrPayload {
-  ticketId: string;
-  orderId: string;
-  eventId: string;
-  tierId: string;
-  ticketCode: string;
-  signatureVersion: 'mock-v1';
-}
 
 function isCheckedIn(ticket: PurchasedTicket): boolean {
   return ticket.isCheckedIn || ticket.checkInStatus === 'checked-in' || ticket.status === 'checked_in' || ticket.status === 'CHECKED_IN';
@@ -432,48 +424,72 @@ function isCheckedIn(ticket: PurchasedTicket): boolean {
 
 /** Validates a QR payload against the stored ticket without changing ticket state. */
 export function validateTicketForCheckIn(input: string): CheckInResult {
-  if (!input.trim()) return { status: 'invalid', message: 'Invalid QR code.' };
+  if (!input.trim()) return { status: 'invalid', message: 'Mã QR hoặc mã vé không hợp lệ.' };
 
-  let payload: MockQrPayload;
+  let targetTicketId = input.trim();
+  let timestamp: number | undefined;
+  let parsedPayload: any = null;
+
   try {
-    payload = JSON.parse(input) as MockQrPayload;
+    parsedPayload = JSON.parse(input);
+    if (parsedPayload && typeof parsedPayload === 'object') {
+      if (typeof parsedPayload.ticketId === 'string') {
+        targetTicketId = parsedPayload.ticketId;
+      } else if (typeof parsedPayload.id === 'string') {
+        targetTicketId = parsedPayload.id;
+      } else if (typeof parsedPayload.ticketCode === 'string') {
+        targetTicketId = parsedPayload.ticketCode;
+      }
+      if (typeof parsedPayload.timestamp === 'number') {
+        timestamp = parsedPayload.timestamp;
+      }
+    }
   } catch {
-    return { status: 'invalid', message: 'Invalid QR code.' };
+    // raw string
   }
 
-  if (
-    !payload ||
-    typeof payload.ticketId !== 'string' ||
-    typeof payload.orderId !== 'string' ||
-    typeof payload.eventId !== 'string' ||
-    typeof payload.tierId !== 'string' ||
-    typeof payload.ticketCode !== 'string' ||
-    payload.signatureVersion !== 'mock-v1'
-  ) {
-    return { status: 'invalid', message: 'Invalid QR code.' };
+  // KIỂM TRA MÃ QR ĐỘNG:
+  // nếu Date.now() - timestamp > 60000 (quá 60 giây, tức là ảnh chụp cũ): Báo lỗi đỏ
+  if (typeof timestamp === 'number') {
+    const ageMs = Date.now() - timestamp;
+    if (ageMs > 60000) {
+      return {
+        status: 'error',
+        message: 'Mã QR đã hết hạn! Vui lòng mở ứng dụng UniTicket trực tiếp',
+      };
+    }
   }
 
   try {
     const rawTickets = localStorage.getItem(TICKETS_KEY);
     const tickets = rawTickets ? JSON.parse(rawTickets) : [];
-    if (!Array.isArray(tickets)) return { status: 'error', message: 'Could not read demo ticket storage.' };
+    if (!Array.isArray(tickets)) return { status: 'error', message: 'Không thể đọc dữ liệu vé từ bộ nhớ.' };
 
-    const ticket = tickets.find((item): item is PurchasedTicket => item?.id === payload.ticketId);
-    if (!ticket) return { status: 'invalid', message: 'Ticket not found.' };
+    const ticket = tickets.find((item): item is PurchasedTicket => (
+      item?.id === targetTicketId ||
+      item?.ticketCode === targetTicketId ||
+      item?.orderId === targetTicketId
+    ));
+    if (!ticket) return { status: 'invalid', message: 'Mã vé không tồn tại trong hệ thống.' };
+
+    // Nếu là payload mock-v1 cũ có đầy đủ trường, kiểm tra khớp chi tiết
     if (
-      ticket.orderId !== payload.orderId ||
-      ticket.ticketCode !== payload.ticketCode ||
-      ticket.eventId !== payload.eventId ||
-      ticket.tierId !== payload.tierId
+      parsedPayload &&
+      parsedPayload.signatureVersion === 'mock-v1' &&
+      parsedPayload.orderId &&
+      (ticket.orderId !== parsedPayload.orderId || ticket.ticketCode !== parsedPayload.ticketCode)
     ) {
-      return { status: 'invalid', message: 'Ticket verification failed.' };
+      return { status: 'invalid', message: 'Xác thực vé thất bại.' };
     }
-    if (isCheckedIn(ticket)) return { status: 'used', message: 'This ticket has already been checked in.', ticket };
 
-    return { status: 'valid', message: 'Ticket verified. Please confirm check-in.', ticket };
+    if (isCheckedIn(ticket)) {
+      return { status: 'used', message: 'Vé đã được sử dụng! (Cảnh báo vé giả/quét trùng)', ticket };
+    }
+
+    return { status: 'valid', message: 'Hợp lệ - Cho phép qua cổng', ticket };
   } catch (error) {
     console.error('[UniTicket Storage] Failed to validate demo ticket:', error);
-    return { status: 'error', message: 'Could not read demo ticket storage.' };
+    return { status: 'error', message: 'Không thể đọc dữ liệu vé từ bộ nhớ.' };
   }
 }
 

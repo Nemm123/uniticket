@@ -359,9 +359,13 @@
     "transferSuccess": "Ticket transferred successfully to wallet {{address}}!"
   },
   "qrModal": {
-    "title": "Check-in QR Code",
-    "showToStaff": "Present this QR code at the event entrance.",
-    "securityNotice": "This QR code is cryptographically protected against counterfeiting."
+    "title": "Dynamic Check-in QR Code",
+    "showToStaff": "Present this dynamic QR code at the event entrance.",
+    "securityNotice": "This QR code is cryptographically protected against counterfeiting.",
+    "dynamicNotice": "QR code refreshes automatically every 20 seconds to prevent fake tickets and screenshots",
+    "refreshIn": "Auto-refresh in {{seconds}}s",
+    "refreshNow": "Refresh now",
+    "expiredWarning": "QR code has expired! Please open UniTicket app directly"
   },
   "walletModal": {
     "title": "Connect Phantom Wallet",

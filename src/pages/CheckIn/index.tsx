@@ -53,6 +53,27 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
     setCameraEnabled(false);
 
     try {
+      // 1. Giải mã chuỗi JSON lấy ticketId và timestamp (chống chụp màn hình gian lận)
+      let parsedPayload: any = null;
+      try {
+        parsedPayload = JSON.parse(input);
+      } catch {
+        // Chuỗi không phải JSON (có thể là ticketCode hoặc ticketId nhập tay)
+      }
+
+      if (parsedPayload && typeof parsedPayload === 'object' && typeof parsedPayload.timestamp === 'number') {
+        const ageMs = Date.now() - parsedPayload.timestamp;
+        if (ageMs > 60000) {
+          const expiredMsg = 'Mã QR đã hết hạn! Vui lòng mở ứng dụng UniTicket trực tiếp';
+          setResult({
+            status: 'error',
+            message: expiredMsg,
+          });
+          onShowToast('error', expiredMsg);
+          return;
+        }
+      }
+
       const backendValidation = await api.verifyTicketCheckIn(input);
 
       if (backendValidation.status === 'valid') {
@@ -76,6 +97,9 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
       } else if (backendValidation.status === 'used') {
         setResult({ ...backendValidation, message: 'Vé đã được sử dụng! (Cảnh báo vé giả/quét trùng)' });
         onShowToast('error', 'Vé đã được sử dụng! (Cảnh báo vé giả/quét trùng)');
+      } else if (backendValidation.status === 'error' && backendValidation.message.includes('hết hạn')) {
+        setResult({ ...backendValidation, message: 'Mã QR đã hết hạn! Vui lòng mở ứng dụng UniTicket trực tiếp' });
+        onShowToast('error', 'Mã QR đã hết hạn! Vui lòng mở ứng dụng UniTicket trực tiếp');
       } else {
         setResult({ ...backendValidation, message: 'Mã vé không hợp lệ' });
         onShowToast('error', 'Mã vé không hợp lệ');

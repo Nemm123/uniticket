@@ -272,6 +272,28 @@ assert(
   'TEST 20 — Solana Explorer link & Public Web3 Ticket Verification (/verify/:ticketId)'
 );
 
+// -------------------------------------------------------------
+// TEST 21 — Dynamic QR Code (Anti-screenshot & Anti-counterfeit)
+// -------------------------------------------------------------
+const dynamicQRModalCode = fs.readFileSync('src/components/tickets/DynamicQRModal.tsx', 'utf8');
+const checkInCode = fs.readFileSync('src/pages/CheckIn/index.tsx', 'utf8');
+
+assert(
+  dynamicQRModalCode.includes('generateDynamicQRPayload') &&
+  dynamicQRModalCode.includes('ticketId') &&
+  dynamicQRModalCode.includes('owner') &&
+  dynamicQRModalCode.includes('timestamp') &&
+  dynamicQRModalCode.includes('hash') &&
+  dynamicQRModalCode.includes('REFRESH_INTERVAL_SECONDS = 20') &&
+  dynamicQRModalCode.includes('dynamicNotice') &&
+  mainAppCode.includes('DynamicQRModal') &&
+  checkInCode.includes('60000') &&
+  checkInCode.includes('Mã QR đã hết hạn! Vui lòng mở ứng dụng UniTicket trực tiếp') &&
+  storageCode.includes('60000') &&
+  storageCode.includes('Mã QR đã hết hạn! Vui lòng mở ứng dụng UniTicket trực tiếp'),
+  'TEST 21 — Dynamic QR Code (20s auto-refresh, anti-screenshot timestamp & 60s expiration check)'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);

@@ -20,13 +20,12 @@ import {
   ArrowUp, 
   Sparkles,
   ExternalLink,
-  X,
   Send,
   QrCode,
   ShieldCheck
 } from 'lucide-react';
 import { VerifyTicketPage } from './pages/VerifyTicket';
-import { QRCodeSVG } from 'qrcode.react';
+import { DynamicQRModal } from './components/tickets/DynamicQRModal';
 import { TransferTicketModal } from './components/tickets/TransferTicketModal';
 import { EventItem, PurchasedTicket, TicketTier, ToastMessage, UserRole } from './types';
 import { getStoredEvents, getStoredPurchasedTickets, saveStoredEvents, savePurchasedTickets } from './utils/storage';
@@ -1085,32 +1084,13 @@ export function App() {
         )}
       </main>
 
-      {selectedQrTicket && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-4 backdrop-blur-md">
-          <button aria-label={t('common.close')} className="absolute inset-0" onClick={() => setSelectedQrTicket(null)} />
-          <div className="relative w-full max-w-sm rounded-2xl border border-solana-purple/40 bg-[#0F0A28] p-5 text-center shadow-2xl sm:p-6">
-            <button aria-label={t('common.close')} onClick={() => setSelectedQrTicket(null)} className="absolute right-3 top-3 inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-300 hover:bg-white/10 hover:text-white"><X className="h-5 w-5" /></button>
-            <h2 className="pr-10 text-left text-lg font-bold text-white">{t('qrModal.title')}</h2>
-            <p className="mt-1 text-left text-xs text-slate-300">{selectedQrTicket.eventTitle}</p>
-            <div className="mx-auto mt-5 inline-flex max-w-full rounded-2xl bg-white p-3"><QRCodeSVG value={selectedQrTicket.qrPayload} size={240} level="M" /></div>
-            <p className="mt-4 text-xs text-solana-cyan">{t('qrModal.showToStaff')}</p>
-            <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{t('qrModal.securityNotice')}</p>
-            <div className="mt-4 pt-3 border-t border-white/10 flex flex-col items-center">
-              <button
-                onClick={() => {
-                  const targetId = selectedQrTicket.id;
-                  setSelectedQrTicket(null);
-                  handleNavigate('verify', targetId);
-                }}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-solana-cyan hover:underline transition-colors"
-              >
-                <ShieldCheck className="h-3.5 w-3.5 text-solana-green" />
-                <span>{t('myTickets.viewPublicVerification')}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Modal Mã QR Động chống vé giả / chụp màn hình */}
+      <DynamicQRModal
+        isOpen={Boolean(selectedQrTicket)}
+        ticket={selectedQrTicket}
+        onClose={() => setSelectedQrTicket(null)}
+        onNavigateToVerify={(ticketId) => handleNavigate('verify', ticketId)}
+      />
 
       {/* Modal Chuyển nhượng vé On-chain */}
       <TransferTicketModal
