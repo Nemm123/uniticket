@@ -91,8 +91,82 @@ export function supabaseRowToTicket(row: any): PurchasedTicket {
 // -------------------------------------
 
 /**
+ * Danh sách vé demo chuẩn để tự động nạp lên Supabase nếu bảng tickets đang rỗng
+ */
+export function getInitialDemoTickets(): PurchasedTicket[] {
+  const nowIso = new Date().toISOString();
+  return [
+    {
+      id: 'tkt-demo-anh-trai-say-hi-01',
+      orderId: 'ORD-DEMO-2026-01',
+      eventId: 'event-anh-trai-say-hi-2026',
+      eventTitle: 'Anh Trai Say Hi - All-Star Concert 2026',
+      eventBanner: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1200&q=80',
+      venue: 'Sân vận động Quân khu 7',
+      city: 'TP. Hồ Chí Minh',
+      date: '15/11/2026',
+      time: '19:00 - 23:00',
+      tierId: 'tier-vip-anh-trai',
+      tierName: 'VIP Fanzone',
+      seat: 'ZONE-VIP-A12',
+      priceSol: 0.08,
+      ticketCode: 'UTK-ATSH-8921',
+      customerName: 'Nguyễn Văn Minh (Demo)',
+      customerEmail: 'minh.nguyen@uniticket.io',
+      customerWallet: 'CzQCjR6LqZPvW18q9q2GZ8wPq2xYFm4N7kLm6kFopcM',
+      purchasedAt: nowIso,
+      purchaseDate: nowIso,
+      status: 'valid',
+      isCheckedIn: false,
+      isUsed: false,
+      qrPayload: JSON.stringify({
+        ticketId: 'tkt-demo-anh-trai-say-hi-01',
+        ticketCode: 'UTK-ATSH-8921',
+        eventId: 'event-anh-trai-say-hi-2026',
+        wallet: 'CzQCjR6LqZPvW18q9q2GZ8wPq2xYFm4N7kLm6kFopcM',
+      }),
+      nftTransactionSignature: '5J4mZ9h7K8wPvW18q9q2GZ8wPq2xYFm4N7kLm6kFopcMDevnetTxDemo01',
+      txSignature: '5J4mZ9h7K8wPvW18q9q2GZ8wPq2xYFm4N7kLm6kFopcMDevnetTxDemo01',
+    },
+    {
+      id: 'tkt-demo-solana-vietnam-02',
+      orderId: 'ORD-DEMO-2026-02',
+      eventId: 'event-solana-vietnam-build-2026',
+      eventTitle: 'Solana Vietnam Hacker House & Demo Day',
+      eventBanner: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80',
+      venue: 'Trung tâm Đổi mới Sáng tạo Quốc gia (NIC Hòa Lạc)',
+      city: 'Hà Nội',
+      date: '25/10/2026',
+      time: '08:30 - 18:00',
+      tierId: 'tier-builder-solana',
+      tierName: 'Builder All-Access',
+      seat: 'DESK-NIC-B04',
+      priceSol: 0.02,
+      ticketCode: 'UTK-SOLVN-3419',
+      customerName: 'Trần Thị Thu Hà (Demo)',
+      customerEmail: 'ha.tran@uniticket.io',
+      customerWallet: 'CzQCjR6LqZPvW18q9q2GZ8wPq2xYFm4N7kLm6kFopcM',
+      purchasedAt: nowIso,
+      purchaseDate: nowIso,
+      status: 'valid',
+      isCheckedIn: false,
+      isUsed: false,
+      qrPayload: JSON.stringify({
+        ticketId: 'tkt-demo-solana-vietnam-02',
+        ticketCode: 'UTK-SOLVN-3419',
+        eventId: 'event-solana-vietnam-build-2026',
+        wallet: 'CzQCjR6LqZPvW18q9q2GZ8wPq2xYFm4N7kLm6kFopcM',
+      }),
+      nftTransactionSignature: '3xN8kLm6kFopcMDevnetTxDemo02PvW18q9q2GZ8wPq2xYFm4N7',
+      txSignature: '3xN8kLm6kFopcMDevnetTxDemo02PvW18q9q2GZ8wPq2xYFm4N7',
+    },
+  ];
+}
+
+/**
  * Truy vấn danh sách vé từ Supabase theo cột customer_wallet.
  * Nếu không có cấu hình Supabase hoặc gặp lỗi mạng, fallback về localStorage.
+ * Nếu bảng tickets trên Supabase đang rỗng, tự động đẩy dữ liệu vé demo lên bảng.
  */
 export async function getPurchasedTickets(walletAddress?: string): Promise<PurchasedTicket[]> {
   await delay(MOCK_DELAY);
@@ -110,12 +184,38 @@ export async function getPurchasedTickets(walletAddress?: string): Promise<Purch
 
       const { data, error } = await query;
       if (!error && Array.isArray(data)) {
-        const tickets = data.map(supabaseRowToTicket);
-        // Đồng bộ vào localStorage để duy trì cache cục bộ
-        if (tickets.length > 0) {
+        if (data.length > 0) {
+          const tickets = data.map(supabaseRowToTicket);
+          // Đồng bộ vào localStorage để duy trì cache cục bộ
           storage.savePurchasedTickets(tickets);
+          return tickets;
         }
-        return tickets;
+
+        // Bảng tickets trên Supabase đang rỗng -> Tự động nạp vé demo lên Cloud
+        if (data.length === 0) {
+          console.log('[Supabase Hydration] Bảng tickets đang rỗng, tự động nạp vé demo mẫu lên Cloud...');
+          const demoTickets = getInitialDemoTickets();
+          if (walletAddress) {
+            demoTickets.forEach((t) => {
+              t.customerWallet = walletAddress;
+            });
+          }
+          const demoRows = demoTickets.map(ticketToSupabaseRow);
+          const { data: insertedData, error: insertError } = await supabase
+            .from('tickets')
+            .insert(demoRows)
+            .select();
+
+          if (!insertError && insertedData && insertedData.length > 0) {
+            const insertedTickets = insertedData.map(supabaseRowToTicket);
+            storage.savePurchasedTickets(insertedTickets);
+            return insertedTickets;
+          } else {
+            console.warn('[Supabase Hydration] Không thể chèn vé demo:', insertError?.message);
+            storage.savePurchasedTickets(demoTickets);
+            return demoTickets;
+          }
+        }
       }
       if (error) {
         console.warn('[Supabase API] Lỗi truy vấn bảng tickets, dùng fallback localStorage:', error.message);

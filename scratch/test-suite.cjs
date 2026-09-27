@@ -338,6 +338,55 @@ assert(
   'TEST 23 — Supabase Cloud Health Check, DatabaseStatusBadge, and Sync status confirmation'
 );
 
+// -------------------------------------------------------------
+// TEST 24 — Supabase Environment Config (.env), Vite loadEnv, and Cloud Hydration
+// -------------------------------------------------------------
+const envFileExists = fs.existsSync('.env');
+const envFileContent = envFileExists ? fs.readFileSync('.env', 'utf8') : '';
+const viteConfigCode = fs.readFileSync('vite.config.ts', 'utf8');
+
+assert(
+  envFileExists &&
+  envFileContent.includes('VITE_SUPABASE_URL=https://puxgsgjqwgenzwzysvkvk.supabase.co') &&
+  envFileContent.includes('VITE_SUPABASE_ANON_KEY') &&
+  viteConfigCode.includes('loadEnv') &&
+  viteConfigCode.includes("envPrefix: ['VITE_']") &&
+  freshApiCode.includes('getInitialDemoTickets') &&
+  freshApiCode.includes('Bảng tickets đang rỗng') &&
+  freshAppCode.includes('isSupabaseConfigured'),
+  'TEST 24 — Supabase Environment Config (.env), Vite loadEnv without cache, and Cloud Hydration'
+);
+
+// -------------------------------------------------------------
+// TEST 25 — Comprehensive Organizer Dashboard (Metrics, Attendees Table, CSV, Withdrawal)
+// -------------------------------------------------------------
+const upgradedOrgCode = fs.readFileSync('src/pages/OrganizerDashboard/index.tsx', 'utf8');
+
+assert(
+  // 1. 4 Thẻ tóm tắt chỉ số
+  upgradedOrgCode.includes('totalCapacity') &&
+  upgradedOrgCode.includes('totalSold') &&
+  upgradedOrgCode.includes('checkedInTickets') &&
+  upgradedOrgCode.includes('checkInRatePercent') &&
+  upgradedOrgCode.includes('totalRevenueSol') &&
+  upgradedOrgCode.includes('totalRevenueVnd') &&
+  // 2. Bảng quản lý khán giả & tìm kiếm & xuất CSV
+  upgradedOrgCode.includes('filteredTickets') &&
+  upgradedOrgCode.includes('searchQuery') &&
+  upgradedOrgCode.includes('handleExportCsv') &&
+  upgradedOrgCode.includes('\\uFEFF') &&
+  upgradedOrgCode.includes('uniticket-attendees') &&
+  upgradedOrgCode.includes('ticketCode') &&
+  upgradedOrgCode.includes('customerWallet') &&
+  // 3. Rút doanh thu về ví BTC
+  upgradedOrgCode.includes('treasuryBalance') &&
+  upgradedOrgCode.includes('handleConfirmWithdraw') &&
+  upgradedOrgCode.includes('isWithdrawModalOpen') &&
+  upgradedOrgCode.includes('withdrawRevenueBtn') &&
+  upgradedOrgCode.includes('SOLANA_TREASURY_WALLET_STR'),
+  'TEST 25 — Comprehensive Organizer Dashboard (4 Metric Cards, Attendee Table with CSV Export, and On-chain Revenue Withdrawal)'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);
@@ -345,3 +394,4 @@ console.log(`FAILED: ${failCount}`);
 console.log('=====================================================\n');
 
 if (failCount > 0) process.exit(1);
+

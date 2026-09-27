@@ -347,7 +347,7 @@ export function App() {
   }, [fetchMyTickets]);
 
   useEffect(() => {
-    if (currentPage === 'my-tickets' || walletAddress || guestAccessToken) {
+    if (currentPage === 'my-tickets' || walletAddress || guestAccessToken || isSupabaseConfigured) {
       void fetchMyTickets();
     }
   }, [currentPage, walletAddress, guestAccessToken, fetchMyTickets]);
@@ -987,11 +987,18 @@ export function App() {
             organizerAddress={walletAddress}
             onShowToast={showToast}
             onTicketsChanged={() => setPurchasedTickets(getStoredPurchasedTickets())}
+            onNavigate={handleNavigate}
           />
         )}
 
         {currentPage === 'organizer' && (
-          <OrganizerDashboard events={events} tickets={purchasedTickets} onNavigate={handleNavigate} />
+          <OrganizerDashboard
+            events={events}
+            tickets={purchasedTickets}
+            onNavigate={handleNavigate}
+            organizerWallet={walletAddress}
+            onShowToast={showToast}
+          />
         )}
 
         {currentPage === 'organizer-events' && (

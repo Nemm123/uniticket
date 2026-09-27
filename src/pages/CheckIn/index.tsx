@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, CheckCircle2, Keyboard, Loader2, RefreshCw, ScanLine, ShieldAlert, Ticket } from 'lucide-react';
+import { BarChart3, Camera, CheckCircle2, Keyboard, Loader2, RefreshCw, ScanLine, ShieldAlert, Ticket } from 'lucide-react';
 import { CheckInResult, PurchasedTicket, UserRole } from '../../types';
 import * as api from '../../services/api';
 import { useTranslation } from '../../i18n';
@@ -10,12 +10,13 @@ interface CheckInPageProps {
   organizerAddress: string | null;
   onShowToast: (type: 'success' | 'error' | 'info', message: string) => void;
   onTicketsChanged: () => void;
+  onNavigate?: (page: string) => void;
 }
 
 type TicketFilter = 'all' | 'checked-in' | 'unused';
 const ticketIsCheckedIn = (ticket: PurchasedTicket) => ticket.isCheckedIn || ticket.status === 'checked_in' || ticket.status === 'CHECKED_IN';
 
-export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizerAddress, onShowToast, onTicketsChanged }) => {
+export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizerAddress, onShowToast, onTicketsChanged, onNavigate }) => {
   const { t, formatDate } = useTranslation();
   const processingRef = useRef(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
@@ -143,20 +144,33 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
   return (
     <div className="min-h-screen py-8 sm:py-12 cyber-grid-bg text-left">
       <div className="mx-auto max-w-5xl space-y-6 px-4 sm:px-6 lg:px-8 animate-fadeIn">
-        <header className="border-b border-white/10 pb-6">
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-solana-cyan/30 bg-solana-cyan/10 px-3 py-1 text-xs font-semibold text-solana-cyan">
-            <ScanLine className="h-4 w-4" />
-            {t('checkIn.consoleBadge')}
+        <header className="flex flex-col gap-4 border-b border-white/10 pb-6 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-solana-cyan/30 bg-solana-cyan/10 px-3 py-1 text-xs font-semibold text-solana-cyan">
+              <ScanLine className="h-4 w-4" />
+              {t('checkIn.consoleBadge')}
+            </div>
+            <h1 className="text-2xl font-extrabold text-white sm:text-4xl">
+              {t('checkIn.title')} <span className="text-gradient-solana">{t('checkIn.titleGradient')}</span>
+            </h1>
+            <p className="mt-2 text-xs leading-relaxed text-slate-300 sm:text-sm">
+              {t('checkIn.subtitle')}
+            </p>
+            <p className="mt-3 text-xs text-solana-cyan">
+              Organizer: {organizerAddress ? `${organizerAddress.slice(0, 4)}...${organizerAddress.slice(-4)}` : 'Staff Gate Operator'}
+            </p>
           </div>
-          <h1 className="text-2xl font-extrabold text-white sm:text-4xl">
-            {t('checkIn.title')} <span className="text-gradient-solana">{t('checkIn.titleGradient')}</span>
-          </h1>
-          <p className="mt-2 text-xs leading-relaxed text-slate-300 sm:text-sm">
-            {t('checkIn.subtitle')}
-          </p>
-          <p className="mt-3 text-xs text-solana-cyan">
-            Organizer: {organizerAddress ? `${organizerAddress.slice(0, 4)}...${organizerAddress.slice(-4)}` : 'Staff Gate Operator'}
-          </p>
+          {onNavigate && (
+            <div>
+              <button
+                type="button"
+                onClick={() => onNavigate('organizer')}
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-semibold text-slate-200 hover:bg-white/10 hover:text-white transition-colors"
+              >
+                <BarChart3 className="h-4 w-4 text-solana-green" /> Bảng Quản Trị BTC
+              </button>
+            </div>
+          )}
         </header>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.15fr_0.85fr]">
