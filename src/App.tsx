@@ -757,7 +757,7 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#070412] text-slate-100 flex flex-col selection:bg-solana-purple selection:text-white font-sans relative">
+    <div className="min-h-screen bg-[#070412] text-slate-100 flex flex-col selection:bg-solana-purple selection:text-white font-sans relative overflow-x-hidden">
       {/* Thanh điều hướng toàn cục */}
       <Navbar
         currentPage={currentPage}

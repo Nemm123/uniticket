@@ -417,13 +417,13 @@ export const EventsPage: React.FC<EventsPageProps> = ({
 
         {/* Loading Skeletons */}
         {eventsLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
-            {[1, 2, 3, 4, 5, 6].map((idx) => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((idx) => (
               <div
                 key={idx}
                 className="rounded-2xl border border-white/5 bg-[#110A2B]/60 p-4 space-y-4 animate-pulse"
               >
-                <div className="h-48 rounded-xl bg-white/5" />
+                <div className="h-44 rounded-xl bg-white/5" />
                 <div className="h-4 w-3/4 rounded bg-white/10" />
                 <div className="h-3 w-1/2 rounded bg-white/5" />
                 <div className="h-3 w-full rounded bg-white/5" />
@@ -432,7 +432,7 @@ export const EventsPage: React.FC<EventsPageProps> = ({
           </div>
         ) : displayedEvents.length > 0 ? (
           /* Event Cards Grid */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
             {displayedEvents.map((evt) => (
               <EventCard
                 key={evt.id}

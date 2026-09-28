@@ -39,14 +39,14 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
           onClick(event.id);
         }
       }}
-      className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-white/10 bg-[#110A2B]/85 p-3.5 sm:p-4 text-left shadow-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-solana-purple/50 hover:bg-[#180E3D] hover:shadow-2xl hover:shadow-purple-950/50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-solana-cyan/50"
+      className="group relative h-full flex flex-col justify-between overflow-hidden rounded-2xl border border-white/10 bg-[#110A2B]/85 p-3.5 sm:p-4 text-left shadow-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-solana-purple/50 hover:bg-[#180E3D] hover:shadow-2xl hover:shadow-purple-950/50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-solana-cyan/50"
     >
       {/* Background glow orb on hover */}
       <div className="pointer-events-none absolute -top-10 -right-10 h-36 w-36 rounded-full bg-solana-purple/10 blur-2xl transition-all duration-500 group-hover:bg-solana-purple/25" />
 
       <div>
         {/* Event Thumbnail with badges */}
-        <div className="relative mb-3.5 h-44 sm:h-52 w-full overflow-hidden rounded-xl bg-black/40">
+        <div className="relative mb-3.5 h-40 sm:h-48 w-full overflow-hidden rounded-xl bg-black/40">
           <img
             src={event.thumbnailImage || event.bannerImage}
             alt={event.title}

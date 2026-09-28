@@ -470,54 +470,39 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <>
     <header className="sticky top-0 z-[80] w-full glass-nav transition-all duration-300">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 sm:h-20">
-          {/* Bên trái: Icon Menu Hamburger (Mobile) + Logo Brand */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Hamburger Button on Mobile */}
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen(true)}
-              aria-label="Mở menu điều hướng"
-              aria-expanded={mobileMenuOpen}
-              aria-controls="mobile-navigation"
-              className="inline-flex md:hidden h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white active:scale-95 transition-all shrink-0"
-            >
-              <Menu className="w-5 h-5 text-solana-cyan" />
-            </button>
-
-            {/* Logo Brand */}
-            <div
-              onClick={() => handleNavClick('home')}
-              className="flex items-center gap-2 sm:gap-2.5 cursor-pointer group select-none shrink-0"
-            >
-              <div className="relative w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-solana-purple via-neon-pink to-solana-cyan p-0.5 shadow-lg shadow-solana-purple/30 group-hover:shadow-solana-purple/60 transition-all duration-300">
-                <div className="w-full h-full bg-[#0E0924] rounded-[10px] flex items-center justify-center">
-                  <Ticket className="w-4 h-4 sm:w-5 sm:h-5 text-solana-cyan group-hover:rotate-12 transition-transform duration-300" />
-                </div>
-                <Sparkles className="w-2.5 h-2.5 text-solana-green absolute -top-1 -right-1 animate-pulse" />
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-14 sm:h-16 lg:h-16">
+          {/* Bên trái: Logo Brand */}
+          <div
+            onClick={() => handleNavClick('home')}
+            className="flex items-center gap-2 sm:gap-2.5 cursor-pointer group select-none shrink-0"
+          >
+            <div className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-solana-purple via-neon-pink to-solana-cyan p-0.5 shadow-lg shadow-solana-purple/30 group-hover:shadow-solana-purple/60 transition-all duration-300">
+              <div className="w-full h-full bg-[#0E0924] rounded-[10px] flex items-center justify-center">
+                <Ticket className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-solana-cyan group-hover:rotate-12 transition-transform duration-300" />
               </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-base sm:text-lg font-extrabold tracking-tight text-white font-display">
-                    Uni<span className="text-gradient-solana">Ticket</span>
-                  </span>
-                  <span className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.2 rounded bg-solana-purple/20 text-solana-cyan border border-solana-cyan/30">
-                    Devnet
-                  </span>
-                </div>
-                <p className="text-[8px] sm:text-[9px] text-slate-300 font-medium tracking-wider uppercase hidden sm:block">
-                  Web3 NFT Ticketing
-                </p>
+              <Sparkles className="w-2.5 h-2.5 text-solana-green absolute -top-1 -right-1 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-base sm:text-lg font-extrabold tracking-tight text-white font-display">
+                  Uni<span className="text-gradient-solana">Ticket</span>
+                </span>
+                <span className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.2 rounded bg-solana-purple/20 text-solana-cyan border border-solana-cyan/30">
+                  Devnet
+                </span>
               </div>
+              <p className="text-[8px] sm:text-[9px] text-slate-300 font-medium tracking-wider uppercase hidden sm:block">
+                Web3 NFT Ticketing
+              </p>
             </div>
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-1 bg-[#150E35]/80 px-2.5 py-1.5 rounded-full border border-white/10 shadow-inner backdrop-blur-md">
+          <nav className="hidden md:flex items-center gap-0.5 lg:gap-1 bg-[#150E35]/80 px-2 py-1 lg:px-2.5 lg:py-1.5 rounded-full border border-white/10 shadow-inner backdrop-blur-md">
             <button
               onClick={() => handleNavClick('home')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 lg:px-3 lg:py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
                 currentPage === 'home'
                   ? 'bg-gradient-to-r from-solana-purple to-[#6E1FD6] text-white shadow-md shadow-solana-purple/40'
                   : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -529,7 +514,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             <button
               onClick={() => handleNavClick('events')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 lg:px-3 lg:py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
                 currentPage === 'events'
                   ? 'bg-gradient-to-r from-solana-purple to-[#6E1FD6] text-white shadow-md shadow-solana-purple/40'
                   : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -543,7 +528,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <>
                 <button
                   onClick={() => handleNavClick('organizer')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
+                  className={`flex items-center gap-1.5 px-2.5 py-1 lg:px-3 lg:py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
                     currentPage === 'organizer'
                       ? 'bg-gradient-to-r from-solana-purple to-[#6E1FD6] text-white shadow-md shadow-solana-purple/40'
                       : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -558,7 +543,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <button
                     type="button"
                     onClick={() => setManageDropdownOpen((prev) => !prev)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
+                    className={`flex items-center gap-1.5 px-2.5 py-1 lg:px-3 lg:py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
                       ['organizer-events', 'create-event', 'check-in'].includes(currentPage)
                         ? 'bg-gradient-to-r from-solana-purple to-[#6E1FD6] text-white shadow-md shadow-solana-purple/40'
                         : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -635,7 +620,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             ) : (
               <button
                 onClick={() => handleNavClick('my-tickets')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 lg:px-3 lg:py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
                   currentPage === 'my-tickets'
                     ? 'bg-gradient-to-r from-solana-purple to-[#6E1FD6] text-white shadow-md shadow-solana-purple/40'
                     : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -647,8 +632,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </nav>
 
-          {/* Right Action (Desktop): Search, Language, Organizer Switch & Cụm Ví */}
-          <div className="hidden md:flex items-center gap-1.5 shrink-0">
+          {/* Right Action (Desktop): Search, Status Cluster, Switch BTC/Attendee & Compact Wallet Pill */}
+          <div className="hidden md:flex items-center gap-1.5 lg:gap-2 shrink-0">
             {onOpenSearch && (
               <button
                 type="button"
@@ -662,11 +647,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            <DatabaseStatusBadge />
+            {/* Nhóm badge trạng thái: DatabaseStatusBadge + LanguageSwitcher */}
+            <div className="flex items-center gap-1 bg-[#120B30]/70 border border-white/10 rounded-full px-2 py-0.5 shadow-inner backdrop-blur-md">
+              <DatabaseStatusBadge />
+              <span className="h-3 w-px bg-white/15 mx-0.5" />
+              <LanguageSwitcher />
+            </div>
 
-            <LanguageSwitcher />
-
-            {/* Nút chuyển đổi Chế độ BTC / Về trang người dùng cạnh cụm Ví */}
+            {/* Nút chuyển đổi Chế độ BTC / Về trang người dùng */}
             {isOrganizerView ? (
               <button
                 type="button"
@@ -675,7 +663,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 title="Quay về trang người dùng"
               >
                 <Eye className="w-3.5 h-3.5 shrink-0" />
-                <span>Về trang người dùng</span>
+                <span className="hidden lg:inline">Về trang người dùng</span>
               </button>
             ) : (
               <button
@@ -685,22 +673,22 @@ export const Navbar: React.FC<NavbarProps> = ({
                 title="Chuyển sang Chế độ Ban Tổ Chức"
               >
                 <LayoutDashboard className="w-3.5 h-3.5 text-solana-green shrink-0" />
-                <span>Chế độ BTC</span>
+                <span className="hidden lg:inline">Chế độ BTC</span>
               </button>
             )}
 
-            {/* CỤM VÍ GÓC PHẢI: Chỉ hiển thị [Chấm xanh Devnet | {balance} SOL] và Nút Địa chỉ ví */}
+            {/* CỤM VÍ GÓC PHẢI DẠNG PILL: [Devnet | {balance} SOL] + [Address] + [Logout] */}
             {activeWallet ? (
-              <div className="flex items-center gap-1.5">
+              <div className="inline-flex items-center gap-1 p-0.5 rounded-full bg-[#120B30] border border-solana-purple/40 text-xs font-mono shadow-inner select-none">
                 {/* [Chấm xanh Devnet | {balance} SOL] */}
                 <div
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#120B30] border border-solana-purple/40 text-xs font-mono shadow-inner select-none"
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 text-[11px] font-mono"
                   title="Solana Devnet"
                 >
-                  <span className="w-2 h-2 rounded-full bg-solana-green animate-pulse shrink-0" />
-                  <span className="text-[11px] font-bold text-solana-cyan">Devnet</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-solana-green animate-pulse shrink-0" />
+                  <span className="font-bold text-solana-cyan">Devnet</span>
                   <span className="text-slate-600">|</span>
-                  <span className="font-bold text-white tracking-tight">{formatSolBalance(activeBalance)}</span>
+                  <span className="font-bold text-solana-green tracking-tight">{formatSolBalance(activeBalance)}</span>
                 </div>
 
                 {/* Connected Wallet Address Button */}
@@ -708,7 +696,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   type="button"
                   onClick={onOpenWalletModal}
                   title={`Ví: ${activeWallet} (Click để xem chi tiết)`}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-solana-purple/40 bg-[#120B30] hover:bg-white/10 text-xs font-mono font-bold text-white transition-all shadow-md active:scale-95"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full hover:bg-white/10 text-xs font-mono font-bold text-white transition-all active:scale-95"
                 >
                   <PhantomLogo className="h-3.5 w-3.5 shrink-0" />
                   <span>{shortAddress(activeWallet)}</span>
@@ -720,9 +708,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={handleDisconnect}
                   title="Ngắt kết nối ví Phantom"
                   aria-label={t('walletModal.disconnect')}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-all active:scale-95"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-full text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-all active:scale-95 mr-0.5"
                 >
-                  <LogOut className="w-3.5 h-3.5" />
+                  <LogOut className="w-3 h-3" />
                 </button>
               </div>
             ) : (
@@ -738,7 +726,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }
                 }}
                 disabled={isConnectingWallet}
-                className="relative group overflow-hidden px-4 py-2 rounded-xl font-bold text-xs sm:text-sm text-white transition-all duration-300 shadow-lg shadow-purple-900/30 hover:shadow-solana-purple/50 active:scale-95 disabled:opacity-75 disabled:cursor-wait"
+                className="relative group overflow-hidden px-3.5 py-1.5 lg:px-4 lg:py-2 rounded-xl font-bold text-xs sm:text-sm text-white transition-all duration-300 shadow-lg shadow-purple-900/30 hover:shadow-solana-purple/50 active:scale-95 disabled:opacity-75 disabled:cursor-wait"
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-solana-purple via-neon-pink to-solana-green opacity-90 group-hover:opacity-100 transition-opacity" />
                 <div className="absolute inset-[1px] bg-[#120B30] rounded-[11px] group-hover:bg-opacity-0 transition-all duration-300" />
@@ -756,50 +744,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
 
-          {/* Mobile Right Actions: Ngôn ngữ & Nút Ví Phantom */}
-          <div className="flex md:hidden items-center gap-1.5 shrink-0">
-            <div className="scale-90 origin-right">
-              <LanguageSwitcher />
-            </div>
-
-            {activeWallet ? (
-              <button
-                type="button"
-                onClick={onOpenWalletModal}
-                aria-label={`${t('nav.connectedWallet')} ${shortAddress(activeWallet)}`}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-solana-purple/40 bg-[#120B30] px-2 text-white active:scale-95 transition-transform"
-                title={`Ví: ${activeWallet}`}
-              >
-                <PhantomLogo className="h-3.5 w-3.5 shrink-0" />
-                <span className="font-mono text-xs font-bold text-white">{shortAddress(activeWallet)}</span>
-                <span className="text-[10px] font-mono text-solana-green font-bold pl-1 border-l border-white/10">
-                  {formatSolBalance(activeBalance)}
-                </span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  localStorage.removeItem('wallet_disconnected');
-                  sessionStorage.removeItem('user_explicitly_disconnected');
-                  if (onConnectWallet) {
-                    onConnectWallet();
-                  } else {
-                    onOpenWalletModal();
-                  }
-                }}
-                disabled={isConnectingWallet}
-                aria-label={t('nav.connectWallet')}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-solana-purple/40 bg-gradient-to-r from-solana-purple to-solana-cyan px-2.5 text-white text-xs font-bold active:scale-95 transition-transform disabled:opacity-75"
-              >
-                {isConnectingWallet ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-solana-cyan" />
-                ) : (
-                  <PhantomLogo className="h-3.5 w-3.5" />
-                )}
-                <span>{t('nav.connectWallet')}</span>
-              </button>
-            )}
+          {/* Mobile Right Action: Chỉ giữ Nút Mở Drawer / Menu Hamburger */}
+          <div className="flex md:hidden items-center shrink-0">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Mở menu điều hướng"
+              aria-expanded={mobileMenuOpen}
+              aria-controls="mobile-navigation"
+              className="inline-flex md:hidden h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white active:scale-95 transition-all shrink-0"
+            >
+              <Menu className="w-5 h-5 text-solana-cyan" />
+            </button>
           </div>
         </div>
       </div>

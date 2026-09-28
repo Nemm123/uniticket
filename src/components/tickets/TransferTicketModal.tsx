@@ -95,11 +95,11 @@ export const TransferTicketModal: React.FC<TransferTicketModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-lg rounded-2xl border border-solana-purple/50 bg-[#120B30] p-6 sm:p-7 shadow-2xl shadow-purple-950/60 overflow-hidden text-left"
+        className="relative w-full max-w-lg rounded-2xl border border-solana-purple/50 bg-[#120B30] p-4 sm:p-6 sm:p-7 shadow-2xl shadow-purple-950/60 overflow-hidden text-left max-h-[90vh] overflow-y-auto my-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Glow ambient decoration */}

@@ -103,7 +103,7 @@ export const DynamicQRModal: React.FC<DynamicQRModalProps> = ({
   if (!isOpen || !ticket) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-4 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-3 sm:p-4 backdrop-blur-md animate-fadeIn overflow-y-auto">
       {/* Backdrop click to close */}
       <button
         aria-label={t('common.close')}
@@ -111,7 +111,7 @@ export const DynamicQRModal: React.FC<DynamicQRModalProps> = ({
         onClick={onClose}
       />
 
-      <div className="relative w-full max-w-sm rounded-2xl border border-solana-purple/50 bg-[#0F0A28] p-5 text-center shadow-2xl sm:p-6 z-10 space-y-4">
+      <div className="relative w-full max-w-sm rounded-2xl border border-solana-purple/50 bg-[#0F0A28] p-4 sm:p-6 text-center shadow-2xl z-10 space-y-3.5 sm:space-y-4 max-h-[90vh] overflow-y-auto my-auto">
         {/* Nút đóng */}
         <button
           aria-label={t('common.close')}
