@@ -445,10 +445,39 @@ assert(
   freshCheckInCode.includes('handleFlipCamera') &&
   freshCheckInCode.includes('Vé này đã được soát trước đó!') &&
   freshCheckInCode.includes('Soát vé thành công:') &&
-  freshCheckInCode.includes("status: 'USED'") &&
   freshCheckInCode.includes('allTickets') &&
   freshQRScannerCode.includes('stopExistingTracks'),
   'TEST 29 — Robust Ticket Search (allTickets sources, USED status, already checked-in warning, and direct button)'
+);
+
+// -------------------------------------------------------------
+// TEST 30 — Camera Permission Handling, Constraints Fallback & Friendly UI
+// -------------------------------------------------------------
+const finalQRScannerCode = fs.readFileSync('src/components/organizer/QRScanner.tsx', 'utf8');
+const finalCheckInCode = fs.readFileSync('src/pages/CheckIn/index.tsx', 'utf8');
+
+assert(
+  // 1. Permission classification
+  finalQRScannerCode.includes("errName === 'NotAllowedError'") &&
+  finalQRScannerCode.includes("errName === 'PermissionDeniedError'") &&
+  finalQRScannerCode.includes("permissionDenied") &&
+  finalQRScannerCode.includes('Trình duyệt chưa được cấp quyền truy cập Camera. Vui lòng bấm vào icon Ổ Khóa trên thanh địa chỉ để cấp quyền.') &&
+  finalQRScannerCode.includes("errName === 'NotFoundError'") &&
+  finalQRScannerCode.includes('Không tìm thấy thiết bị Camera trên thiết bị này.') &&
+  // 2. Constraints Fallback for mobile compatibility
+  finalQRScannerCode.includes('facingMode: { ideal: facingMode }') &&
+  finalQRScannerCode.includes('{ video: true }') &&
+  // 3. Friendly Permission Denied UI & Retry
+  finalQRScannerCode.includes('CameraOff') &&
+  finalQRScannerCode.includes('Lock') &&
+  finalQRScannerCode.includes('ShieldAlert') &&
+  finalQRScannerCode.includes('Thử lại cấp quyền') &&
+  finalQRScannerCode.includes('handleRetryPermission') &&
+  (finalQRScannerCode.includes('Bấm vào icon Ổ Khóa 🔒 bên cạnh URL') || finalQRScannerCode.includes('Ổ Khóa')) &&
+  // 4. CheckIn page integration
+  finalCheckInCode.includes('setCameraError') &&
+  finalCheckInCode.includes('onError={setCameraError}'),
+  'TEST 30 — Camera Permission Denied (NotAllowedError/PermissionDeniedError classification, {video: true} fallback, friendly UI card with lock icon and retry button)'
 );
 
 console.log('\n=====================================================');

@@ -28,11 +28,12 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
   const processingRef = useRef(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
-  const [cameraError] = useState<string | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment'); // mặc định camera sau (environment)
 
   const handleStartCamera = () => {
     setResult(null);
+    setCameraError(null);
     setCameraEnabled(true);
     setIsScanning(true);
   };
@@ -40,6 +41,7 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
   const handleStopCamera = () => {
     setCameraEnabled(false);
     setIsScanning(false);
+    setCameraError(null);
   };
   const [manualPayload, setManualPayload] = useState('');
   const [result, setResult] = useState<CheckInResult | null>(null);
@@ -338,11 +340,12 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
                   onToggleCamera={toggleCamera}
                   onScanSuccess={(data) => void validateInput(data)} 
                   onClose={handleStopCamera} 
+                  onError={setCameraError}
                 />
               )}
             </div>
 
-            {cameraError && (
+            {cameraError && !cameraEnabled && (
               <p className="mt-3 rounded-xl border border-yellow-400/30 bg-yellow-950/30 p-3 text-xs text-yellow-100">
                 {cameraError}
               </p>

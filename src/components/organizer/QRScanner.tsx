@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { Camera, XCircle, SwitchCamera, Loader2, AlertCircle } from 'lucide-react';
+import { Camera, XCircle, SwitchCamera, Loader2, AlertCircle, CameraOff, Lock, RefreshCw, ShieldAlert } from 'lucide-react';
 
 interface QRScannerProps {
   onScanSuccess: (decodedText: string) => void;
@@ -8,6 +8,7 @@ interface QRScannerProps {
   onClose: () => void;
   facingMode?: 'environment' | 'user';
   onToggleCamera?: () => void;
+  onError?: (error: string) => void;
 }
 
 export const QRScanner: React.FC<QRScannerProps> = ({
@@ -16,10 +17,52 @@ export const QRScanner: React.FC<QRScannerProps> = ({
   onClose,
   facingMode = 'environment',
   onToggleCamera,
+  onError,
 }) => {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+
+  const handleRetryPermission = async () => {
+    setPermissionDenied(false);
+    setCameraError(null);
+    setIsStarting(true);
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+        const constraints: MediaStreamConstraints = {
+          video: { facingMode: { ideal: facingMode } },
+        };
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          stream.getTracks().forEach((track) => track.stop());
+        } catch (err: any) {
+          if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
+            setPermissionDenied(true);
+            const deniedMsg =
+              'Trình duyệt chưa được cấp quyền truy cập Camera. Vui lòng bấm vào icon Ổ Khóa trên thanh địa chỉ để cấp quyền.';
+            setCameraError(deniedMsg);
+            onError?.(deniedMsg);
+            setIsStarting(false);
+            return;
+          }
+          // Thử fallback { video: true }
+          try {
+            const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            fallbackStream.getTracks().forEach((track) => track.stop());
+          } catch (e: any) {
+            console.warn('[QRScanner] Fallback getUserMedia failed:', e);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[QRScanner] Retry permission prompt error:', e);
+    }
+
+    setRetryCount((prev) => prev + 1);
+  };
 
   useEffect(() => {
     let isCancelled = false;
@@ -58,6 +101,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({
     const startScanner = async () => {
       setIsStarting(true);
       setCameraError(null);
+      setPermissionDenied(false);
 
       // Tắt stream/scanner cũ an toàn trước khi đổi camera hoặc khởi tạo
       if (scannerRef.current) {
@@ -87,31 +131,71 @@ export const QRScanner: React.FC<QRScannerProps> = ({
           facingMode: { ideal: facingMode },
         };
 
-        await html5QrCode.start(
-          cameraConfig,
-          {
-            fps: 10,
-            qrbox: { width: 250, height: 250 },
-            aspectRatio: 1.0,
-          },
-          (decodedText) => {
-            try {
-              if (html5QrCode.isScanning) {
-                html5QrCode.pause(true);
-              }
-            } catch {}
-            onScanSuccess(decodedText);
-          },
-          () => {
-            // Bỏ qua frame error
+        const scanConfig = {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
+        };
+
+        const onScanSuccessCallback = (decodedText: string) => {
+          try {
+            if (html5QrCode.isScanning) {
+              html5QrCode.pause(true);
+            }
+          } catch {}
+          onScanSuccess(decodedText);
+        };
+
+        try {
+          // Thử khởi động camera với constraints facingMode: { ideal: facingMode }
+          await html5QrCode.start(cameraConfig, scanConfig, onScanSuccessCallback, () => {});
+        } catch (initialErr: any) {
+          const errName = initialErr?.name || '';
+          const errMsg = String(initialErr?.message || initialErr || '');
+          const isPermissionDenied =
+            errName === 'NotAllowedError' ||
+            errName === 'PermissionDeniedError' ||
+            /denied|not allowed|permission/i.test(errMsg);
+
+          if (isPermissionDenied) {
+            throw initialErr;
           }
-        );
+
+          // CƠ CHẾ DỰ PHÒNG CONSTRAINTS (MOBILE COMPATIBILITY):
+          // Nếu constraints phức tạp { facingMode: { ideal: facingMode } } thất bại, tự động fallback sang constraints đơn giản { video: true }
+          console.warn('[QRScanner] Thử fallback với constraints đơn giản { video: true }:', initialErr);
+          await html5QrCode.start({ video: true } as any, scanConfig, onScanSuccessCallback, () => {});
+        }
       } catch (err: any) {
         if (!isCancelled) {
           console.warn('[QRScanner] Lỗi khởi động camera:', err);
-          setCameraError(
-            err?.message || 'Không thể truy cập camera. Vui lòng cấp quyền camera trong cài đặt trình duyệt.'
-          );
+          const errName = err?.name || '';
+          const errMsg = String(err?.message || err || '');
+
+          if (
+            errName === 'NotAllowedError' ||
+            errName === 'PermissionDeniedError' ||
+            /not allowed|permission denied|denied/i.test(errMsg)
+          ) {
+            setPermissionDenied(true);
+            const msg =
+              'Trình duyệt chưa được cấp quyền truy cập Camera. Vui lòng bấm vào icon Ổ Khóa trên thanh địa chỉ để cấp quyền.';
+            setCameraError(msg);
+            onError?.(msg);
+          } else if (
+            errName === 'NotFoundError' ||
+            errName === 'DevicesNotFoundError' ||
+            /not found|no device|devicesnotfound/i.test(errMsg)
+          ) {
+            const msg = 'Không tìm thấy thiết bị Camera trên thiết bị này.';
+            setCameraError(msg);
+            onError?.(msg);
+          } else {
+            const msg =
+              err?.message || 'Không thể truy cập camera. Vui lòng cấp quyền camera trong cài đặt trình duyệt.';
+            setCameraError(msg);
+            onError?.(msg);
+          }
         }
       } finally {
         if (!isCancelled) {
@@ -142,7 +226,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({
         }
       }
     };
-  }, [isEnabled, facingMode, onScanSuccess]);
+  }, [isEnabled, facingMode, retryCount, onScanSuccess, onError]);
 
   if (!isEnabled) return null;
 
@@ -196,22 +280,62 @@ export const QRScanner: React.FC<QRScannerProps> = ({
         )}
 
         {isStarting && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/70 gap-2 text-solana-cyan">
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/80 gap-2 text-solana-cyan">
             <Loader2 className="w-8 h-8 animate-spin" />
             <p className="text-xs font-semibold">Đang kích hoạt {facingMode === 'environment' ? 'Camera Sau' : 'Camera Trước'}...</p>
           </div>
         )}
 
-        {cameraError && (
-          <div className="p-4 text-center text-xs text-pink-300 flex flex-col items-center gap-2">
-            <AlertCircle className="w-6 h-6 text-neon-pink" />
-            <p>{cameraError}</p>
+        {permissionDenied ? (
+          <div className="z-20 flex flex-col items-center justify-center p-6 text-center bg-black/90 rounded-b-xl border-t border-neon-pink/30 space-y-4 max-w-sm mx-auto my-4">
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full bg-neon-pink/15 flex items-center justify-center border border-neon-pink/40 animate-pulse">
+                <CameraOff className="w-8 h-8 text-neon-pink" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 bg-yellow-400 text-black p-1 rounded-full shadow">
+                <Lock className="w-3.5 h-3.5" />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-sm font-bold text-white flex items-center justify-center gap-1.5">
+                <ShieldAlert className="w-4 h-4 text-neon-pink" />
+                Chưa cấp quyền truy cập Camera
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Bấm vào icon Ổ Khóa 🔒 bên cạnh URL -&gt; Cho phép Máy ảnh -&gt; Bấm nút Thử lại bên dưới.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleRetryPermission}
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-solana-purple to-neon-pink px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-purple-950/50 hover:brightness-110 active:scale-95 transition-all"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Thử lại cấp quyền
+            </button>
           </div>
-        )}
+        ) : cameraError ? (
+          <div className="z-20 p-6 text-center text-xs text-pink-300 flex flex-col items-center gap-3 bg-black/90 rounded-b-xl border-t border-neon-pink/30 my-4 max-w-sm mx-auto">
+            <AlertCircle className="w-8 h-8 text-neon-pink" />
+            <p className="max-w-xs">{cameraError}</p>
+            <button
+              type="button"
+              onClick={handleRetryPermission}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 transition-all active:scale-95"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Thử lại cấp quyền
+            </button>
+          </div>
+        ) : null}
 
         <div
           id="qr-reader"
-          className="w-full text-slate-200 [&_video]:w-full [&_video]:max-h-[360px] [&_video]:object-cover [&_video]:rounded-b-xl"
+          className={`w-full text-slate-200 [&_video]:w-full [&_video]:max-h-[360px] [&_video]:object-cover [&_video]:rounded-b-xl ${
+            permissionDenied || cameraError ? 'hidden' : 'block'
+          }`}
         />
       </div>
     </div>
