@@ -96,19 +96,10 @@ export function App() {
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [selectedApiEvent, setSelectedApiEvent] = useState<EventItem | null>(null);
-  const initialSession = getWalletSession();
-  const [walletAddress, setWalletAddress] = useState<string | null>(() => {
-    if (typeof window !== 'undefined' && localStorage.getItem('wallet_disconnected') === 'true') {
-      return null;
-    }
-    return initialSession?.walletAddress ?? null;
-  });
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [solBalance, setSolBalance] = useState<number | null>(null);
   const [isConnectingWallet, setIsConnectingWallet] = useState<boolean>(false);
-  const [authRole, setAuthRole] = useState<UserRole | null>(() => {
-    if (!initialSession || (typeof window !== 'undefined' && localStorage.getItem('wallet_disconnected') === 'true')) return null;
-    return initialSession.role === 'organizer' || initialSession.role === 'admin' ? 'organizer' : 'attendee';
-  });
+  const [authRole, setAuthRole] = useState<UserRole | null>(null);
 
   const refreshSolBalance = useCallback(async (address: string) => {
     try {
@@ -123,17 +114,6 @@ export function App() {
   // Sử dụng useWallet() từ @solana/wallet-adapter-react làm nguồn định danh Web3
   const { publicKey, connected, disconnect: walletDisconnect, select, wallets, connect: adapterConnect } = useWallet();
   const isDisconnectingRef = useRef<boolean>(false);
-
-  // Tự động chọn Phantom adapter nếu phát hiện ví trong danh sách wallets (trừ khi người dùng vừa chủ động ngắt kết nối)
-  useEffect(() => {
-    if (localStorage.getItem('wallet_disconnected') === 'true' || sessionStorage.getItem('user_explicitly_disconnected') === 'true') return;
-    if (!connected && wallets.length > 0) {
-      const phantom = wallets.find((w) => w.adapter.name.toLowerCase().includes('phantom'));
-      if (phantom) {
-        select(phantom.adapter.name);
-      }
-    }
-  }, [connected, wallets, select]);
 
   // Đồng bộ trạng thái ví từ Solana Wallet Adapter:
   // - Chưa connect: ở trạng thái khách bình thường, KHÔNG bắn popup lỗi "Không thể kết nối máy chủ xác thực"
@@ -160,6 +140,7 @@ export function App() {
       setWalletSession(localSession);
     }
   }, [connected, publicKey, refreshSolBalance]);
+  const initialSession = getWalletSession();
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const isOrg = initialSession?.role === 'organizer' || initialSession?.role === 'admin';
     if (!isOrg) return 'attendee';
@@ -548,6 +529,7 @@ export function App() {
 
   const handleConnectWalletDirect = async () => {
     sessionStorage.removeItem('user_explicitly_disconnected');
+    localStorage.removeItem('wallet_disconnected');
     if (isConnectingWallet) return;
     const provider = getPhantomProvider();
     if (!provider?.isPhantom) {
@@ -639,6 +621,7 @@ export function App() {
       // 2. Dọn sạch toàn bộ state
       setWalletAddress(null);
       setSolBalance(null);
+      setAuthRole(null);
       resetWalletSession();
 
       // 3. Xóa sạch localStorage liên quan đến ví
@@ -647,6 +630,7 @@ export function App() {
       localStorage.removeItem('wallet_address');
       localStorage.removeItem('uniticket_wallet_session');
       localStorage.removeItem('walletName');
+      clearUserRole();
 
       // 4. Bắn DUY NHẤT 1 toast với toastId cố định để chặn spam
       toast.info("Đã ngắt kết nối ví Phantom.", { toastId: "disconnect-toast" });

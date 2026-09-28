@@ -12,7 +12,7 @@ const RootComponent: React.FC = () => {
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect>
+      <WalletProvider wallets={wallets} autoConnect={false}>
         <LanguageProvider>
           <App />
         </LanguageProvider>

@@ -404,6 +404,20 @@ assert(
   'TEST 26 — CheckoutModal direct wallet sync, no background reconnect toast loops, and direct Devnet payment flow'
 );
 
+// -------------------------------------------------------------
+// TEST 27 — Disable Auto-Connect & Clean Disconnect Flow
+// -------------------------------------------------------------
+const mainTsxCode = fs.readFileSync('src/main.tsx', 'utf8');
+
+assert(
+  mainTsxCode.includes('autoConnect={false}') &&
+  freshAppCode2.includes('const [walletAddress, setWalletAddress] = useState<string | null>(null);') &&
+  freshAppCode2.includes('handleDisconnectWallet') &&
+  freshAppCode2.includes("localStorage.setItem('wallet_disconnected', 'true');") &&
+  freshAppCode2.includes("localStorage.removeItem('uniticket_wallet_session');"),
+  'TEST 27 — Disable Auto-Connect in WalletProvider, no mock wallet on fresh load, and clean disconnect flow'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);
