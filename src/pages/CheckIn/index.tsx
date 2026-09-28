@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { BarChart3, Camera, CheckCircle2, Keyboard, Loader2, RefreshCw, ScanLine, ShieldAlert, SwitchCamera, Ticket } from 'lucide-react';
+import { BarChart3, Camera, CheckCircle2, Keyboard, Loader2, RefreshCw, ScanLine, ShieldAlert, SwitchCamera, Ticket, UploadCloud } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
 import { CheckInResult, PurchasedTicket, UserRole } from '../../types';
 import * as api from '../../services/api';
 import * as storage from '../../utils/storage';
@@ -224,8 +225,50 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
   };
 
   const validateInput = handleManualCheck;
+  const onScan = (result: string) => validateInput(result);
 
-  // camera logic handled by QRScanner component
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsProcessingFile(true);
+    try {
+      let tempScannerEl = document.getElementById('qr-file-reader');
+      if (!tempScannerEl) {
+        tempScannerEl = document.createElement('div');
+        tempScannerEl.id = 'qr-file-reader';
+        tempScannerEl.style.display = 'none';
+        document.body.appendChild(tempScannerEl);
+      }
+
+      const html5QrCode = new Html5Qrcode('qr-file-reader');
+      try {
+        const decodedText = await html5QrCode.scanFile(file, false);
+        if (decodedText) {
+          onShowToast('success', 'Đã đọc thành công mã QR từ ảnh!');
+          await onScan(decodedText);
+        }
+      } catch (scanErr: any) {
+        console.warn('[CheckIn] scanFile error:', scanErr);
+        onShowToast('error', 'Không tìm thấy mã QR trong ảnh. Vui lòng chụp ảnh rõ nét hơn.');
+      } finally {
+        try {
+          html5QrCode.clear();
+        } catch {}
+      }
+    } catch (err: any) {
+      console.error('[CheckIn] Lỗi đọc file ảnh:', err);
+      onShowToast('error', 'Có lỗi khi xử lý ảnh QR: ' + (err?.message || 'Không thể đọc ảnh'));
+    } finally {
+      setIsProcessingFile(false);
+      if (event.target) {
+        event.target.value = '';
+      }
+    }
+  };
 
 
 
@@ -324,21 +367,45 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
                 <div className="flex flex-col items-center justify-center gap-3 p-8 text-center border border-white/10 rounded-xl aspect-video">
                   <ScanLine className="h-10 w-10 text-solana-purple" />
                   <p className="text-xs text-slate-400">{t('checkIn.cameraHint')}</p>
-                  <button
-                    type="button"
-                    onClick={handleStartCamera}
-                    className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-solana-purple to-neon-pink px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-purple-950/50 active:scale-95"
-                  >
-                    <Camera className="h-4 w-4" />
-                    {t('checkIn.cameraStart')}
-                  </button>
+                  <div className="flex flex-wrap items-center justify-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleStartCamera}
+                      className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-solana-purple to-neon-pink px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-purple-950/50 active:scale-95"
+                    >
+                      <Camera className="h-4 w-4" />
+                      {t('checkIn.cameraStart')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isProcessingFile}
+                      title="Tải ảnh QR hoặc mở máy ảnh chụp vé"
+                      className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-solana-cyan/40 bg-solana-cyan/15 hover:bg-solana-cyan/25 px-4 py-2.5 text-xs font-bold text-solana-cyan shadow-lg active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      {isProcessingFile ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <UploadCloud className="h-4 w-4" />
+                      )}
+                      <span>Tải ảnh QR / Chụp ảnh</span>
+                    </button>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      ref={fileInputRef}
+                      onChange={handleFileUpload}
+                    />
+                  </div>
                 </div>
               ) : (
                 <QRScanner 
                   isEnabled={cameraEnabled} 
                   facingMode={facingMode}
                   onToggleCamera={toggleCamera}
-                  onScanSuccess={(data) => void validateInput(data)} 
+                  onScanSuccess={(data) => void onScan(data)} 
                   onClose={handleStopCamera} 
                   onError={setCameraError}
                 />

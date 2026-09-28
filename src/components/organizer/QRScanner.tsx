@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { Camera, XCircle, SwitchCamera, Loader2, AlertCircle, CameraOff, Lock, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Camera, XCircle, SwitchCamera, Loader2, AlertCircle, CameraOff, Lock, RefreshCw, ShieldAlert, UploadCloud } from 'lucide-react';
 
 interface QRScannerProps {
   onScanSuccess: (decodedText: string) => void;
@@ -20,10 +20,39 @@ export const QRScanner: React.FC<QRScannerProps> = ({
   onError,
 }) => {
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+
+  const onScan = (result: string) => {
+    onScanSuccess(result);
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const qrEl = document.getElementById('qr-reader');
+      if (qrEl) {
+        const html5QrCode = scannerRef.current || new Html5Qrcode('qr-reader');
+        const decodedText = await html5QrCode.scanFile(file, false);
+        if (decodedText) {
+          onScan(decodedText);
+        }
+      }
+    } catch (err: any) {
+      console.warn('[QRScanner] Lỗi quét file ảnh:', err);
+      onError?.('Không tìm thấy mã QR trong ảnh. Vui lòng chụp ảnh rõ nét hơn.');
+    } finally {
+      if (event.target) {
+        event.target.value = '';
+      }
+    }
+  };
 
   const handleRetryPermission = async () => {
     setPermissionDenied(false);
@@ -32,33 +61,43 @@ export const QRScanner: React.FC<QRScannerProps> = ({
 
     try {
       if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-        const constraints: MediaStreamConstraints = {
-          video: { facingMode: { ideal: facingMode } },
-        };
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track) => {
+            track.stop();
+          });
+          streamRef.current = null;
+        }
+
+        let stream: MediaStream | null = null;
         try {
-          const stream = await navigator.mediaDevices.getUserMedia(constraints);
-          stream.getTracks().forEach((track) => track.stop());
-        } catch (err: any) {
-          if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
-            setPermissionDenied(true);
-            const deniedMsg =
-              'Trình duyệt chưa được cấp quyền truy cập Camera. Vui lòng bấm vào icon Ổ Khóa trên thanh địa chỉ để cấp quyền.';
-            setCameraError(deniedMsg);
-            onError?.(deniedMsg);
-            setIsStarting(false);
-            return;
-          }
-          // Thử fallback { video: true }
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: facingMode },
+          });
+        } catch (err) {
+          // Fallback mức độ thấp nhất: chỉ cần bất kỳ camera nào
           try {
-            const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
-            fallbackStream.getTracks().forEach((track) => track.stop());
-          } catch (e: any) {
-            console.warn('[QRScanner] Fallback getUserMedia failed:', e);
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          } catch (e) {
+            console.warn('[QRScanner] Retry getUserMedia fallback failed:', e);
           }
         }
+
+        if (stream) {
+          streamRef.current = stream;
+          stream.getTracks().forEach((track) => track.stop());
+          streamRef.current = null;
+        }
       }
-    } catch (e) {
-      console.warn('[QRScanner] Retry permission prompt error:', e);
+    } catch (err: any) {
+      if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
+        setPermissionDenied(true);
+        const deniedMsg =
+          'Trình duyệt chưa được cấp quyền truy cập Camera. Vui lòng bấm vào icon Ổ Khóa trên thanh địa chỉ để cấp quyền.';
+        setCameraError(deniedMsg);
+        onError?.(deniedMsg);
+        setIsStarting(false);
+        return;
+      }
     }
 
     setRetryCount((prev) => prev + 1);
@@ -103,6 +142,14 @@ export const QRScanner: React.FC<QRScannerProps> = ({
       setCameraError(null);
       setPermissionDenied(false);
 
+      // KHẮC PHỤC KẸT LUỒNG VÀ ÉP BUỘC YÊU CẦU QUYỀN CAMERA (FORCE GETUSERMEDIA):
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => {
+          track.stop();
+        });
+        streamRef.current = null;
+      }
+
       // Tắt stream/scanner cũ an toàn trước khi đổi camera hoặc khởi tạo
       if (scannerRef.current) {
         try {
@@ -116,6 +163,33 @@ export const QRScanner: React.FC<QRScannerProps> = ({
         scannerRef.current = null;
       }
       stopExistingTracks();
+
+      if (isCancelled) return;
+
+      // Ép buộc yêu cầu quyền và mở stream sạch sẽ
+      let stream: MediaStream | null = null;
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: facingMode },
+          });
+        } catch (err) {
+          // Fallback mức độ thấp nhất: chỉ cần bất kỳ camera nào
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          } catch (fallbackErr) {
+            console.warn('[QRScanner] Force getUserMedia fallback error:', fallbackErr);
+          }
+        }
+
+        if (stream) {
+          streamRef.current = stream;
+          stream.getTracks().forEach((track) => {
+            track.stop();
+          });
+          streamRef.current = null;
+        }
+      }
 
       if (isCancelled) return;
 
@@ -208,6 +282,12 @@ export const QRScanner: React.FC<QRScannerProps> = ({
 
     return () => {
       isCancelled = true;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => {
+          track.stop();
+        });
+        streamRef.current = null;
+      }
       if (scannerRef.current) {
         if (scannerRef.current.isScanning) {
           scannerRef.current.stop().catch(() => undefined).finally(() => {
@@ -241,6 +321,15 @@ export const QRScanner: React.FC<QRScannerProps> = ({
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            title="Tải ảnh QR / Chụp ảnh từ máy"
+            className="inline-flex items-center gap-1.5 rounded-full border border-solana-purple/40 bg-solana-purple/15 hover:bg-solana-purple/25 px-2.5 py-1 text-xs font-bold text-purple-300 transition-all active:scale-95"
+          >
+            <UploadCloud className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Tải ảnh QR</span>
+          </button>
           {onToggleCamera && (
             <button
               type="button"
@@ -307,29 +396,58 @@ export const QRScanner: React.FC<QRScannerProps> = ({
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={handleRetryPermission}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-solana-purple to-neon-pink px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-purple-950/50 hover:brightness-110 active:scale-95 transition-all"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Thử lại cấp quyền
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={handleRetryPermission}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-solana-purple to-neon-pink px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-purple-950/50 hover:brightness-110 active:scale-95 transition-all"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Thử lại cấp quyền
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-2 rounded-xl border border-solana-cyan/40 bg-solana-cyan/15 hover:bg-solana-cyan/25 px-4 py-2.5 text-xs font-bold text-solana-cyan active:scale-95 transition-all"
+              >
+                <UploadCloud className="w-3.5 h-3.5" />
+                Tải ảnh QR / Chụp ảnh
+              </button>
+            </div>
           </div>
         ) : cameraError ? (
           <div className="z-20 p-6 text-center text-xs text-pink-300 flex flex-col items-center gap-3 bg-black/90 rounded-b-xl border-t border-neon-pink/30 my-4 max-w-sm mx-auto">
             <AlertCircle className="w-8 h-8 text-neon-pink" />
             <p className="max-w-xs">{cameraError}</p>
-            <button
-              type="button"
-              onClick={handleRetryPermission}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 transition-all active:scale-95"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Thử lại cấp quyền
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={handleRetryPermission}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 transition-all active:scale-95"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Thử lại cấp quyền
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-solana-cyan/40 bg-solana-cyan/15 hover:bg-solana-cyan/25 px-3.5 py-2 text-xs font-bold text-solana-cyan transition-all active:scale-95"
+              >
+                <UploadCloud className="w-3.5 h-3.5" />
+                Tải ảnh QR / Chụp ảnh
+              </button>
+            </div>
           </div>
         ) : null}
+
+        <input
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          ref={fileInputRef}
+          onChange={handleFileUpload}
+        />
 
         <div
           id="qr-reader"

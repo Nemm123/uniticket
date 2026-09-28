@@ -480,6 +480,28 @@ assert(
   'TEST 30 — Camera Permission Denied (NotAllowedError/PermissionDeniedError classification, {video: true} fallback, friendly UI card with lock icon and retry button)'
 );
 
+// -------------------------------------------------------------
+// TEST 31 — File Upload Fallback (capture="environment"), scanFile & Force getUserMedia
+// -------------------------------------------------------------
+assert(
+  // 1. File Upload fallback with native camera capture
+  finalCheckInCode.includes('capture="environment"') &&
+  finalCheckInCode.includes('accept="image/*"') &&
+  finalCheckInCode.includes('fileInputRef') &&
+  finalCheckInCode.includes('handleFileUpload') &&
+  finalCheckInCode.includes('Tải ảnh QR / Chụp ảnh') &&
+  finalCheckInCode.includes('UploadCloud') &&
+  finalCheckInCode.includes('scanFile') &&
+  finalCheckInCode.includes('onScan') &&
+  // 2. QRScanner stream track cleanup & force getUserMedia
+  finalQRScannerCode.includes('streamRef') &&
+  finalQRScannerCode.includes('streamRef.current.getTracks().forEach') &&
+  finalQRScannerCode.includes('facingMode: facingMode') &&
+  finalQRScannerCode.includes('handleFileUpload') &&
+  finalQRScannerCode.includes('capture="environment"'),
+  'TEST 31 — File Upload Fallback (capture="environment", scanFile, onScan immediate check-in, and streamRef force getUserMedia cleanup)'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);
