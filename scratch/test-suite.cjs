@@ -418,6 +418,25 @@ assert(
   'TEST 27 — Disable Auto-Connect in WalletProvider, no mock wallet on fresh load, and clean disconnect flow'
 );
 
+// -------------------------------------------------------------
+// TEST 28 — Camera Flip (Front/Rear Facing Mode & Safe Stream Toggle)
+// -------------------------------------------------------------
+const freshCheckInCode = fs.readFileSync('src/pages/CheckIn/index.tsx', 'utf8');
+const freshQRScannerCode = fs.readFileSync('src/components/organizer/QRScanner.tsx', 'utf8');
+
+assert(
+  freshCheckInCode.includes("const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');") &&
+  freshCheckInCode.includes('toggleCamera') &&
+  freshCheckInCode.includes('isScanning') &&
+  freshCheckInCode.includes('Đổi camera 🔄') &&
+  freshCheckInCode.includes('Camera Sau') &&
+  freshCheckInCode.includes('Camera Trước') &&
+  freshQRScannerCode.includes('facingMode: { ideal: facingMode }') &&
+  freshQRScannerCode.includes('onToggleCamera') &&
+  freshQRScannerCode.includes('Html5Qrcode'),
+  'TEST 28 — Camera Flip (Front/Rear facing mode, ideal constraints, toggleCamera, and safe stream switching)'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);

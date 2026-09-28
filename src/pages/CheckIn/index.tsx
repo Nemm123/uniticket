@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { BarChart3, Camera, CheckCircle2, Keyboard, Loader2, RefreshCw, ScanLine, ShieldAlert, Ticket } from 'lucide-react';
+import { BarChart3, Camera, CheckCircle2, Keyboard, Loader2, RefreshCw, ScanLine, ShieldAlert, SwitchCamera, Ticket } from 'lucide-react';
 import { CheckInResult, PurchasedTicket, UserRole } from '../../types';
 import * as api from '../../services/api';
 import { useTranslation } from '../../i18n';
@@ -20,7 +20,24 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
   const { t, formatDate } = useTranslation();
   const processingRef = useRef(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
   const [cameraError] = useState<string | null>(null);
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment'); // mặc định camera sau (environment)
+
+  const toggleCamera = () => {
+    setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
+  };
+
+  const handleStartCamera = () => {
+    setResult(null);
+    setCameraEnabled(true);
+    setIsScanning(true);
+  };
+
+  const handleStopCamera = () => {
+    setCameraEnabled(false);
+    setIsScanning(false);
+  };
   const [manualPayload, setManualPayload] = useState('');
   const [result, setResult] = useState<CheckInResult | null>(null);
   const [tickets, setTickets] = useState<PurchasedTicket[]>([]);
@@ -52,6 +69,7 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
     processingRef.current = true;
     setIsValidating(true);
     setCameraEnabled(false);
+    setIsScanning(false);
 
     try {
       const rawInput = input.trim();
@@ -219,11 +237,34 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.15fr_0.85fr]">
           <section className="rounded-2xl border border-solana-purple/30 bg-[#120B30] p-4 shadow-2xl sm:p-6">
-            <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Camera className="h-5 w-5 text-solana-cyan" />
                 <h2 className="font-bold text-white">{t('checkIn.cameraTitle')}</h2>
               </div>
+              {isScanning && (
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center rounded-full border border-solana-cyan/30 bg-solana-cyan/10 px-2.5 py-0.5 text-xs font-semibold text-solana-cyan">
+                    {facingMode === 'environment' ? 'Camera Sau' : 'Camera Trước'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={toggleCamera}
+                    title={`Đổi sang ${facingMode === 'environment' ? 'Camera Trước' : 'Camera Sau'}`}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-solana-cyan/30 bg-solana-cyan/15 hover:bg-solana-cyan/25 px-3 py-1 text-xs font-bold text-solana-cyan transition-all active:scale-95 shadow-sm"
+                  >
+                    <SwitchCamera className="w-3.5 h-3.5" />
+                    <span>Đổi camera 🔄</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleStopCamera}
+                    className="rounded-lg border border-white/10 bg-black/40 hover:bg-black/60 px-2.5 py-1 text-xs text-slate-300 transition-colors"
+                  >
+                    Tắt camera
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="relative overflow-hidden rounded-xl bg-black/50">
@@ -233,7 +274,7 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
                   <p className="text-xs text-slate-400">{t('checkIn.cameraHint')}</p>
                   <button
                     type="button"
-                    onClick={() => { setResult(null); setCameraEnabled(true); }}
+                    onClick={handleStartCamera}
                     className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-solana-purple to-neon-pink px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-purple-950/50 active:scale-95"
                   >
                     <Camera className="h-4 w-4" />
@@ -243,8 +284,10 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
               ) : (
                 <QRScanner 
                   isEnabled={cameraEnabled} 
+                  facingMode={facingMode}
+                  onToggleCamera={toggleCamera}
                   onScanSuccess={(data) => void validateInput(data)} 
-                  onClose={() => setCameraEnabled(false)} 
+                  onClose={handleStopCamera} 
                 />
               )}
             </div>
