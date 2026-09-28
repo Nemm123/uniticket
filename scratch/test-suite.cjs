@@ -502,6 +502,34 @@ assert(
   'TEST 31 — File Upload Fallback (capture="environment", scanFile, onScan immediate check-in, and streamRef force getUserMedia cleanup)'
 );
 
+// -------------------------------------------------------------
+// TEST 32 — Direct getUserMedia, Fallback Constraints 1-3, Mobile videoRef & Retry UI
+// -------------------------------------------------------------
+const latestQRScannerCode = fs.readFileSync('src/components/organizer/QRScanner.tsx', 'utf8');
+const latestCheckInCode = fs.readFileSync('src/pages/CheckIn/index.tsx', 'utf8');
+
+assert(
+  // 1. Fallback Constraints (Bước 1 exact, Bước 2 soft, Bước 3 any)
+  latestQRScannerCode.includes("exact: 'environment'") &&
+  latestQRScannerCode.includes("facingMode: 'environment'") &&
+  latestQRScannerCode.includes("video: true") &&
+  // 2. Stream track cleanup
+  latestQRScannerCode.includes("streamRef.current.getTracks().forEach((track) => track.stop());") &&
+  // 3. Mobile video element attributes & stream attachment
+  latestQRScannerCode.includes("ref={videoRef}") &&
+  latestQRScannerCode.includes("autoPlay") &&
+  latestQRScannerCode.includes("playsInline") &&
+  latestQRScannerCode.includes("muted") &&
+  latestQRScannerCode.includes("videoRef.current.srcObject = stream;") &&
+  latestQRScannerCode.includes("videoRef.current.setAttribute('playsinline', 'true');") &&
+  latestQRScannerCode.includes("videoRef.current.play()") &&
+  // 4. Permission blocked instruction message & retry button
+  latestQRScannerCode.includes("Trình duyệt đang chặn quyền Camera. Vui lòng bấm vào icon Ổ khóa (hoặc Cài đặt trang web) trên thanh địa chỉ > Chọn 'Quyền' > Đổi Camera sang 'Cho phép' > Nhấn nút 'Thử lại' bên dưới.") &&
+  latestQRScannerCode.includes("Thử lại mở Camera") &&
+  latestCheckInCode.includes("Thử lại mở Camera"),
+  'TEST 32 — Direct getUserMedia (fallback constraints 1-3, stream cleanup, videoRef playsInline muted, and clear permission blocked instructions)'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);

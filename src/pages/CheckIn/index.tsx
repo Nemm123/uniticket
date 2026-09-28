@@ -32,11 +32,39 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment'); // mặc định camera sau (environment)
 
-  const handleStartCamera = () => {
+  const handleStartCamera = async () => {
     setResult(null);
     setCameraError(null);
     setCameraEnabled(true);
     setIsScanning(true);
+
+    // Kích hoạt trực tiếp từ User Interaction Gesture để mobile browser hiển thị popup xin quyền
+    try {
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+        // Dừng triệt để toàn bộ track camera đang chạy ngầm nếu có trước khi mở mới
+        const probeStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: 'environment' } }
+        }).catch(() =>
+          navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' }
+          })
+        ).catch(() =>
+          navigator.mediaDevices.getUserMedia({
+            video: true
+          })
+        );
+        if (probeStream) {
+          probeStream.getTracks().forEach((track) => track.stop());
+        }
+      }
+    } catch (e: any) {
+      console.warn('[CheckIn] Direct gesture getUserMedia error:', e);
+      if (e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError') {
+        const deniedMsg =
+          "Trình duyệt đang chặn quyền Camera. Vui lòng bấm vào icon Ổ khóa (hoặc Cài đặt trang web) trên thanh địa chỉ > Chọn 'Quyền' > Đổi Camera sang 'Cho phép' > Nhấn nút 'Thử lại' bên dưới.";
+        setCameraError(deniedMsg);
+      }
+    }
   };
 
   const handleStopCamera = () => {
@@ -413,9 +441,17 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
             </div>
 
             {cameraError && !cameraEnabled && (
-              <p className="mt-3 rounded-xl border border-yellow-400/30 bg-yellow-950/30 p-3 text-xs text-yellow-100">
-                {cameraError}
-              </p>
+              <div className="mt-3 rounded-xl border border-yellow-400/30 bg-yellow-950/40 p-4 text-xs text-yellow-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <p className="flex-1 text-center sm:text-left">{cameraError}</p>
+                <button
+                  type="button"
+                  onClick={handleStartCamera}
+                  className="inline-flex items-center gap-1.5 shrink-0 rounded-lg bg-gradient-to-r from-solana-purple to-neon-pink px-3.5 py-2 text-xs font-bold text-white shadow-lg active:scale-95 transition-all"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Thử lại mở Camera</span>
+                </button>
+              </div>
             )}
           </section>
 

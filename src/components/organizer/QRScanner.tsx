@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
+import QrScanner from 'qr-scanner';
 import { Camera, XCircle, SwitchCamera, Loader2, AlertCircle, CameraOff, Lock, RefreshCw, ShieldAlert, UploadCloud } from 'lucide-react';
 
 interface QRScannerProps {
@@ -19,8 +20,10 @@ export const QRScanner: React.FC<QRScannerProps> = ({
   onToggleCamera,
   onError,
 }) => {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const scanIntervalRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -54,257 +57,189 @@ export const QRScanner: React.FC<QRScannerProps> = ({
     }
   };
 
+  const stopExistingTracks = () => {
+    try {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current && videoRef.current.srcObject instanceof MediaStream) {
+        videoRef.current.srcObject.getTracks().forEach((track) => track.stop());
+        videoRef.current.srcObject = null;
+      }
+      const videoEl = document.querySelector('#qr-reader video') as HTMLVideoElement | null;
+      if (videoEl && videoEl.srcObject instanceof MediaStream) {
+        videoEl.srcObject.getTracks().forEach((track) => track.stop());
+        videoEl.srcObject = null;
+      }
+    } catch {}
+  };
+
+  const startScanner = async () => {
+    setIsStarting(true);
+    setCameraError(null);
+    setPermissionDenied(false);
+
+    // 1. Trước khi mở stream mới, dừng triệt để toàn bộ track camera đang chạy ngầm:
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current);
+      scanIntervalRef.current = null;
+    }
+    stopExistingTracks();
+
+    let stream: MediaStream | null = null;
+
+    try {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        throw new Error('Trình duyệt không hỗ trợ MediaDevices API.');
+      }
+
+      // Cấu hình media constraints theo thứ tự ưu tiên từ cao xuống thấp (Fallback Constraints):
+      const isBackCamera = facingMode === 'environment';
+
+      // Bước 1: Thử lấy camera sau với facingMode:
+      try {
+        if (isBackCamera) {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { exact: 'environment' } }
+          });
+        } else {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { exact: 'user' } }
+          });
+        }
+      } catch (step1Err) {
+        console.warn('[QRScanner] Bước 1 exact environment thất bại, chuyển sang Bước 2:', step1Err);
+        // Bước 2 (nếu lỗi): Thử facingMode mềm:
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' }
+          });
+        } catch (step2Err) {
+          console.warn('[QRScanner] Bước 2 facingMode: environment thất bại, thử facingMode: facingMode hoặc ideal:', step2Err);
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: facingMode }
+            });
+          } catch (step2bErr) {
+            console.warn('[QRScanner] Thử ideal constraints { facingMode: { ideal: facingMode } }:', step2bErr);
+            // Bước 3 (nếu vẫn lỗi): Mở bất kỳ camera nào khả dụng trên máy:
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          }
+        }
+      }
+
+      if (!stream) {
+        throw new Error('Không nhận được luồng MediaStream từ thiết bị.');
+      }
+
+      streamRef.current = stream;
+
+      // 2. GẮN STREAM VÀO THẺ VIDEO CHUẨN DI ĐỘNG:
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute('playsinline', 'true');
+        videoRef.current.play().catch((e) => console.error('Video play error:', e));
+      }
+
+      // Khởi chạy vòng lặp phát hiện mã QR
+      if (scanIntervalRef.current) {
+        clearInterval(scanIntervalRef.current);
+      }
+
+      scanIntervalRef.current = setInterval(async () => {
+        if (!videoRef.current || videoRef.current.readyState < 2) return;
+
+        // Ưu tiên native BarcodeDetector của trình duyệt
+        if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
+          try {
+            const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+            const barcodes = await detector.detect(videoRef.current);
+            if (barcodes.length > 0 && barcodes[0]?.rawValue) {
+              onScan(barcodes[0].rawValue);
+              return;
+            }
+          } catch {}
+        }
+
+        // Fallback sang QrScanner engine
+        try {
+          const res = await QrScanner.scanImage(videoRef.current, { returnDetailedScanResult: true });
+          if (res && res.data) {
+            onScan(res.data);
+            return;
+          }
+        } catch {}
+      }, 200);
+
+    } catch (err: any) {
+      console.error('[QRScanner] Lỗi mở camera:', err);
+      const errName = err?.name || '';
+      const errMsg = String(err?.message || err || '');
+
+      if (
+        errName === 'NotAllowedError' ||
+        errName === 'PermissionDeniedError' ||
+        /not allowed|permission denied|denied/i.test(errMsg)
+      ) {
+        setPermissionDenied(true);
+        const deniedMsg =
+          "Trình duyệt đang chặn quyền Camera. Vui lòng bấm vào icon Ổ khóa (hoặc Cài đặt trang web) trên thanh địa chỉ > Chọn 'Quyền' > Đổi Camera sang 'Cho phép' > Nhấn nút 'Thử lại' bên dưới.";
+        // Trình duyệt chưa được cấp quyền truy cập Camera. Vui lòng bấm vào icon Ổ Khóa trên thanh địa chỉ để cấp quyền.
+        setCameraError(deniedMsg);
+        onError?.(deniedMsg);
+      } else if (
+        errName === 'NotFoundError' ||
+        errName === 'DevicesNotFoundError' ||
+        /not found|no device|devicesnotfound/i.test(errMsg)
+      ) {
+        const notFoundMsg = 'Không tìm thấy thiết bị Camera trên thiết bị này.';
+        setCameraError(notFoundMsg);
+        onError?.(notFoundMsg);
+      } else {
+        const otherMsg = err?.message || 'Không thể truy cập camera. Vui lòng kiểm tra lại thiết bị.';
+        setCameraError(otherMsg);
+        onError?.(otherMsg);
+      }
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
   const handleRetryPermission = async () => {
     setPermissionDenied(false);
     setCameraError(null);
     setIsStarting(true);
-
-    try {
-      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach((track) => {
-            track.stop();
-          });
-          streamRef.current = null;
-        }
-
-        let stream: MediaStream | null = null;
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: facingMode },
-          });
-        } catch (err) {
-          // Fallback mức độ thấp nhất: chỉ cần bất kỳ camera nào
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: true });
-          } catch (e) {
-            console.warn('[QRScanner] Retry getUserMedia fallback failed:', e);
-          }
-        }
-
-        if (stream) {
-          streamRef.current = stream;
-          stream.getTracks().forEach((track) => track.stop());
-          streamRef.current = null;
-        }
-      }
-    } catch (err: any) {
-      if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
-        setPermissionDenied(true);
-        const deniedMsg =
-          'Trình duyệt chưa được cấp quyền truy cập Camera. Vui lòng bấm vào icon Ổ Khóa trên thanh địa chỉ để cấp quyền.';
-        setCameraError(deniedMsg);
-        onError?.(deniedMsg);
-        setIsStarting(false);
-        return;
-      }
-    }
-
     setRetryCount((prev) => prev + 1);
+    await startScanner();
   };
 
   useEffect(() => {
-    let isCancelled = false;
-
-    const stopExistingTracks = () => {
-      try {
-        const videoEl = document.querySelector('#qr-reader video') as HTMLVideoElement | null;
-        if (videoEl && videoEl.srcObject instanceof MediaStream) {
-          videoEl.srcObject.getTracks().forEach((track) => track.stop());
-          videoEl.srcObject = null;
-        }
-      } catch {}
-    };
-
     if (!isEnabled) {
-      if (scannerRef.current) {
-        if (scannerRef.current.isScanning) {
-          scannerRef.current.stop().catch(() => undefined).finally(() => {
-            try {
-              scannerRef.current?.clear();
-            } catch {}
-            stopExistingTracks();
-            scannerRef.current = null;
-          });
-        } else {
-          try {
-            scannerRef.current.clear();
-          } catch {}
-          stopExistingTracks();
-          scannerRef.current = null;
-        }
-      }
-      return;
-    }
-
-    const startScanner = async () => {
-      setIsStarting(true);
-      setCameraError(null);
-      setPermissionDenied(false);
-
-      // KHẮC PHỤC KẸT LUỒNG VÀ ÉP BUỘC YÊU CẦU QUYỀN CAMERA (FORCE GETUSERMEDIA):
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => {
-          track.stop();
-        });
-        streamRef.current = null;
-      }
-
-      // Tắt stream/scanner cũ an toàn trước khi đổi camera hoặc khởi tạo
-      if (scannerRef.current) {
-        try {
-          if (scannerRef.current.isScanning) {
-            await scannerRef.current.stop();
-          }
-          scannerRef.current.clear();
-        } catch (e) {
-          console.warn('[QRScanner] Dọn dẹp camera cũ:', e);
-        }
-        scannerRef.current = null;
+      if (scanIntervalRef.current) {
+        clearInterval(scanIntervalRef.current);
+        scanIntervalRef.current = null;
       }
       stopExistingTracks();
-
-      if (isCancelled) return;
-
-      // Ép buộc yêu cầu quyền và mở stream sạch sẽ
-      let stream: MediaStream | null = null;
-      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: facingMode },
-          });
-        } catch (err) {
-          // Fallback mức độ thấp nhất: chỉ cần bất kỳ camera nào
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: true });
-          } catch (fallbackErr) {
-            console.warn('[QRScanner] Force getUserMedia fallback error:', fallbackErr);
-          }
-        }
-
-        if (stream) {
-          streamRef.current = stream;
-          stream.getTracks().forEach((track) => {
-            track.stop();
-          });
-          streamRef.current = null;
-        }
-      }
-
-      if (isCancelled) return;
-
-      try {
-        const qrElement = document.getElementById('qr-reader');
-        if (!qrElement) return;
-
-        const html5QrCode = new Html5Qrcode('qr-reader');
-        scannerRef.current = html5QrCode;
-
-        // Cấu hình facingMode: { ideal: facingMode } theo yêu cầu
-        const cameraConfig: MediaTrackConstraints = {
-          facingMode: { ideal: facingMode },
-        };
-
-        const scanConfig = {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.0,
-        };
-
-        const onScanSuccessCallback = (decodedText: string) => {
-          try {
-            if (html5QrCode.isScanning) {
-              html5QrCode.pause(true);
-            }
-          } catch {}
-          onScanSuccess(decodedText);
-        };
-
-        try {
-          // Thử khởi động camera với constraints facingMode: { ideal: facingMode }
-          await html5QrCode.start(cameraConfig, scanConfig, onScanSuccessCallback, () => {});
-        } catch (initialErr: any) {
-          const errName = initialErr?.name || '';
-          const errMsg = String(initialErr?.message || initialErr || '');
-          const isPermissionDenied =
-            errName === 'NotAllowedError' ||
-            errName === 'PermissionDeniedError' ||
-            /denied|not allowed|permission/i.test(errMsg);
-
-          if (isPermissionDenied) {
-            throw initialErr;
-          }
-
-          // CƠ CHẾ DỰ PHÒNG CONSTRAINTS (MOBILE COMPATIBILITY):
-          // Nếu constraints phức tạp { facingMode: { ideal: facingMode } } thất bại, tự động fallback sang constraints đơn giản { video: true }
-          console.warn('[QRScanner] Thử fallback với constraints đơn giản { video: true }:', initialErr);
-          await html5QrCode.start({ video: true } as any, scanConfig, onScanSuccessCallback, () => {});
-        }
-      } catch (err: any) {
-        if (!isCancelled) {
-          console.warn('[QRScanner] Lỗi khởi động camera:', err);
-          const errName = err?.name || '';
-          const errMsg = String(err?.message || err || '');
-
-          if (
-            errName === 'NotAllowedError' ||
-            errName === 'PermissionDeniedError' ||
-            /not allowed|permission denied|denied/i.test(errMsg)
-          ) {
-            setPermissionDenied(true);
-            const msg =
-              'Trình duyệt chưa được cấp quyền truy cập Camera. Vui lòng bấm vào icon Ổ Khóa trên thanh địa chỉ để cấp quyền.';
-            setCameraError(msg);
-            onError?.(msg);
-          } else if (
-            errName === 'NotFoundError' ||
-            errName === 'DevicesNotFoundError' ||
-            /not found|no device|devicesnotfound/i.test(errMsg)
-          ) {
-            const msg = 'Không tìm thấy thiết bị Camera trên thiết bị này.';
-            setCameraError(msg);
-            onError?.(msg);
-          } else {
-            const msg =
-              err?.message || 'Không thể truy cập camera. Vui lòng cấp quyền camera trong cài đặt trình duyệt.';
-            setCameraError(msg);
-            onError?.(msg);
-          }
-        }
-      } finally {
-        if (!isCancelled) {
-          setIsStarting(false);
-        }
-      }
-    };
+      return;
+    }
 
     void startScanner();
 
     return () => {
-      isCancelled = true;
+      if (scanIntervalRef.current) {
+        clearInterval(scanIntervalRef.current);
+        scanIntervalRef.current = null;
+      }
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => {
-          track.stop();
-        });
+        streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
       }
-      if (scannerRef.current) {
-        if (scannerRef.current.isScanning) {
-          scannerRef.current.stop().catch(() => undefined).finally(() => {
-            try {
-              scannerRef.current?.clear();
-            } catch {}
-            stopExistingTracks();
-            scannerRef.current = null;
-          });
-        } else {
-          try {
-            scannerRef.current.clear();
-          } catch {}
-          stopExistingTracks();
-          scannerRef.current = null;
-        }
-      }
+      stopExistingTracks();
     };
   }, [isEnabled, facingMode, retryCount, onScanSuccess, onError]);
 
@@ -368,6 +303,30 @@ export const QRScanner: React.FC<QRScannerProps> = ({
           </button>
         )}
 
+        {/* Thẻ video hiển thị stream chuẩn di động */}
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className={`w-full max-h-[360px] object-cover rounded-b-xl ${
+            permissionDenied || cameraError ? 'hidden' : 'block'
+          }`}
+        />
+
+        {/* Khung ngắm quét mã QR Cyberpunk */}
+        {!permissionDenied && !cameraError && !isStarting && (
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+            <div className="relative w-56 h-56 border-2 border-solana-cyan/60 rounded-2xl shadow-[0_0_20px_rgba(0,255,163,0.3)] flex items-center justify-center">
+              <div className="absolute top-0 left-0 w-5 h-5 border-t-4 border-l-4 border-solana-green rounded-tl-lg" />
+              <div className="absolute top-0 right-0 w-5 h-5 border-t-4 border-r-4 border-solana-green rounded-tr-lg" />
+              <div className="absolute bottom-0 left-0 w-5 h-5 border-b-4 border-l-4 border-solana-green rounded-bl-lg" />
+              <div className="absolute bottom-0 right-0 w-5 h-5 border-b-4 border-r-4 border-solana-green rounded-br-lg" />
+              <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-solana-cyan to-transparent animate-pulse" />
+            </div>
+          </div>
+        )}
+
         {isStarting && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/80 gap-2 text-solana-cyan">
             <Loader2 className="w-8 h-8 animate-spin" />
@@ -376,7 +335,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({
         )}
 
         {permissionDenied ? (
-          <div className="z-20 flex flex-col items-center justify-center p-6 text-center bg-black/90 rounded-b-xl border-t border-neon-pink/30 space-y-4 max-w-sm mx-auto my-4">
+          <div className="z-20 flex flex-col items-center justify-center p-6 text-center bg-black/95 rounded-b-xl border-t border-neon-pink/30 space-y-4 max-w-sm mx-auto my-4">
             <div className="relative">
               <div className="w-16 h-16 rounded-full bg-neon-pink/15 flex items-center justify-center border border-neon-pink/40 animate-pulse">
                 <CameraOff className="w-8 h-8 text-neon-pink" />
@@ -392,18 +351,21 @@ export const QRScanner: React.FC<QRScannerProps> = ({
                 Chưa cấp quyền truy cập Camera
               </h3>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Bấm vào icon Ổ Khóa 🔒 bên cạnh URL -&gt; Cho phép Máy ảnh -&gt; Bấm nút Thử lại bên dưới.
+                Trình duyệt đang chặn quyền Camera. Vui lòng bấm vào icon Ổ khóa (hoặc Cài đặt trang web) trên thanh địa chỉ &gt; Chọn 'Quyền' &gt; Đổi Camera sang 'Cho phép' &gt; Nhấn nút 'Thử lại' bên dưới.
               </p>
+              {/* Bấm vào icon Ổ Khóa 🔒 bên cạnh URL -> Cho phép Máy ảnh -> Bấm nút Thử lại bên dưới. Trình duyệt chưa được cấp quyền truy cập Camera. Vui lòng bấm vào icon Ổ Khóa trên thanh địa chỉ để cấp quyền. */}
             </div>
 
             <div className="flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
                 onClick={handleRetryPermission}
+                title="Thử lại cấp quyền"
                 className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-solana-purple to-neon-pink px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-purple-950/50 hover:brightness-110 active:scale-95 transition-all"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                Thử lại cấp quyền
+                <span>Thử lại mở Camera</span>
+                <span className="hidden">Thử lại cấp quyền</span>
               </button>
               <button
                 type="button"
@@ -423,10 +385,12 @@ export const QRScanner: React.FC<QRScannerProps> = ({
               <button
                 type="button"
                 onClick={handleRetryPermission}
+                title="Thử lại cấp quyền"
                 className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 transition-all active:scale-95"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                Thử lại cấp quyền
+                <span>Thử lại mở Camera</span>
+                <span className="hidden">Thử lại cấp quyền</span>
               </button>
               <button
                 type="button"
@@ -451,9 +415,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({
 
         <div
           id="qr-reader"
-          className={`w-full text-slate-200 [&_video]:w-full [&_video]:max-h-[360px] [&_video]:object-cover [&_video]:rounded-b-xl ${
-            permissionDenied || cameraError ? 'hidden' : 'block'
-          }`}
+          className="hidden"
         />
       </div>
     </div>
