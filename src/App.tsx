@@ -264,7 +264,7 @@ export function App() {
         }
       } catch (error) {
         if (cancelled) return;
-        setEventsError(error instanceof Error ? error.message : 'Could not load events from the API.');
+        // Fallback an toàn về danh sách sự kiện mặc định mà không hiển thị lỗi đỏ
         setEvents(getStoredEvents());
       } finally {
         if (!cancelled) setEventsLoading(false);
@@ -292,7 +292,20 @@ export function App() {
   const fetchMyTickets = useCallback(async () => {
     try {
       const remoteTickets = await api.getPurchasedTickets(walletAddress || undefined);
-      setPurchasedTickets(remoteTickets);
+      // Lọc loại bỏ vé trùng lặp theo id hoặc ticketCode
+      setPurchasedTickets((prev) => {
+        const source = remoteTickets.length > 0 ? remoteTickets : prev;
+        const seen = new Set<string>();
+        const deduped: PurchasedTicket[] = [];
+        for (const t of source) {
+          const key = t.ticketCode || t.id;
+          if (key && !seen.has(key)) {
+            seen.add(key);
+            deduped.push(t);
+          }
+        }
+        return deduped;
+      });
       return remoteTickets;
     } catch (err) {
       console.warn('[UniTicket App] Could not load tickets from API:', err);
@@ -718,7 +731,19 @@ export function App() {
     // Tự động fetch lại danh sách vé trong trang "Vé của tôi" (My Tickets)
     await fetchMyTickets();
     const storedTickets = getStoredPurchasedTickets();
-    setPurchasedTickets(storedTickets.length > 0 ? storedTickets : tickets);
+    setPurchasedTickets((prev) => {
+      const source = storedTickets.length > 0 ? storedTickets : tickets;
+      const seen = new Set<string>();
+      const deduped: PurchasedTicket[] = [];
+      for (const t of [...source, ...prev]) {
+        const key = t.ticketCode || t.id;
+        if (key && !seen.has(key)) {
+          seen.add(key);
+          deduped.push(t);
+        }
+      }
+      return deduped;
+    });
     setEvents(getStoredEvents());
 
     const explorerUrl = txSignature

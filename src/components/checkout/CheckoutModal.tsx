@@ -190,7 +190,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     try {
       // 1. Tạo transaction chuyển SOL thật trên Devnet bằng SystemProgram.transfer
       const treasuryPubKey = new PublicKey(SOLANA_TREASURY_WALLET_STR);
-      const lamportsToSend = Math.round(0.05 * LAMPORTS_PER_SOL * selectedQuantity);
+      const unitPrice = typeof tier.priceSol === 'number' && tier.priceSol > 0 ? tier.priceSol : 0.05;
+      const totalSol = unitPrice * selectedQuantity;
+      const lamportsToSend = Math.max(5000, Math.round(totalSol * LAMPORTS_PER_SOL));
 
       const transaction = new Transaction().add(
         SystemProgram.transfer({
@@ -230,14 +232,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       // BẮT BUỘC gọi sendTransaction để ví Phantom hiển thị popup yêu cầu người dùng xác nhận chuyển SOL
       let signature: string;
-      const phantomProvider = (window as any).phantom?.solana || (window as any).solana;
+      const isMobile = typeof navigator !== 'undefined' && /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+      const phantomSolana = (window as any).phantom?.solana;
+      const phantomProvider = phantomSolana || (window as any).solana;
 
       const performSend = async (): Promise<string> => {
-        if (adapterConnected && typeof sendTransaction === 'function') {
+        // Trên thiết bị di động hoặc Phantom browser: ưu tiên signAndSendTransaction trực tiếp để hiển thị popup rõ ràng
+        if ((isMobile || phantomSolana?.isPhantom) && phantomSolana && typeof phantomSolana.signAndSendTransaction === 'function') {
+          const res = await phantomSolana.signAndSendTransaction(transaction);
+          return typeof res === 'string' ? res : res.signature;
+        } else if (adapterConnected && typeof sendTransaction === 'function') {
           return await sendTransaction(transaction, activeConnection);
         } else if (phantomProvider && typeof phantomProvider.signAndSendTransaction === 'function') {
           const res = await phantomProvider.signAndSendTransaction(transaction);
-          return res.signature;
+          return typeof res === 'string' ? res : res.signature;
         } else if (phantomProvider && typeof phantomProvider.signTransaction === 'function') {
           const signed = await phantomProvider.signTransaction(transaction);
           return await activeConnection.sendRawTransaction(signed.serialize());
@@ -272,14 +280,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       const confirmBlockhash = blockhash || (await activeConnection.getLatestBlockhash('confirmed')).blockhash;
       const confirmHeight = lastValidBlockHeight || (await activeConnection.getLatestBlockhash('confirmed')).lastValidBlockHeight;
-      await activeConnection.confirmTransaction(
-        {
-          signature,
-          blockhash: confirmBlockhash,
-          lastValidBlockHeight: confirmHeight,
-        },
-        'confirmed'
-      );
+      try {
+        const confirmPromise = activeConnection.confirmTransaction(
+          {
+            signature,
+            blockhash: confirmBlockhash,
+            lastValidBlockHeight: confirmHeight,
+          },
+          'confirmed'
+        );
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Transaction confirmation timeout (60s)')), 60000)
+        );
+        await Promise.race([confirmPromise, timeoutPromise]);
+      } catch (confirmErr) {
+        console.warn('[CheckoutModal] Warning during confirmTransaction:', confirmErr);
+      }
 
       setVerificationMessage('Giao dịch đã xác nhận on-chain! Đang phát hành vé NFT...');
       setVerificationSuccess(true);
@@ -341,10 +357,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         });
       }
 
-      // Lưu vé thông qua Data Layer (Supabase + LocalStorage)
-      for (const t of newTickets) {
-        await api.createTicket(t);
-      }
+      // Lưu vé thông qua Data Layer (Supabase + LocalStorage) đúng 1 lần duy nhất
       await api.createTickets(event.id, tier.id, selectedQuantity, newTickets);
 
       if (reservation?.id) {

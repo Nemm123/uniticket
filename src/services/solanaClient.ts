@@ -302,14 +302,21 @@ export async function executeBuyTicketOnSolana(
 
   onStatusChange?.('SIGNING', 'Vui lòng ký giao dịch trên ví...');
 
-  // Yêu cầu ví Phantom ký và phát transaction (qua sendTransaction của adapter hoặc provider)
+  // Yêu cầu ví Phantom ký và phát transaction:
+  // Trên thiết bị di động / Phantom in-app browser, ưu tiên window.phantom.solana.signAndSendTransaction
+  const isMobile = typeof navigator !== 'undefined' && /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+  const phantomSolana = typeof window !== 'undefined' ? (window as any).phantom?.solana : null;
+
   let signature: string;
   try {
-    if (typeof sendTransaction === 'function') {
+    if ((isMobile || phantomSolana?.isPhantom) && phantomSolana && typeof phantomSolana.signAndSendTransaction === 'function') {
+      const res = await phantomSolana.signAndSendTransaction(transaction);
+      signature = typeof res === 'string' ? res : res.signature;
+    } else if (typeof sendTransaction === 'function') {
       signature = await sendTransaction(transaction, activeConnection);
     } else if (provider && typeof provider.signAndSendTransaction === 'function') {
       const res = await provider.signAndSendTransaction(transaction);
-      signature = res.signature;
+      signature = typeof res === 'string' ? res : res.signature;
     } else if (provider && typeof provider.signTransaction === 'function') {
       const signed = await provider.signTransaction(transaction);
       signature = await activeConnection.sendRawTransaction(signed.serialize());
@@ -320,11 +327,11 @@ export async function executeBuyTicketOnSolana(
     throw new Error(parseSolanaTxError(signErr));
   }
 
-  // 2. Trạng thái: Ví đã ký xong, chuyển sang xác nhận khối trên Devnet
+  // 2. Trạng thái: Ví đã ký xong, chuyển sang xác nhận khối trên Devnet (timeout 60s)
   onStatusChange?.('CONFIRMING', 'Đang xác nhận giao dịch trên Solana Devnet...');
 
   try {
-    const confirmResult = await activeConnection.confirmTransaction(
+    const confirmPromise = activeConnection.confirmTransaction(
       {
         signature,
         blockhash,
@@ -332,8 +339,12 @@ export async function executeBuyTicketOnSolana(
       },
       'confirmed'
     );
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Transaction confirmation timeout (60s)')), 60000)
+    );
+    const confirmResult: any = await Promise.race([confirmPromise, timeoutPromise]);
 
-    if (confirmResult.value.err) {
+    if (confirmResult?.value?.err) {
       throw new Error(`Xác nhận khối thất bại: ${JSON.stringify(confirmResult.value.err)}`);
     }
   } catch (confirmErr) {

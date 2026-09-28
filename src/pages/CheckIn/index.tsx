@@ -54,14 +54,21 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
     setCameraEnabled(false);
 
     try {
-      // 1. Giải mã chuỗi JSON lấy ticketId và timestamp (chống chụp màn hình gian lận)
-      let parsedPayload: any = null;
-      try {
-        parsedPayload = JSON.parse(input);
-      } catch {
-        // Chuỗi không phải JSON (có thể là ticketCode hoặc ticketId nhập tay)
+      const rawInput = input.trim();
+      if (!rawInput) {
+        onShowToast('error', 'Vui lòng nhập mã vé hợp lệ.');
+        return;
       }
 
+      // 1. Giải mã chuỗi JSON lấy ticketId, ticketCode, signature và timestamp (Dynamic QR)
+      let parsedPayload: any = null;
+      try {
+        parsedPayload = JSON.parse(rawInput);
+      } catch {
+        // Chuỗi không phải JSON (có thể là ticketCode như UTK-5495-1 hoặc ticketId/UUID nhập tay)
+      }
+
+      // 2. Chống chụp màn hình gian lận: Kiểm tra thời hạn 60s cho Dynamic QR
       if (parsedPayload && typeof parsedPayload === 'object' && typeof parsedPayload.timestamp === 'number') {
         const ageMs = Date.now() - parsedPayload.timestamp;
         if (ageMs > 60000) {
@@ -75,19 +82,25 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
         }
       }
 
-      const backendValidation = await api.verifyTicketCheckIn(input);
+      // Lấy định danh tốt nhất để tra cứu
+      const searchTarget = (parsedPayload && typeof parsedPayload === 'object')
+        ? (parsedPayload.ticketCode || parsedPayload.ticketId || parsedPayload.id || parsedPayload.signature || rawInput)
+        : rawInput;
+
+      // 3. Tra cứu vé trong hệ thống qua API / storage
+      const backendValidation = await api.verifyTicketCheckIn(rawInput);
 
       if (backendValidation.status === 'valid') {
         // Tự động check-in
-        const ticketId = backendValidation.ticket?.id;
-        if (!ticketId) {
-          onShowToast('error', 'Không tìm thấy ID vé.');
-          return;
-        }
+        const ticketId = backendValidation.ticket?.id || backendValidation.ticket?.ticketCode || searchTarget;
         const confirmResult = await api.checkInTicket(ticketId, organizerAddress || undefined);
         
         if (confirmResult.status !== 'error') {
-          setResult({ ...confirmResult, message: 'Hợp lệ - Cho phép qua cổng' });
+          setResult({
+            ...confirmResult,
+            message: 'Hợp lệ - Cho phép qua cổng',
+            ticket: confirmResult.ticket || backendValidation.ticket,
+          });
           await refreshTickets();
           onTicketsChanged();
           onShowToast('success', 'Hợp lệ - Cho phép qua cổng');
@@ -102,8 +115,39 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
         setResult({ ...backendValidation, message: 'Mã QR đã hết hạn! Vui lòng mở ứng dụng UniTicket trực tiếp' });
         onShowToast('error', 'Mã QR đã hết hạn! Vui lòng mở ứng dụng UniTicket trực tiếp');
       } else {
-        setResult({ ...backendValidation, message: 'Mã vé không hợp lệ' });
-        onShowToast('error', 'Mã vé không hợp lệ');
+        // Fallback tra cứu trong danh sách vé hiện tại (theo ticketCode, id, signature)
+        const cleanTarget = searchTarget.toLowerCase();
+        const matched = tickets.find(
+          (t) =>
+            t.ticketCode?.toLowerCase() === cleanTarget ||
+            t.id?.toLowerCase() === cleanTarget ||
+            t.signature === searchTarget ||
+            t.txSignature === searchTarget
+        );
+
+        if (matched) {
+          if (ticketIsCheckedIn(matched)) {
+            setResult({
+              status: 'used',
+              message: 'Vé đã được sử dụng! (Cảnh báo vé giả/quét trùng)',
+              ticket: matched,
+            });
+            onShowToast('error', 'Vé đã được sử dụng! (Cảnh báo vé giả/quét trùng)');
+          } else {
+            const confirmResult = await api.checkInTicket(matched.id, organizerAddress || undefined);
+            setResult({
+              ...confirmResult,
+              message: 'Hợp lệ - Cho phép qua cổng',
+              ticket: confirmResult.ticket || matched,
+            });
+            await refreshTickets();
+            onTicketsChanged();
+            onShowToast('success', 'Hợp lệ - Cho phép qua cổng');
+          }
+        } else {
+          setResult({ ...backendValidation, message: 'Mã vé không hợp lệ' });
+          onShowToast('error', 'Mã vé không hợp lệ');
+        }
       }
     } finally {
       setIsValidating(false);
@@ -304,6 +348,17 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
               placeholder={t('checkIn.searchPlaceholder')}
               className="min-h-11 flex-1 rounded-xl border border-white/15 bg-black/30 px-3 text-sm text-white outline-none focus:border-solana-purple"
             />
+            {search.trim() && (
+              <button
+                type="button"
+                onClick={() => void validateInput(search.trim())}
+                disabled={isValidating}
+                className="min-h-11 rounded-xl bg-gradient-to-r from-solana-purple to-neon-pink px-4 text-xs font-bold text-white shadow-lg active:scale-95 whitespace-nowrap inline-flex items-center justify-center gap-1.5"
+              >
+                {isValidating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanLine className="w-3.5 h-3.5" />}
+                {t('checkIn.validateBtn')}
+              </button>
+            )}
             <div className="flex gap-2">
               {(['all', 'checked-in', 'unused'] as TicketFilter[]).map((item) => (
                 <button
@@ -338,6 +393,16 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
                   <p className={ticketIsCheckedIn(ticket) ? 'text-solana-green font-bold' : 'text-yellow-200 font-medium'}>
                     {ticketIsCheckedIn(ticket) ? `✓ ${t('common.checkedIn').toUpperCase()}` : `○ ${t('checkIn.filterUnused').toUpperCase()}`}
                   </p>
+                  {!ticketIsCheckedIn(ticket) && (
+                    <button
+                      type="button"
+                      onClick={() => void validateInput(ticket.ticketCode)}
+                      disabled={isValidating}
+                      className="mt-1 inline-flex items-center gap-1 rounded-lg bg-solana-purple/80 hover:bg-solana-purple px-2 py-0.5 text-[11px] font-semibold text-white transition-colors"
+                    >
+                      <CheckCircle2 className="w-3 h-3" /> Soát vé
+                    </button>
+                  )}
                   {ticket.checkInTime && (
                     <p className="text-[11px] text-slate-400">{formatDate(ticket.checkInTime)}</p>
                   )}

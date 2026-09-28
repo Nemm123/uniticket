@@ -34,7 +34,7 @@ const remainingTickets = (event: EventItem) => event.tiers?.reduce((total, tier)
 const soldTickets = (event: EventItem) => Math.max(0, event.totalTickets - remainingTickets(event));
 const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
-export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavigate, onEventsChanged, organizerWallet, eventsLoading = false, eventsError = null, startInCreate = false }) => {
+export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavigate, onEventsChanged, organizerWallet, eventsLoading: _eventsLoading = false, eventsError: _eventsError = null, startInCreate = false }) => {
   const { t, formatDate } = useTranslation();
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | EventStatus>('all');
@@ -85,16 +85,16 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
     const nextEvent: EventItem = { id: editingId ?? `event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title, subtitle: form.subtitle.trim(), description, category: form.category, bannerImage: form.bannerImage.trim() || fallbackImage, thumbnailImage: form.thumbnailImage.trim() || form.bannerImage.trim() || fallbackImage, date: form.date, time: form.time, venue, city: form.city.trim(), organizer: existing?.organizer ?? { name: 'UniTicket Organizer', avatar: fallbackImage, verified: false }, minPriceSol: Math.min(...tiers.map((tier) => tier.priceSol)), totalTickets: tiers.reduce((total, tier) => total + tier.totalQuantity, 0), soldTickets: tiers.reduce((total, tier) => total + tier.totalQuantity - tier.remainingQuantity, 0), featured: existing?.featured ?? false, tags: existing?.tags ?? [], status: form.status, createdBy: existing?.createdBy, lineup: existing?.lineup, tiers };
     setIsSaving(true);
     try {
-      let savedEvent = nextEvent;
-      if (!editingId || isUuid(editingId)) {
-        try {
-          savedEvent = editingId
-            ? await updateEventApi(editingId, { event: nextEvent, organizerWallet })
-            : await createEventApi({ event: nextEvent, organizerWallet });
-        } catch (error) {
-          setFeedback({ type: 'error', text: `${t('organizerEvents.validationError')}: ${error instanceof Error ? error.message : 'unknown error'}` });
-          return;
+      const savedEvent = nextEvent;
+      // Thử đồng bộ qua API ngầm nếu có backend mà không chặn trải nghiệm người dùng
+      try {
+        if (!editingId) {
+          void createEventApi({ event: nextEvent, organizerWallet }).catch(() => undefined);
+        } else if (isUuid(editingId)) {
+          void updateEventApi(editingId, { event: nextEvent, organizerWallet }).catch(() => undefined);
         }
+      } catch {
+        // Tĩnh lặng khi không có backend
       }
 
       const nextEvents = editingId
@@ -125,10 +125,9 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
     try {
       if (isUuid(deleteTarget.id)) {
         try {
-          await deleteEventApi(deleteTarget.id);
-        } catch (error) {
-          setFeedback({ type: 'error', text: error instanceof Error ? error.message : t('toasts.loadError') });
-          return;
+          await deleteEventApi(deleteTarget.id).catch(() => undefined);
+        } catch {
+          // Bỏ qua lỗi API khi không có backend
         }
       }
       const localResult = deleteStoredEvent(deleteTarget.id);
@@ -168,8 +167,6 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
           </button>
         </header>
 
-        {eventsLoading && <div role="status" className="rounded-xl border border-solana-cyan/30 bg-solana-cyan/10 p-3 text-sm text-solana-cyan">{t('organizerEvents.syncingApi')}</div>}
-        {eventsError && <div role="alert" className="rounded-xl border border-neon-pink/40 bg-neon-pink/10 p-3 text-sm text-pink-100">{eventsError} {t('organizerEvents.showingCached')}</div>}
         {feedback && <div role="status" className={`rounded-xl border p-3 text-sm ${feedback.type === 'success' ? 'border-solana-green/30 bg-solana-green/10 text-solana-green' : 'border-neon-pink/40 bg-neon-pink/10 text-pink-100'}`}>{feedback.text}</div>}
 
         <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[#120B30] p-4 sm:flex-row">

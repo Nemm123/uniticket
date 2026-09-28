@@ -185,7 +185,17 @@ export async function getPurchasedTickets(walletAddress?: string): Promise<Purch
       const { data, error } = await query;
       if (!error && Array.isArray(data)) {
         if (data.length > 0) {
-          const tickets = data.map(supabaseRowToTicket);
+          const rawTickets = data.map(supabaseRowToTicket);
+          // Lọc loại bỏ vé trùng lặp theo id hoặc ticketCode
+          const seen = new Set<string>();
+          const tickets: PurchasedTicket[] = [];
+          for (const t of rawTickets) {
+            const key = t.ticketCode || t.id;
+            if (key && !seen.has(key)) {
+              seen.add(key);
+              tickets.push(t);
+            }
+          }
           // Đồng bộ vào localStorage để duy trì cache cục bộ
           storage.savePurchasedTickets(tickets);
           return tickets;
@@ -357,7 +367,66 @@ export const confirmCheckIn = checkInTicket;
  */
 export async function verifyTicketCheckIn(input: string): Promise<CheckInResult> {
   await delay(MOCK_DELAY);
-  return storage.validateTicketForCheckIn(input);
+
+  // 1. Kiểm tra qua storage trước
+  const localResult = storage.validateTicketForCheckIn(input);
+  if (
+    localResult.status === 'valid' ||
+    localResult.status === 'used' ||
+    (localResult.status === 'error' && localResult.message.includes('hết hạn'))
+  ) {
+    return localResult;
+  }
+
+  // 2. Nếu local không tìm thấy và Supabase đang bật, kiểm tra trên Supabase
+  if (isSupabaseConfigured) {
+    try {
+      let target = input.trim();
+      let timestamp: number | undefined;
+      try {
+        const parsed = JSON.parse(input);
+        if (parsed && typeof parsed === 'object') {
+          target = parsed.ticketCode || parsed.ticketId || parsed.id || target;
+          timestamp = parsed.timestamp;
+        }
+      } catch {}
+
+      if (typeof timestamp === 'number' && Date.now() - timestamp > 60000) {
+        return {
+          status: 'error',
+          message: 'Mã QR đã hết hạn! Vui lòng mở ứng dụng UniTicket trực tiếp',
+        };
+      }
+
+      const { data, error } = await supabase
+        .from('tickets')
+        .select('*')
+        .or(`id.eq.${target},ticket_code.eq.${target},signature.eq.${target}`)
+        .limit(1)
+        .maybeSingle();
+
+      if (!error && data) {
+        const ticket = supabaseRowToTicket(data);
+        const isUsed = Boolean(data.is_used || data.is_checked_in || data.status === 'checked_in');
+        if (isUsed) {
+          return {
+            status: 'used',
+            message: 'Vé đã được sử dụng! (Cảnh báo vé giả/quét trùng)',
+            ticket,
+          };
+        }
+        return {
+          status: 'valid',
+          message: 'Hợp lệ - Cho phép qua cổng',
+          ticket,
+        };
+      }
+    } catch (err) {
+      console.warn('[Supabase API] Lỗi xác thực vé:', err);
+    }
+  }
+
+  return localResult;
 }
 
 /**

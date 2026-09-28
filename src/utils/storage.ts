@@ -289,7 +289,7 @@ export function getStoredPurchasedTickets(): PurchasedTicket[] {
     if (!data) return [];
     const parsed = JSON.parse(data);
     if (Array.isArray(parsed)) {
-      return parsed.filter((ticket): ticket is PurchasedTicket => (
+      const valid = parsed.filter((ticket): ticket is PurchasedTicket => (
         ticket !== null &&
         typeof ticket === 'object' &&
         typeof ticket.id === 'string' &&
@@ -300,6 +300,18 @@ export function getStoredPurchasedTickets(): PurchasedTicket[] {
         typeof ticket.customerWallet === 'string' &&
         typeof ticket.qrPayload === 'string'
       ));
+
+      // Lọc loại bỏ các vé trùng lặp theo id hoặc ticketCode
+      const seen = new Set<string>();
+      const deduped: PurchasedTicket[] = [];
+      for (const t of valid) {
+        const key = t.ticketCode || t.id;
+        if (key && !seen.has(key)) {
+          seen.add(key);
+          deduped.push(t);
+        }
+      }
+      return deduped;
     }
     return [];
   } catch (error) {
@@ -313,24 +325,38 @@ export function getStoredPurchasedTickets(): PurchasedTicket[] {
  */
 export function getStoredTicketById(identifier: string): PurchasedTicket | null {
   if (!identifier) return null;
-  const trimmed = identifier.trim();
+  const trimmed = identifier.trim().toLowerCase();
   const tickets = getStoredPurchasedTickets();
   const found = tickets.find(
-    (t) => t.id === trimmed || t.ticketCode === trimmed || t.orderId === trimmed
+    (t) =>
+      t.id.toLowerCase() === trimmed ||
+      t.ticketCode.toLowerCase() === trimmed ||
+      t.orderId.toLowerCase() === trimmed
   );
   return found || null;
 }
 
 /**
- * Lưu các vé mới mua vào localStorage
+ * Lưu các vé mới mua vào localStorage (với cơ chế deduplication)
  */
 export function savePurchasedTickets(newTickets: PurchasedTicket[]): boolean {
   try {
     const data = localStorage.getItem(TICKETS_KEY);
-    const currentTickets = data ? JSON.parse(data) : [];
+    const currentTickets: PurchasedTicket[] = data ? JSON.parse(data) : [];
     if (!Array.isArray(currentTickets)) return false;
+
+    // Lọc bỏ vé trùng lặp theo id hoặc ticketCode
+    const uniqueNew = newTickets.filter((nt) => {
+      return !currentTickets.some((ct) =>
+        (nt.id && ct.id === nt.id) ||
+        (nt.ticketCode && ct.ticketCode && ct.ticketCode === nt.ticketCode)
+      );
+    });
+
+    if (uniqueNew.length === 0) return true;
+
     // Đưa các vé mới lên đầu danh sách
-    const updated = [...newTickets, ...currentTickets];
+    const updated = [...uniqueNew, ...currentTickets];
     localStorage.setItem(TICKETS_KEY, JSON.stringify(updated));
     return true;
   } catch (error) {
@@ -383,13 +409,22 @@ export function savePurchaseAtomically(
     }
 
     const existingData = localStorage.getItem(TICKETS_KEY);
-    const existingTickets = existingData ? JSON.parse(existingData) : [];
+    const existingTickets: PurchasedTicket[] = existingData ? JSON.parse(existingData) : [];
     if (!Array.isArray(existingTickets)) return false;
+
+    // Lọc bỏ vé trùng lặp theo id hoặc ticketCode
+    const uniqueNew = newTickets.filter((nt) => {
+      return !existingTickets.some((et) =>
+        (nt.id && et.id === nt.id) ||
+        (nt.ticketCode && et.ticketCode && et.ticketCode === nt.ticketCode)
+      );
+    });
 
     tier.remainingQuantity -= quantityPurchased;
     event.soldTickets += quantityPurchased;
+
     localStorage.setItem(INVENTORY_KEY, JSON.stringify(events));
-    localStorage.setItem(TICKETS_KEY, JSON.stringify([...newTickets, ...existingTickets]));
+    localStorage.setItem(TICKETS_KEY, JSON.stringify([...uniqueNew, ...existingTickets]));
     return true;
   } catch (error) {
     console.error('[UniTicket Storage] Lỗi lưu đơn hàng, khôi phục dữ liệu trước đó:', error);
@@ -433,12 +468,12 @@ export function validateTicketForCheckIn(input: string): CheckInResult {
   try {
     parsedPayload = JSON.parse(input);
     if (parsedPayload && typeof parsedPayload === 'object') {
-      if (typeof parsedPayload.ticketId === 'string') {
+      if (typeof parsedPayload.ticketCode === 'string') {
+        targetTicketId = parsedPayload.ticketCode;
+      } else if (typeof parsedPayload.ticketId === 'string') {
         targetTicketId = parsedPayload.ticketId;
       } else if (typeof parsedPayload.id === 'string') {
         targetTicketId = parsedPayload.id;
-      } else if (typeof parsedPayload.ticketCode === 'string') {
-        targetTicketId = parsedPayload.ticketCode;
       }
       if (typeof parsedPayload.timestamp === 'number') {
         timestamp = parsedPayload.timestamp;
@@ -465,11 +500,32 @@ export function validateTicketForCheckIn(input: string): CheckInResult {
     const tickets = rawTickets ? JSON.parse(rawTickets) : [];
     if (!Array.isArray(tickets)) return { status: 'error', message: 'Không thể đọc dữ liệu vé từ bộ nhớ.' };
 
-    const ticket = tickets.find((item): item is PurchasedTicket => (
-      item?.id === targetTicketId ||
-      item?.ticketCode === targetTicketId ||
-      item?.orderId === targetTicketId
-    ));
+    const cleanInput = input.trim().toLowerCase();
+    const cleanTarget = targetTicketId.trim().toLowerCase();
+    const payloadCode = parsedPayload?.ticketCode?.trim()?.toLowerCase();
+    const payloadId = (parsedPayload?.ticketId || parsedPayload?.id)?.trim()?.toLowerCase();
+    const payloadSig = (parsedPayload?.signature || parsedPayload?.txSignature)?.trim();
+
+    const ticket = tickets.find((item): item is PurchasedTicket => {
+      if (!item) return false;
+      const itemId = item.id?.toLowerCase();
+      const itemCode = item.ticketCode?.toLowerCase();
+      const itemOrderId = item.orderId?.toLowerCase();
+      const itemSig = item.signature || item.txSignature;
+
+      return (
+        itemId === cleanTarget ||
+        itemId === cleanInput ||
+        (payloadId && itemId === payloadId) ||
+        itemCode === cleanTarget ||
+        itemCode === cleanInput ||
+        (payloadCode && itemCode === payloadCode) ||
+        itemOrderId === cleanTarget ||
+        itemOrderId === cleanInput ||
+        (Boolean(itemSig) && (itemSig === input.trim() || itemSig === targetTicketId || itemSig === payloadSig))
+      );
+    });
+
     if (!ticket) return { status: 'invalid', message: 'Mã vé không tồn tại trong hệ thống.' };
 
     // Nếu là payload mock-v1 cũ có đầy đủ trường, kiểm tra khớp chi tiết
@@ -511,7 +567,12 @@ export function confirmTicketCheckIn(ticketId: string, checkedInBy: string): Che
     const history = previousHistory ? JSON.parse(previousHistory) : [];
     if (!Array.isArray(tickets) || !Array.isArray(history)) return { status: 'error', message: 'Could not read demo ticket storage.' };
 
-    const ticketIndex = tickets.findIndex((item) => item?.id === ticketId);
+    const cleanId = ticketId.trim().toLowerCase();
+    const ticketIndex = tickets.findIndex((item) =>
+      item?.id?.toLowerCase() === cleanId ||
+      item?.ticketCode?.toLowerCase() === cleanId ||
+      item?.orderId?.toLowerCase() === cleanId
+    );
     if (ticketIndex === -1) return { status: 'invalid', message: 'Ticket not found.' };
     const ticket = tickets[ticketIndex] as PurchasedTicket;
     if (isCheckedIn(ticket)) return { status: 'used', message: 'This ticket has already been checked in.', ticket };
