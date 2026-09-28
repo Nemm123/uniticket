@@ -29,6 +29,9 @@ export const QRScanner: React.FC<QRScannerProps> = ({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [hasPermissionGranted, setHasPermissionGranted] = useState(false);
+  const hasPermissionGrantedRef = useRef(false);
+  const activeFacingModeRef = useRef(facingMode);
 
   const onScan = (result: string) => {
     onScanSuccess(result);
@@ -80,6 +83,22 @@ export const QRScanner: React.FC<QRScannerProps> = ({
     setCameraError(null);
     setPermissionDenied(false);
 
+    // Duy trì luồng stream đang hoạt động tốt nếu không đổi facingMode
+    const isLive = Boolean(
+      streamRef.current &&
+      streamRef.current.active &&
+      streamRef.current.getVideoTracks().some((t) => t.readyState === 'live')
+    );
+    if (isLive && activeFacingModeRef.current === facingMode) {
+      if (videoRef.current && videoRef.current.srcObject !== streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+        videoRef.current.setAttribute('playsinline', 'true');
+        videoRef.current.play().catch((e) => console.error('Video play error:', e));
+      }
+      setIsStarting(false);
+      return;
+    }
+
     // 1. Trước khi mở stream mới, dừng triệt để toàn bộ track camera đang chạy ngầm:
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -101,34 +120,43 @@ export const QRScanner: React.FC<QRScannerProps> = ({
       // Cấu hình media constraints theo thứ tự ưu tiên từ cao xuống thấp (Fallback Constraints):
       const isBackCamera = facingMode === 'environment';
 
-      // Bước 1: Thử lấy camera sau với facingMode:
       try {
-        if (isBackCamera) {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { exact: 'environment' } }
-          });
-        } else {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { exact: 'user' } }
-          });
-        }
-      } catch (step1Err) {
-        console.warn('[QRScanner] Bước 1 exact environment thất bại, chuyển sang Bước 2:', step1Err);
-        // Bước 2 (nếu lỗi): Thử facingMode mềm:
+        // Cung cấp constraints chuẩn:
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: facingMode } },
+          audio: false
+        });
+      } catch (idealErr) {
+        console.warn('[QRScanner] Thử fallback constraints tuần tự:', idealErr);
+        // Bước 1: Thử lấy camera sau với facingMode:
         try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment' }
-          });
-        } catch (step2Err) {
-          console.warn('[QRScanner] Bước 2 facingMode: environment thất bại, thử facingMode: facingMode hoặc ideal:', step2Err);
+          if (isBackCamera) {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: { exact: 'environment' } }
+            });
+          } else {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: { exact: 'user' } }
+            });
+          }
+        } catch (step1Err) {
+          console.warn('[QRScanner] Bước 1 exact environment thất bại, chuyển sang Bước 2:', step1Err);
+          // Bước 2 (nếu lỗi): Thử facingMode mềm:
           try {
             stream = await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: facingMode }
+              video: { facingMode: 'environment' }
             });
-          } catch (step2bErr) {
-            console.warn('[QRScanner] Thử ideal constraints { facingMode: { ideal: facingMode } }:', step2bErr);
-            // Bước 3 (nếu vẫn lỗi): Mở bất kỳ camera nào khả dụng trên máy:
-            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          } catch (step2Err) {
+            console.warn('[QRScanner] Bước 2 facingMode: environment thất bại, thử facingMode: facingMode hoặc ideal:', step2Err);
+            try {
+              stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: facingMode }
+              });
+            } catch (step2bErr) {
+              console.warn('[QRScanner] Thử ideal constraints { facingMode: { ideal: facingMode } }:', step2bErr);
+              // Bước 3 (nếu vẫn lỗi): Mở bất kỳ camera nào khả dụng trên máy:
+              stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            }
           }
         }
       }
@@ -138,6 +166,9 @@ export const QRScanner: React.FC<QRScannerProps> = ({
       }
 
       streamRef.current = stream;
+      activeFacingModeRef.current = facingMode;
+      hasPermissionGrantedRef.current = true;
+      setHasPermissionGranted(true);
 
       // 2. GẮN STREAM VÀO THẺ VIDEO CHUẨN DI ĐỘNG:
       if (videoRef.current) {
@@ -251,8 +282,9 @@ export const QRScanner: React.FC<QRScannerProps> = ({
         <div className="flex items-center gap-2">
           <Camera className="w-4 h-4 text-solana-cyan" />
           <span className="text-sm font-semibold text-white">Scanner</span>
-          <span className="inline-flex items-center rounded-full border border-solana-cyan/30 bg-solana-cyan/10 px-2.5 py-0.5 text-[11px] font-semibold text-solana-cyan">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-solana-cyan/30 bg-solana-cyan/10 px-2.5 py-0.5 text-[11px] font-semibold text-solana-cyan">
             {facingMode === 'environment' ? 'Camera Sau' : 'Camera Trước'}
+            {hasPermissionGranted && <span className="inline-block w-1.5 h-1.5 rounded-full bg-solana-green animate-pulse" title="Đã cấp quyền" />}
           </span>
         </div>
         <div className="flex items-center gap-2">

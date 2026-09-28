@@ -103,6 +103,24 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
   };
   const toggleCamera = handleFlipCamera;
 
+function extractTicketCode(raw: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  // Nếu là chuỗi JSON từ Dynamic QR:
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return parsed.ticketCode || parsed.ticketId || parsed.id || parsed.code || '';
+    } catch (e) {
+      console.error("Lỗi parse JSON QR:", e);
+    }
+  }
+  // Nếu chuỗi chứa định dạng UTK-xxxx-x ở bất kỳ đâu trong chuỗi:
+  const match = trimmed.match(/UTK-[A-Za-z0-9]+-\d+/i);
+  if (match) return match[0];
+  return trimmed;
+}
+
   const handleManualCheck = async (input: string) => {
     if (processingRef.current || currentRole !== 'organizer') return;
     processingRef.current = true;
@@ -139,10 +157,11 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
         }
       }
 
-      // Trích xuất mã đối soát: nếu là JSON thì lấy ticketCode hoặc ticketId
-      let targetCode = cleanInput;
+      // Bóc tách mã vé thông minh:
+      const ticketCode = extractTicketCode(cleanInput);
+      let targetCode = ticketCode || cleanInput;
       if (parsedPayload && typeof parsedPayload === 'object') {
-        targetCode = (parsedPayload.ticketCode || parsedPayload.ticketId || parsedPayload.id || cleanInput).trim();
+        targetCode = (parsedPayload.ticketCode || parsedPayload.ticketId || parsedPayload.id || ticketCode || cleanInput).trim();
       }
       const normalizedTarget = targetCode.toLowerCase().replace(/\s+/g, '');
 
@@ -165,8 +184,12 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
       });
       const allTickets = Array.from(allTicketsMap.values());
 
-      // 4. Tìm vé thỏa mãn điều kiện linh hoạt (không phân biệt hoa thường, bỏ qua dấu cách):
-      let foundTicket = allTickets.find((t) => {
+      // 4. Tiến hành đối soát trong toàn bộ danh sách vé:
+      const found = allTickets.find(t => 
+        (t.ticketCode && t.ticketCode.toLowerCase() === ticketCode.toLowerCase()) ||
+        (t.id && t.id.toLowerCase() === ticketCode.toLowerCase())
+      );
+      let foundTicket = found || allTickets.find((t) => {
         const code = t.ticketCode ? t.ticketCode.trim().toLowerCase().replace(/\s+/g, '') : '';
         const id = t.id ? t.id.trim().toLowerCase().replace(/\s+/g, '') : '';
         const orderId = t.orderId ? t.orderId.trim().toLowerCase() : '';
@@ -174,8 +197,8 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
           (code && (code === normalizedTarget || normalizedTarget.includes(code) || code.includes(normalizedTarget))) ||
           (id && (id === normalizedTarget || normalizedTarget.includes(id) || id.includes(normalizedTarget))) ||
           (orderId && normalizedTarget.includes(orderId)) ||
-          (t.signature && t.signature === targetCode) ||
-          (t.txSignature && t.txSignature === targetCode)
+          (t.signature && (t.signature === targetCode || t.signature === cleanInput)) ||
+          (t.txSignature && (t.txSignature === targetCode || t.txSignature === cleanInput))
         );
       });
 

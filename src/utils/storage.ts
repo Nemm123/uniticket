@@ -464,11 +464,33 @@ function isCheckedIn(ticket: PurchasedTicket): boolean {
   );
 }
 
+/**
+ * Bóc tách mã vé thông minh từ Dynamic QR JSON hoặc chuỗi bất kỳ
+ */
+export function extractTicketCode(raw: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  // Nếu là chuỗi JSON từ Dynamic QR:
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return parsed.ticketCode || parsed.ticketId || parsed.id || parsed.code || '';
+    } catch (e) {
+      console.error("Lỗi parse JSON QR:", e);
+    }
+  }
+  // Nếu chuỗi chứa định dạng UTK-xxxx-x ở bất kỳ đâu trong chuỗi:
+  const match = trimmed.match(/UTK-[A-Za-z0-9]+-\d+/i);
+  if (match) return match[0];
+  return trimmed;
+}
+
 /** Validates a QR payload against the stored ticket without changing ticket state. */
 export function validateTicketForCheckIn(input: string): CheckInResult {
   if (!input.trim()) return { status: 'invalid', message: 'Mã QR hoặc mã vé không hợp lệ.' };
 
-  let targetTicketId = input.trim();
+  const extracted = extractTicketCode(input);
+  let targetTicketId = extracted || input.trim();
   let timestamp: number | undefined;
   let parsedPayload: any = null;
 

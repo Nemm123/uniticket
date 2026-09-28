@@ -530,6 +530,32 @@ assert(
   'TEST 32 — Direct getUserMedia (fallback constraints 1-3, stream cleanup, videoRef playsInline muted, and clear permission blocked instructions)'
 );
 
+// -------------------------------------------------------------
+// TEST 33 — Smart Dynamic QR Ticket Code Extraction & Camera Permission Persistence
+// -------------------------------------------------------------
+const storageCodeForTest33 = fs.readFileSync('src/utils/storage.ts', 'utf8');
+const qrScannerCodeForTest33 = fs.readFileSync('src/components/organizer/QRScanner.tsx', 'utf8');
+const checkInCodeForTest33 = fs.readFileSync('src/pages/CheckIn/index.tsx', 'utf8');
+
+assert(
+  // 1. extractTicketCode in storage & CheckIn
+  storageCodeForTest33.includes('function extractTicketCode') &&
+  storageCodeForTest33.includes('UTK-[A-Za-z0-9]+-\\d+') &&
+  checkInCodeForTest33.includes('function extractTicketCode') &&
+  checkInCodeForTest33.includes('UTK-[A-Za-z0-9]+-\\d+') &&
+  // 2. allTickets lookup and USED status transition
+  checkInCodeForTest33.includes('allTickets.find(t =>') &&
+  checkInCodeForTest33.includes('(t.ticketCode && t.ticketCode.toLowerCase() === ticketCode.toLowerCase()) ||') &&
+  checkInCodeForTest33.includes('(t.id && t.id.toLowerCase() === ticketCode.toLowerCase())') &&
+  checkInCodeForTest33.includes('Soát vé thành công:') &&
+  checkInCodeForTest33.includes("status: 'USED'") &&
+  // 3. Camera permission persistence & audio: false
+  qrScannerCodeForTest33.includes('hasPermissionGranted') &&
+  qrScannerCodeForTest33.includes('audio: false') &&
+  qrScannerCodeForTest33.includes('video: { facingMode: { ideal: facingMode } }'),
+  'TEST 33 — Smart Dynamic QR Extraction (extractTicketCode UTK regex, allTickets lookup, USED transition) and Camera Permission Persistence (hasPermissionGranted, audio: false constraints)'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);
