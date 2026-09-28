@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   X,
   Ticket,
@@ -37,7 +37,9 @@ interface CheckoutModalProps {
   event: EventItem;
   tier: TicketTier;
   quantity: number;
+  connected?: boolean;
   walletAddress?: string | null;
+  publicKey?: PublicKey | null;
   solBalance?: number | null;
   onSuccess: (ticketsCreated: PurchasedTicket[], txSignature?: string) => void;
   onError: (msg: string) => void;
@@ -52,7 +54,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   event,
   tier,
   quantity,
-  walletAddress: _walletAddress,
+  connected: propConnected,
+  walletAddress: propWalletAddress,
+  publicKey: propPublicKey,
   solBalance,
   onSuccess,
   onError,
@@ -62,7 +66,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const { connection } = useConnection();
-  const { publicKey, connected, sendTransaction, select, wallets, connect: adapterConnect } = useWallet();
+  const { publicKey: adapterPublicKey, connected: adapterConnected, sendTransaction, select, wallets, connect: adapterConnect } = useWallet();
   const [step, setStep] = useState<'FORM' | 'PAYMENT' | 'SUCCESS'>('FORM');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -79,7 +83,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [createdTickets, setCreatedTickets] = useState<PurchasedTicket[]>([]);
   const [internalSolBalance, setInternalSolBalance] = useState<number | null>(solBalance ?? null);
 
-  const activeWallet = publicKey ? publicKey.toBase58() : null;
+  // Đồng bộ trạng thái ví trực tiếp từ props của App.tsx và adapter
+  const isWalletConnected = Boolean(propConnected || adapterConnected || propWalletAddress);
+  const effectiveWalletAddress = propWalletAddress || (propPublicKey ? propPublicKey.toBase58() : null) || (adapterPublicKey ? adapterPublicKey.toBase58() : null);
+
+  const effectivePublicKey = useMemo(() => {
+    if (propPublicKey) return propPublicKey;
+    if (adapterPublicKey) return adapterPublicKey;
+    if (effectiveWalletAddress) {
+      try {
+        return new PublicKey(effectiveWalletAddress);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }, [propPublicKey, adapterPublicKey, effectiveWalletAddress]);
+
+  const activeWallet = isWalletConnected ? effectiveWalletAddress : null;
   const unitPriceSol = 0.05;
   const totalSol = unitPriceSol * selectedQuantity;
 
@@ -90,25 +111,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   }, [solBalance]);
 
   useEffect(() => {
-    if (publicKey) {
-      void getWalletSolBalance(publicKey.toBase58()).then((bal) => {
+    if (effectiveWalletAddress) {
+      void getWalletSolBalance(effectiveWalletAddress).then((bal) => {
         if (bal !== null) {
           setInternalSolBalance(bal);
         }
       });
     }
-  }, [publicKey]);
-
-  // Tự động kết nối Solana Wallet Adapter nếu đã kết nối Phantom trên cửa sổ
-  useEffect(() => {
-    if (isOpen && !connected && wallets.length > 0) {
-      const phantom = wallets.find((w) => w.adapter.name.toLowerCase().includes('phantom'));
-      if (phantom) {
-        select(phantom.adapter.name);
-        adapterConnect().catch(() => undefined);
-      }
-    }
-  }, [isOpen, connected, wallets, select, adapterConnect]);
+  }, [effectiveWalletAddress]);
 
   useEffect(() => {
     if (isOpen) {
@@ -160,7 +170,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Hàm thực hiện chuyển 0.05 SOL trực tiếp trên Solana Devnet qua ví Phantom
   const executeSolanaPayment = async () => {
-    if (!connected || !publicKey) {
+    if (!effectiveWalletAddress || !effectivePublicKey) {
       onError('Vui lòng kết nối ví Phantom trước khi thanh toán.');
       await handleConnectWalletFromModal();
       return;
@@ -182,14 +192,32 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       const transaction = new Transaction().add(
         SystemProgram.transfer({
-          fromPubkey: publicKey,
+          fromPubkey: effectivePublicKey,
           toPubkey: treasuryPubKey,
           lamports: lamportsToSend,
         })
       );
 
       // BẮT BUỘC gọi sendTransaction để ví Phantom hiển thị popup yêu cầu người dùng xác nhận chuyển SOL
-      const signature = await sendTransaction(transaction, connection);
+      let signature: string;
+      const phantomProvider = (window as any).phantom?.solana || (window as any).solana;
+
+      if (adapterConnected && typeof sendTransaction === 'function') {
+        signature = await sendTransaction(transaction, connection);
+      } else if (phantomProvider && typeof phantomProvider.signAndSendTransaction === 'function') {
+        const res = await phantomProvider.signAndSendTransaction(transaction);
+        signature = res.signature;
+      } else if (phantomProvider && typeof phantomProvider.signTransaction === 'function') {
+        const { blockhash } = await connection.getLatestBlockhash('confirmed');
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = effectivePublicKey;
+        const signed = await phantomProvider.signTransaction(transaction);
+        signature = await connection.sendRawTransaction(signed.serialize());
+      } else if (typeof sendTransaction === 'function') {
+        signature = await sendTransaction(transaction, connection);
+      } else {
+        throw new Error('Không tìm thấy ví Phantom để ký giao dịch.');
+      }
 
       setSolanaTxSignature(signature);
       setVerificationMessage('Đang xác nhận giao dịch trên Solana Devnet...');
@@ -223,7 +251,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           eventTitle: event.title,
           tierId: tier.id,
           tierName: tier.name,
-          customerWallet: publicKey.toBase58(),
+          customerWallet: effectiveWalletAddress,
           customerName: customerName.trim() || 'Khách tham dự',
           customerEmail: customerEmail.trim() || 'customer@uniticket.io',
           txSignature: signature,
@@ -248,7 +276,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           ticketCode,
           customerName: customerName.trim() || 'Khách tham dự',
           customerEmail: customerEmail.trim() || 'customer@uniticket.io',
-          customerWallet: publicKey.toBase58(),
+          customerWallet: effectiveWalletAddress,
           purchasedAt: nowIso,
           purchaseDate: nowIso,
           status: 'valid',
@@ -289,7 +317,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
-  // Bước 1: Khi bấm "Tiếp tục thanh toán qua Solana Devnet", kích hoạt ngay luồng ký ví Phantom
+  // Bước 1: Khi bấm "Tiếp tục thanh toán qua Solana Devnet"
   const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -298,26 +326,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       return;
     }
 
-    if (!connected || !publicKey) {
-      try {
-        const phantom = wallets.find((w) => w.adapter.name.toLowerCase().includes('phantom'));
-        if (phantom) {
-          select(phantom.adapter.name);
-          await adapterConnect();
-        }
-      } catch (err) {
-        console.warn('Auto adapter connect attempt:', err);
-      }
-    }
-
-    if (!connected || !publicKey) {
-      onError('Vui lòng kết nối ví Phantom trước khi tiếp tục thanh toán.');
-      await handleConnectWalletFromModal();
+    // Kiểm tra: Nếu đã có địa chỉ ví (walletAddress hoặc publicKey), tiến hành gọi ngay hàm tạo giao dịch thanh toán Solana Devnet mà không kích hoạt lại luồng kết nối ví
+    if (effectiveWalletAddress && effectivePublicKey) {
+      await executeSolanaPayment();
       return;
     }
 
-    // Thực hiện luồng thanh toán Solana Devnet ngay lập tức, bắt buộc mở popup ví Phantom
-    await executeSolanaPayment();
+    // Chỉ khi thực sự chưa có địa chỉ ví mới gọi hàm connectWallet() hoặc hiển thị thông báo yêu cầu kết nối
+    onError('Vui lòng kết nối ví Phantom trước khi tiếp tục thanh toán.');
+    await handleConnectWalletFromModal();
   };
 
   const handleConnectWalletFromModal = async () => {
@@ -346,6 +363,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // BƯỚC 2: KÝ & GỬI TRANSACTION CHUYỂN SOL THẬT TRÊN SOLANA DEVNET QUA VÍ PHANTOM
   const handleBuyWithSolana = async () => {
+    if (!effectiveWalletAddress || !effectivePublicKey) {
+      onError('Vui lòng kết nối ví Phantom trước khi tiếp tục thanh toán.');
+      await handleConnectWalletFromModal();
+      return;
+    }
     await executeSolanaPayment();
   };
 

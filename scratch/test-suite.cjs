@@ -387,6 +387,23 @@ assert(
   'TEST 25 — Comprehensive Organizer Dashboard (4 Metric Cards, Attendee Table with CSV Export, and On-chain Revenue Withdrawal)'
 );
 
+// -------------------------------------------------------------
+// TEST 26 — CheckoutModal Wallet Sync & Toast Loop Prevention
+// -------------------------------------------------------------
+const checkoutModalCode = fs.readFileSync('src/components/checkout/CheckoutModal.tsx', 'utf8');
+const freshAppCode2 = fs.readFileSync('src/App.tsx', 'utf8');
+
+assert(
+  checkoutModalCode.includes('effectiveWalletAddress') &&
+  checkoutModalCode.includes('effectivePublicKey') &&
+  checkoutModalCode.includes('isWalletConnected') &&
+  !checkoutModalCode.includes('adapterConnect().catch(() => undefined)') &&
+  checkoutModalCode.includes('if (effectiveWalletAddress && effectivePublicKey) {') &&
+  freshAppCode2.includes('connected={connected || Boolean(walletAddress)}') &&
+  freshAppCode2.includes('publicKey={publicKey}'),
+  'TEST 26 — CheckoutModal direct wallet sync, no background reconnect toast loops, and direct Devnet payment flow'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);

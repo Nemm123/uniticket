@@ -1187,7 +1187,9 @@ export function App() {
           event={checkoutEvent}
           tier={checkoutTier}
           quantity={1}
+          connected={connected || Boolean(walletAddress)}
           walletAddress={walletAddress}
+          publicKey={publicKey}
           solBalance={solBalance}
           onSuccess={handleCheckoutSuccess}
           onError={(message) => showToast('error', message)}
