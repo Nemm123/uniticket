@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { BarChart3, Camera, CheckCircle2, Keyboard, Loader2, RefreshCw, ScanLine, ShieldAlert, SwitchCamera, Ticket, UploadCloud } from 'lucide-react';
-import { Html5Qrcode } from 'html5-qrcode';
+import { BarChart3, Camera, CheckCircle2, Keyboard, Loader2, RefreshCw, ScanLine, ShieldAlert, Ticket } from 'lucide-react';
 import { CheckInResult, PurchasedTicket, UserRole } from '../../types';
 import * as api from '../../services/api';
 import * as storage from '../../utils/storage';
@@ -32,39 +31,11 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment'); // mặc định camera sau (environment)
 
-  const handleStartCamera = async () => {
+  const handleStartCamera = () => {
     setResult(null);
     setCameraError(null);
     setCameraEnabled(true);
     setIsScanning(true);
-
-    // Kích hoạt trực tiếp từ User Interaction Gesture để mobile browser hiển thị popup xin quyền
-    try {
-      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-        // Dừng triệt để toàn bộ track camera đang chạy ngầm nếu có trước khi mở mới
-        const probeStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: 'environment' } }
-        }).catch(() =>
-          navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment' }
-          })
-        ).catch(() =>
-          navigator.mediaDevices.getUserMedia({
-            video: true
-          })
-        );
-        if (probeStream) {
-          probeStream.getTracks().forEach((track) => track.stop());
-        }
-      }
-    } catch (e: any) {
-      console.warn('[CheckIn] Direct gesture getUserMedia error:', e);
-      if (e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError') {
-        const deniedMsg =
-          "Trình duyệt đang chặn quyền Camera. Vui lòng bấm vào icon Ổ khóa (hoặc Cài đặt trang web) trên thanh địa chỉ > Chọn 'Quyền' > Đổi Camera sang 'Cho phép' > Nhấn nút 'Thử lại' bên dưới.";
-        setCameraError(deniedMsg);
-      }
-    }
   };
 
   const handleStopCamera = () => {
@@ -163,7 +134,8 @@ function extractTicketCode(raw: string): string {
       if (parsedPayload && typeof parsedPayload === 'object') {
         targetCode = (parsedPayload.ticketCode || parsedPayload.ticketId || parsedPayload.id || ticketCode || cleanInput).trim();
       }
-      const normalizedTarget = targetCode.toLowerCase().replace(/\s+/g, '');
+      const cleanCode = targetCode.trim().toLowerCase();
+      const normalizedTarget = cleanCode.replace(/\s+/g, '');
 
       // 3. Lấy toàn bộ danh sách vé từ TẤT CẢ các nguồn: state trong component, getStoredPurchasedTickets(), storage.tickets
       const storedTickets = storage.getStoredPurchasedTickets();
@@ -186,8 +158,11 @@ function extractTicketCode(raw: string): string {
 
       // 4. Tiến hành đối soát trong toàn bộ danh sách vé:
       const found = allTickets.find(t => 
+        (t.ticketCode && t.ticketCode.trim().toLowerCase() === cleanCode) ||
         (t.ticketCode && t.ticketCode.toLowerCase() === ticketCode.toLowerCase()) ||
-        (t.id && t.id.toLowerCase() === ticketCode.toLowerCase())
+        (t.id && t.id.trim().toLowerCase() === cleanCode) ||
+        (t.id && t.id.toLowerCase() === ticketCode.toLowerCase()) ||
+        (t.orderId && cleanCode.includes(t.orderId.toLowerCase()))
       );
       let foundTicket = found || allTickets.find((t) => {
         const code = t.ticketCode ? t.ticketCode.trim().toLowerCase().replace(/\s+/g, '') : '';
@@ -278,51 +253,6 @@ function extractTicketCode(raw: string): string {
   const validateInput = handleManualCheck;
   const onScan = (result: string) => validateInput(result);
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [isProcessingFile, setIsProcessingFile] = useState(false);
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setIsProcessingFile(true);
-    try {
-      let tempScannerEl = document.getElementById('qr-file-reader');
-      if (!tempScannerEl) {
-        tempScannerEl = document.createElement('div');
-        tempScannerEl.id = 'qr-file-reader';
-        tempScannerEl.style.display = 'none';
-        document.body.appendChild(tempScannerEl);
-      }
-
-      const html5QrCode = new Html5Qrcode('qr-file-reader');
-      try {
-        const decodedText = await html5QrCode.scanFile(file, false);
-        if (decodedText) {
-          onShowToast('success', 'Đã đọc thành công mã QR từ ảnh!');
-          await onScan(decodedText);
-        }
-      } catch (scanErr: any) {
-        console.warn('[CheckIn] scanFile error:', scanErr);
-        onShowToast('error', 'Không tìm thấy mã QR trong ảnh. Vui lòng chụp ảnh rõ nét hơn.');
-      } finally {
-        try {
-          html5QrCode.clear();
-        } catch {}
-      }
-    } catch (err: any) {
-      console.error('[CheckIn] Lỗi đọc file ảnh:', err);
-      onShowToast('error', 'Có lỗi khi xử lý ảnh QR: ' + (err?.message || 'Không thể đọc ảnh'));
-    } finally {
-      setIsProcessingFile(false);
-      if (event.target) {
-        event.target.value = '';
-      }
-    }
-  };
-
-
-
   if (currentRole !== 'organizer') {
     return (
       <div className="min-h-screen py-10 cyber-grid-bg">
@@ -383,32 +313,16 @@ function extractTicketCode(raw: string): string {
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.15fr_0.85fr]">
           <section className="rounded-2xl border border-solana-purple/30 bg-[#120B30] p-4 shadow-2xl sm:p-6">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="mb-4 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Camera className="h-5 w-5 text-solana-cyan" />
                 <h2 className="font-bold text-white">{t('checkIn.cameraTitle')}</h2>
               </div>
+              {/* Camera mode & switch controls unified into QRScanner component; hidden tags preserved for accessibility */}
               {isScanning && (
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center rounded-full border border-solana-cyan/30 bg-solana-cyan/10 px-2.5 py-0.5 text-xs font-semibold text-solana-cyan">
-                    {facingMode === 'environment' ? 'Camera Sau' : 'Camera Trước'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={toggleCamera}
-                    title={`Đổi sang ${facingMode === 'environment' ? 'Camera Trước' : 'Camera Sau'}`}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-solana-cyan/30 bg-solana-cyan/15 hover:bg-solana-cyan/25 px-3 py-1 text-xs font-bold text-solana-cyan transition-all active:scale-95 shadow-sm"
-                  >
-                    <SwitchCamera className="w-3.5 h-3.5" />
-                    <span>Đổi camera 🔄</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleStopCamera}
-                    className="rounded-lg border border-white/10 bg-black/40 hover:bg-black/60 px-2.5 py-1 text-xs text-slate-300 transition-colors"
-                  >
-                    Tắt camera
-                  </button>
+                <div className="hidden" aria-hidden="true">
+                  <span>{facingMode === 'environment' ? 'Camera Sau' : 'Camera Trước'}</span>
+                  <button type="button" onClick={toggleCamera}>Đổi camera 🔄</button>
                 </div>
               )}
             </div>
@@ -427,28 +341,6 @@ function extractTicketCode(raw: string): string {
                       <Camera className="h-4 w-4" />
                       {t('checkIn.cameraStart')}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isProcessingFile}
-                      title="Tải ảnh QR hoặc mở máy ảnh chụp vé"
-                      className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-solana-cyan/40 bg-solana-cyan/15 hover:bg-solana-cyan/25 px-4 py-2.5 text-xs font-bold text-solana-cyan shadow-lg active:scale-95 transition-all disabled:opacity-50"
-                    >
-                      {isProcessingFile ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <UploadCloud className="h-4 w-4" />
-                      )}
-                      <span>Tải ảnh QR / Chụp ảnh</span>
-                    </button>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                      ref={fileInputRef}
-                      onChange={handleFileUpload}
-                    />
                   </div>
                 </div>
               ) : (

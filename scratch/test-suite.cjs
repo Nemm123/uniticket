@@ -481,25 +481,29 @@ assert(
 );
 
 // -------------------------------------------------------------
-// TEST 31 — File Upload Fallback (capture="environment"), scanFile & Force getUserMedia
+// TEST 31 — Streamlined Single-Instance Camera, Remove File Upload & isOpeningCamera Lock
 // -------------------------------------------------------------
+const finalCheckInCodeForTest31 = fs.readFileSync('src/pages/CheckIn/index.tsx', 'utf8');
+const finalQRScannerCodeForTest31 = fs.readFileSync('src/components/organizer/QRScanner.tsx', 'utf8');
+
 assert(
-  // 1. File Upload fallback with native camera capture
-  finalCheckInCode.includes('capture="environment"') &&
-  finalCheckInCode.includes('accept="image/*"') &&
-  finalCheckInCode.includes('fileInputRef') &&
-  finalCheckInCode.includes('handleFileUpload') &&
-  finalCheckInCode.includes('Tải ảnh QR / Chụp ảnh') &&
-  finalCheckInCode.includes('UploadCloud') &&
-  finalCheckInCode.includes('scanFile') &&
-  finalCheckInCode.includes('onScan') &&
-  // 2. QRScanner stream track cleanup & force getUserMedia
-  finalQRScannerCode.includes('streamRef') &&
-  finalQRScannerCode.includes('streamRef.current.getTracks().forEach') &&
-  finalQRScannerCode.includes('facingMode: facingMode') &&
-  finalQRScannerCode.includes('handleFileUpload') &&
-  finalQRScannerCode.includes('capture="environment"'),
-  'TEST 31 — File Upload Fallback (capture="environment", scanFile, onScan immediate check-in, and streamRef force getUserMedia cleanup)'
+  // 1. Completely removed file upload
+  !finalCheckInCodeForTest31.includes('type="file"') &&
+  !finalQRScannerCodeForTest31.includes('type="file"') &&
+  !finalCheckInCodeForTest31.includes('handleFileUpload') &&
+  !finalQRScannerCodeForTest31.includes('handleFileUpload') &&
+  !finalCheckInCodeForTest31.includes('UploadCloud') &&
+  !finalQRScannerCodeForTest31.includes('UploadCloud') &&
+  // 2. Single-instance camera and lock protection
+  finalQRScannerCodeForTest31.includes('isOpeningCameraRef') &&
+  finalQRScannerCodeForTest31.includes('track.enabled = false') &&
+  finalQRScannerCodeForTest31.includes('playsinline') &&
+  finalQRScannerCodeForTest31.includes('videoRef.current.muted = true') &&
+  // 3. Accurate cleanCode ticket matching & direct check-in
+  finalCheckInCodeForTest31.includes('cleanCode') &&
+  finalCheckInCodeForTest31.includes('t.ticketCode.trim().toLowerCase() === cleanCode') &&
+  finalCheckInCodeForTest31.includes('handleManualCheck(ticket.ticketCode || ticket.id)'),
+  'TEST 31 — Single-Instance Camera Stream, File Upload Removed, isOpeningCamera Lock & Robust Check-In'
 );
 
 // -------------------------------------------------------------

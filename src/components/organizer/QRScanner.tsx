@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
 import QrScanner from 'qr-scanner';
-import { Camera, XCircle, SwitchCamera, Loader2, AlertCircle, CameraOff, Lock, RefreshCw, ShieldAlert, UploadCloud } from 'lucide-react';
+// Html5Qrcode fallback reference: optimized with native BarcodeDetector and QrScanner engine
+import { Camera, XCircle, SwitchCamera, Loader2, AlertCircle, CameraOff, Lock, RefreshCw, ShieldAlert } from 'lucide-react';
 
 interface QRScannerProps {
   onScanSuccess: (decodedText: string) => void;
@@ -21,10 +21,9 @@ export const QRScanner: React.FC<QRScannerProps> = ({
   onError,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const scannerRef = useRef<Html5Qrcode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanIntervalRef = useRef<any>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const isOpeningCameraRef = useRef(false);
   const [isStarting, setIsStarting] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -37,125 +36,119 @@ export const QRScanner: React.FC<QRScannerProps> = ({
     onScanSuccess(result);
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const qrEl = document.getElementById('qr-reader');
-      if (qrEl) {
-        const html5QrCode = scannerRef.current || new Html5Qrcode('qr-reader');
-        const decodedText = await html5QrCode.scanFile(file, false);
-        if (decodedText) {
-          onScan(decodedText);
-        }
-      }
-    } catch (err: any) {
-      console.warn('[QRScanner] Lỗi quét file ảnh:', err);
-      onError?.('Không tìm thấy mã QR trong ảnh. Vui lòng chụp ảnh rõ nét hơn.');
-    } finally {
-      if (event.target) {
-        event.target.value = '';
-      }
-    }
-  };
-
   const stopExistingTracks = () => {
     try {
       if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => {
+          track.enabled = false;
+          track.stop();
+        });
         streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
       }
       if (videoRef.current && videoRef.current.srcObject instanceof MediaStream) {
-        videoRef.current.srcObject.getTracks().forEach((track) => track.stop());
+        videoRef.current.srcObject.getTracks().forEach((track) => {
+          track.enabled = false;
+          track.stop();
+        });
         videoRef.current.srcObject = null;
       }
       const videoEl = document.querySelector('#qr-reader video') as HTMLVideoElement | null;
       if (videoEl && videoEl.srcObject instanceof MediaStream) {
-        videoEl.srcObject.getTracks().forEach((track) => track.stop());
+        videoEl.srcObject.getTracks().forEach((track) => {
+          track.enabled = false;
+          track.stop();
+        });
         videoEl.srcObject = null;
       }
     } catch {}
   };
 
   const startScanner = async () => {
+    if (isOpeningCameraRef.current) return;
+    isOpeningCameraRef.current = true;
     setIsStarting(true);
     setCameraError(null);
     setPermissionDenied(false);
 
-    // Duy trì luồng stream đang hoạt động tốt nếu không đổi facingMode
-    const isLive = Boolean(
-      streamRef.current &&
-      streamRef.current.active &&
-      streamRef.current.getVideoTracks().some((t) => t.readyState === 'live')
-    );
-    if (isLive && activeFacingModeRef.current === facingMode) {
-      if (videoRef.current && videoRef.current.srcObject !== streamRef.current) {
-        videoRef.current.srcObject = streamRef.current;
-        videoRef.current.setAttribute('playsinline', 'true');
-        videoRef.current.play().catch((e) => console.error('Video play error:', e));
-      }
-      setIsStarting(false);
-      return;
-    }
-
-    // 1. Trước khi mở stream mới, dừng triệt để toàn bộ track camera đang chạy ngầm:
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-    if (scanIntervalRef.current) {
-      clearInterval(scanIntervalRef.current);
-      scanIntervalRef.current = null;
-    }
-    stopExistingTracks();
-
-    let stream: MediaStream | null = null;
-
     try {
+      // Duy trì luồng stream đang hoạt động tốt nếu không đổi facingMode
+      const isLive = Boolean(
+        streamRef.current &&
+        streamRef.current.active &&
+        streamRef.current.getVideoTracks().some((t) => t.readyState === 'live')
+      );
+      if (isLive && activeFacingModeRef.current === facingMode) {
+        if (videoRef.current && videoRef.current.srcObject !== streamRef.current) {
+          videoRef.current.srcObject = streamRef.current;
+          videoRef.current.setAttribute('playsinline', 'true');
+          videoRef.current.muted = true;
+          await videoRef.current.play().catch((e) => console.error('Video play error:', e));
+        }
+        return;
+      }
+
+      // 1. Trước khi mở stream mới, dừng triệt để toàn bộ track camera đang chạy ngầm:
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => {
+          track.enabled = false;
+          track.stop();
+        });
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+      if (scanIntervalRef.current) {
+        clearInterval(scanIntervalRef.current);
+        scanIntervalRef.current = null;
+      }
+      stopExistingTracks();
+
       if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
         throw new Error('Trình duyệt không hỗ trợ MediaDevices API.');
       }
 
-      // Cấu hình media constraints theo thứ tự ưu tiên từ cao xuống thấp (Fallback Constraints):
-      const isBackCamera = facingMode === 'environment';
+      // Cấu hình media constraints an toàn trên mobile
+      const constraints = {
+        video: {
+          facingMode: facingMode === 'environment' ? 'environment' : 'user',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      };
 
+      let stream: MediaStream | null = null;
       try {
-        // Cung cấp constraints chuẩn:
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: facingMode } },
-          audio: false
-        });
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (idealErr) {
         console.warn('[QRScanner] Thử fallback constraints tuần tự:', idealErr);
-        // Bước 1: Thử lấy camera sau với facingMode:
         try {
-          if (isBackCamera) {
-            stream = await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: { exact: 'environment' } }
-            });
-          } else {
-            stream = await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: { exact: 'user' } }
-            });
-          }
-        } catch (step1Err) {
-          console.warn('[QRScanner] Bước 1 exact environment thất bại, chuyển sang Bước 2:', step1Err);
-          // Bước 2 (nếu lỗi): Thử facingMode mềm:
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: facingMode } },
+            audio: false
+          });
+        } catch (idealErr2) {
           try {
             stream = await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: 'environment' }
+              video: { facingMode: facingMode === 'environment' ? 'environment' : 'user' },
+              audio: false
             });
-          } catch (step2Err) {
-            console.warn('[QRScanner] Bước 2 facingMode: environment thất bại, thử facingMode: facingMode hoặc ideal:', step2Err);
+          } catch (softErr) {
             try {
+              // Bước 1: Thử exact
               stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: facingMode }
+                video: { facingMode: { exact: 'environment' } }
               });
-            } catch (step2bErr) {
-              console.warn('[QRScanner] Thử ideal constraints { facingMode: { ideal: facingMode } }:', step2bErr);
-              // Bước 3 (nếu vẫn lỗi): Mở bất kỳ camera nào khả dụng trên máy:
-              stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            } catch (step1Err) {
+              try {
+                // Bước 2: Thử soft
+                stream = await navigator.mediaDevices.getUserMedia({
+                  video: { facingMode: 'environment' }
+                });
+              } catch (step2Err) {
+                // Bước 3: Mở bất kỳ camera nào khả dụng
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+              }
             }
           }
         }
@@ -174,7 +167,8 @@ export const QRScanner: React.FC<QRScannerProps> = ({
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.setAttribute('playsinline', 'true');
-        videoRef.current.play().catch((e) => console.error('Video play error:', e));
+        videoRef.current.muted = true;
+        await videoRef.current.play().catch((e) => console.error('Video play error:', e));
       }
 
       // Khởi chạy vòng lặp phát hiện mã QR
@@ -237,6 +231,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({
         onError?.(otherMsg);
       }
     } finally {
+      isOpeningCameraRef.current = false;
       setIsStarting(false);
     }
   };
@@ -267,6 +262,10 @@ export const QRScanner: React.FC<QRScannerProps> = ({
         scanIntervalRef.current = null;
       }
       if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => {
+          track.enabled = false;
+          track.stop();
+        });
         streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
       }
@@ -288,15 +287,6 @@ export const QRScanner: React.FC<QRScannerProps> = ({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            title="Tải ảnh QR / Chụp ảnh từ máy"
-            className="inline-flex items-center gap-1.5 rounded-full border border-solana-purple/40 bg-solana-purple/15 hover:bg-solana-purple/25 px-2.5 py-1 text-xs font-bold text-purple-300 transition-all active:scale-95"
-          >
-            <UploadCloud className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Tải ảnh QR</span>
-          </button>
           {onToggleCamera && (
             <button
               type="button"
@@ -399,14 +389,6 @@ export const QRScanner: React.FC<QRScannerProps> = ({
                 <span>Thử lại mở Camera</span>
                 <span className="hidden">Thử lại cấp quyền</span>
               </button>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-2 rounded-xl border border-solana-cyan/40 bg-solana-cyan/15 hover:bg-solana-cyan/25 px-4 py-2.5 text-xs font-bold text-solana-cyan active:scale-95 transition-all"
-              >
-                <UploadCloud className="w-3.5 h-3.5" />
-                Tải ảnh QR / Chụp ảnh
-              </button>
             </div>
           </div>
         ) : cameraError ? (
@@ -424,26 +406,9 @@ export const QRScanner: React.FC<QRScannerProps> = ({
                 <span>Thử lại mở Camera</span>
                 <span className="hidden">Thử lại cấp quyền</span>
               </button>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-solana-cyan/40 bg-solana-cyan/15 hover:bg-solana-cyan/25 px-3.5 py-2 text-xs font-bold text-solana-cyan transition-all active:scale-95"
-              >
-                <UploadCloud className="w-3.5 h-3.5" />
-                Tải ảnh QR / Chụp ảnh
-              </button>
             </div>
           </div>
         ) : null}
-
-        <input
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          ref={fileInputRef}
-          onChange={handleFileUpload}
-        />
 
         <div
           id="qr-reader"
