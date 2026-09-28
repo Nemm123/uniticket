@@ -25,11 +25,83 @@ export const SOLANA_TREASURY_WALLET = new PublicKey(SOLANA_TREASURY_WALLET_STR);
 
 let devnetConnection: Connection | null = null;
 
+/**
+ * Danh sách RPC Solana Devnet chính và dự phòng
+ */
+export const DEVNET_RPCS = [
+  'https://api.devnet.solana.com',
+  'https://rpc.ankr.com/solana_devnet',
+];
+
 export function getDevnetConnection(): Connection {
   if (!devnetConnection) {
     devnetConnection = new Connection(SOLANA_DEVNET_RPC_URL, 'confirmed');
   }
   return devnetConnection;
+}
+
+/**
+ * Lấy recentBlockhash mới nhất với cam kết 'confirmed' kèm cơ chế thử lại qua danh sách RPC Devnet dự phòng
+ */
+export async function getLatestBlockhashWithRetry(
+  primaryConnection?: Connection,
+  commitment: 'confirmed' | 'finalized' = 'confirmed'
+): Promise<{ blockhash: string; lastValidBlockHeight: number; connection: Connection }> {
+  const rpcList: string[] = [];
+  if (primaryConnection?.rpcEndpoint) {
+    rpcList.push(primaryConnection.rpcEndpoint);
+  }
+  for (const rpc of DEVNET_RPCS) {
+    if (!rpcList.includes(rpc)) {
+      rpcList.push(rpc);
+    }
+  }
+
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt < rpcList.length; attempt++) {
+    const rpcUrl = rpcList[attempt];
+    try {
+      const conn = (primaryConnection && primaryConnection.rpcEndpoint === rpcUrl)
+        ? primaryConnection
+        : new Connection(rpcUrl, commitment);
+
+      const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash(commitment);
+      if (blockhash && typeof blockhash === 'string' && blockhash.trim().length > 0) {
+        return { blockhash, lastValidBlockHeight, connection: conn };
+      }
+    } catch (err) {
+      lastError = err;
+      console.warn(`[SolanaClient] Thử lấy blockhash thất bại tại RPC ${rpcUrl} (lần ${attempt + 1}):`, err);
+    }
+  }
+
+  throw new Error(
+    `Không thể lấy recentBlockhash từ Solana Devnet RPC: ${lastError instanceof Error ? lastError.message : String(lastError)}`
+  );
+}
+
+/**
+ * Chuẩn bị và gán recentBlockhash + feePayer chắc chắn hợp lệ trước khi ký/gửi
+ */
+export async function prepareSolanaTransaction(
+  transaction: Transaction,
+  payerPublicKey: PublicKey,
+  existingConnection?: Connection
+): Promise<{ blockhash: string; lastValidBlockHeight: number; connection: Connection }> {
+  const { blockhash, lastValidBlockHeight, connection } = await getLatestBlockhashWithRetry(
+    existingConnection,
+    'confirmed'
+  );
+
+  transaction.recentBlockhash = blockhash;
+  transaction.feePayer = payerPublicKey;
+
+  if (!transaction.recentBlockhash) {
+    throw new Error('Transaction recentBlockhash required');
+  }
+
+  return { blockhash, lastValidBlockHeight, connection };
 }
 
 /**
@@ -114,15 +186,16 @@ export function parseSolanaTxError(error: unknown): string {
     return 'Số dư SOL trên Devnet không đủ để trả phí mạng (gas fee). Vui lòng nhận thêm SOL miễn phí tại faucet.solana.com.';
   }
 
-  // 3. Giao dịch timeout hoặc blockhash hết hạn
+  // 3. Giao dịch timeout hoặc blockhash hết hạn / thiếu blockhash
   if (
     lower.includes('timeout') ||
-    lower.includes('blockhash not found') ||
+    lower.includes('blockhash') ||
+    lower.includes('recentblockhash') ||
     lower.includes('expired') ||
     lower.includes('timed out') ||
     lower.includes('was not confirmed')
   ) {
-    return 'Giao dịch quá thời gian chờ xác nhận trên mạng Solana Devnet. Vui lòng thử lại sau giây lát.';
+    return 'Giao dịch gặp sự cố mã khối (Blockhash) hoặc quá thời gian chờ xác nhận trên Solana Devnet. Đang tự động làm mới, vui lòng thử lại.';
   }
 
   // 4. Rate limited / RPC quá tải
@@ -157,8 +230,8 @@ export interface BuyTicketSolanaResult {
 
 /**
  * Xử lý luồng ký và gửi giao dịch mua vé / mint NFT lên Solana Devnet:
- * 1. Khi bấm mua: thông báo "Vui lòng ký giao dịch trên ví..."
- * 2. Khi ví đã ký: chuyển sang "Đang xác nhận giao dịch trên Solana Devnet..."
+ * 1. Khi bấm mua: thông báo "Đang khởi tạo giao dịch Solana...", chuẩn bị recentBlockhash
+ * 2. Khi chuẩn bị xong: chuyển sang "Vui lòng ký giao dịch trên ví..."
  * 3. Sau khi confirmed: trả về signature và link Solana Explorer chuẩn
  */
 export async function executeBuyTicketOnSolana(
@@ -183,15 +256,10 @@ export async function executeBuyTicketOnSolana(
     );
   }
 
-  // 1. Trạng thái: Chờ người dùng ký trên ví
-  onStatusChange?.('SIGNING', 'Vui lòng ký giao dịch trên ví...');
+  // 1. Trạng thái: Đang khởi tạo giao dịch Solana...
+  onStatusChange?.('SIGNING', 'Đang khởi tạo giao dịch Solana...');
 
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
-
-  const transaction = new Transaction({
-    feePayer: buyerPubKey,
-    recentBlockhash: blockhash,
-  });
+  const transaction = new Transaction();
 
   // Tạo Instruction tương tác với Treasury / Program ID
   const lamportsToSend = Math.max(
@@ -224,17 +292,27 @@ export async function executeBuyTicketOnSolana(
     // Program memo instruction is optional
   }
 
+  // Luôn luôn lấy blockhash mới nhất kèm cam kết 'confirmed' với RPC retry trước khi ký
+  const { blockhash, lastValidBlockHeight, connection: activeConnection } =
+    await prepareSolanaTransaction(transaction, buyerPubKey, connection);
+
+  if (!transaction.recentBlockhash) {
+    throw new Error('Transaction recentBlockhash required');
+  }
+
+  onStatusChange?.('SIGNING', 'Vui lòng ký giao dịch trên ví...');
+
   // Yêu cầu ví Phantom ký và phát transaction (qua sendTransaction của adapter hoặc provider)
   let signature: string;
   try {
     if (typeof sendTransaction === 'function') {
-      signature = await sendTransaction(transaction, connection);
+      signature = await sendTransaction(transaction, activeConnection);
     } else if (provider && typeof provider.signAndSendTransaction === 'function') {
       const res = await provider.signAndSendTransaction(transaction);
       signature = res.signature;
     } else if (provider && typeof provider.signTransaction === 'function') {
       const signed = await provider.signTransaction(transaction);
-      signature = await connection.sendRawTransaction(signed.serialize());
+      signature = await activeConnection.sendRawTransaction(signed.serialize());
     } else {
       throw new Error('Ví Phantom không hỗ trợ phương thức ký giao dịch.');
     }
@@ -246,7 +324,7 @@ export async function executeBuyTicketOnSolana(
   onStatusChange?.('CONFIRMING', 'Đang xác nhận giao dịch trên Solana Devnet...');
 
   try {
-    const confirmResult = await connection.confirmTransaction(
+    const confirmResult = await activeConnection.confirmTransaction(
       {
         signature,
         blockhash,

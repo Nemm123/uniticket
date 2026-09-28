@@ -28,6 +28,8 @@ import {
   getSolanaExplorerUrl,
   getWalletSolBalance,
   SOLANA_TREASURY_WALLET_STR,
+  prepareSolanaTransaction,
+  getLatestBlockhashWithRetry,
 } from '../../services/solanaClient';
 import { PhantomLogo } from '../common/PhantomLogo';
 
@@ -183,7 +185,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     setIsVerifying(true);
     setVerificationSuccess(false);
-    setVerificationMessage('Vui lòng ký giao dịch trên ví Phantom...');
+    setVerificationMessage('Đang khởi tạo giao dịch Solana...');
 
     try {
       // 1. Tạo transaction chuyển SOL thật trên Devnet bằng SystemProgram.transfer
@@ -198,36 +200,83 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         })
       );
 
+      // Luôn luôn lấy blockhash mới nhất kèm cam kết 'confirmed' với RPC retry trước khi ký
+      let activeConnection = connection;
+      let blockhash = '';
+      let lastValidBlockHeight = 0;
+
+      try {
+        const prep = await prepareSolanaTransaction(transaction, effectivePublicKey, connection);
+        blockhash = prep.blockhash;
+        lastValidBlockHeight = prep.lastValidBlockHeight;
+        activeConnection = prep.connection;
+      } catch (prepErr) {
+        console.warn('[CheckoutModal] Lần đầu lấy blockhash thất bại, tự động fetch lại lần 2...', prepErr);
+        const { blockhash: retryHash, lastValidBlockHeight: retryHeight, connection: retryConn } =
+          await getLatestBlockhashWithRetry(connection, 'confirmed');
+        transaction.recentBlockhash = retryHash;
+        transaction.feePayer = effectivePublicKey;
+        blockhash = retryHash;
+        lastValidBlockHeight = retryHeight;
+        activeConnection = retryConn;
+      }
+
+      // Đảm bảo transaction.recentBlockhash chắc chắn có giá trị trước khi gửi
+      if (!transaction.recentBlockhash) {
+        throw new Error('Transaction recentBlockhash required');
+      }
+
+      setVerificationMessage('Vui lòng ký giao dịch trên ví Phantom...');
+
       // BẮT BUỘC gọi sendTransaction để ví Phantom hiển thị popup yêu cầu người dùng xác nhận chuyển SOL
       let signature: string;
       const phantomProvider = (window as any).phantom?.solana || (window as any).solana;
 
-      if (adapterConnected && typeof sendTransaction === 'function') {
-        signature = await sendTransaction(transaction, connection);
-      } else if (phantomProvider && typeof phantomProvider.signAndSendTransaction === 'function') {
-        const res = await phantomProvider.signAndSendTransaction(transaction);
-        signature = res.signature;
-      } else if (phantomProvider && typeof phantomProvider.signTransaction === 'function') {
-        const { blockhash } = await connection.getLatestBlockhash('confirmed');
-        transaction.recentBlockhash = blockhash;
-        transaction.feePayer = effectivePublicKey;
-        const signed = await phantomProvider.signTransaction(transaction);
-        signature = await connection.sendRawTransaction(signed.serialize());
-      } else if (typeof sendTransaction === 'function') {
-        signature = await sendTransaction(transaction, connection);
-      } else {
-        throw new Error('Không tìm thấy ví Phantom để ký giao dịch.');
+      const performSend = async (): Promise<string> => {
+        if (adapterConnected && typeof sendTransaction === 'function') {
+          return await sendTransaction(transaction, activeConnection);
+        } else if (phantomProvider && typeof phantomProvider.signAndSendTransaction === 'function') {
+          const res = await phantomProvider.signAndSendTransaction(transaction);
+          return res.signature;
+        } else if (phantomProvider && typeof phantomProvider.signTransaction === 'function') {
+          const signed = await phantomProvider.signTransaction(transaction);
+          return await activeConnection.sendRawTransaction(signed.serialize());
+        } else if (typeof sendTransaction === 'function') {
+          return await sendTransaction(transaction, activeConnection);
+        } else {
+          throw new Error('Không tìm thấy ví Phantom để ký giao dịch.');
+        }
+      };
+
+      try {
+        signature = await performSend();
+      } catch (sendErr: any) {
+        const errMsg = String(sendErr?.message || sendErr || '').toLowerCase();
+        // Bắt lỗi cụ thể nếu thiếu blockhash hoặc blockhash hết hạn và tự động fetch lại 1 lần trước khi báo lỗi
+        if (errMsg.includes('blockhash') || errMsg.includes('recentblockhash')) {
+          console.warn('[CheckoutModal] Phát hiện lỗi blockhash khi gửi, đang tự động lấy lại blockhash mới và thử lại...');
+          setVerificationMessage('Đang làm mới mã khối Solana...');
+          const prep = await prepareSolanaTransaction(transaction, effectivePublicKey, activeConnection);
+          blockhash = prep.blockhash;
+          lastValidBlockHeight = prep.lastValidBlockHeight;
+          activeConnection = prep.connection;
+          setVerificationMessage('Vui lòng ký xác nhận giao dịch trên ví Phantom...');
+          signature = await performSend();
+        } else {
+          throw sendErr;
+        }
       }
 
       setSolanaTxSignature(signature);
       setVerificationMessage('Đang xác nhận giao dịch trên Solana Devnet...');
 
-      const latestBlockHash = await connection.getLatestBlockhash('confirmed');
-      await connection.confirmTransaction(
+      const confirmBlockhash = blockhash || (await activeConnection.getLatestBlockhash('confirmed')).blockhash;
+      const confirmHeight = lastValidBlockHeight || (await activeConnection.getLatestBlockhash('confirmed')).lastValidBlockHeight;
+      await activeConnection.confirmTransaction(
         {
           signature,
-          blockhash: latestBlockHash.blockhash,
-          lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
+          blockhash: confirmBlockhash,
+          lastValidBlockHeight: confirmHeight,
         },
         'confirmed'
       );
