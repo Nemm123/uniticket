@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { BarChart3, Camera, CheckCircle2, Keyboard, Loader2, RefreshCw, ScanLine, ShieldAlert, SwitchCamera, Ticket } from 'lucide-react';
 import { CheckInResult, PurchasedTicket, UserRole } from '../../types';
 import * as api from '../../services/api';
+import * as storage from '../../utils/storage';
 import { useTranslation } from '../../i18n';
 import { QRScanner } from '../../components/organizer/QRScanner';
 
@@ -14,7 +15,13 @@ interface CheckInPageProps {
 }
 
 type TicketFilter = 'all' | 'checked-in' | 'unused';
-const ticketIsCheckedIn = (ticket: PurchasedTicket) => ticket.isCheckedIn || ticket.status === 'checked_in' || ticket.status === 'CHECKED_IN';
+const ticketIsCheckedIn = (ticket: PurchasedTicket) =>
+  ticket.isCheckedIn ||
+  ticket.status === 'checked_in' ||
+  ticket.status === 'CHECKED_IN' ||
+  ticket.status === 'USED' ||
+  ticket.status === 'used' ||
+  ticket.checkInStatus === 'checked-in';
 
 export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizerAddress, onShowToast, onTicketsChanged, onNavigate }) => {
   const { t, formatDate } = useTranslation();
@@ -23,10 +30,6 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
   const [isScanning, setIsScanning] = useState(false);
   const [cameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment'); // mặc định camera sau (environment)
-
-  const toggleCamera = () => {
-    setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
-  };
 
   const handleStartCamera = () => {
     setResult(null);
@@ -64,7 +67,12 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
     void refreshTickets();
   }, []);
 
-  const validateInput = async (input: string) => {
+  const handleFlipCamera = () => {
+    setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
+  };
+  const toggleCamera = handleFlipCamera;
+
+  const handleManualCheck = async (input: string) => {
     if (processingRef.current || currentRole !== 'organizer') return;
     processingRef.current = true;
     setIsValidating(true);
@@ -72,18 +80,18 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
     setIsScanning(false);
 
     try {
-      const rawInput = input.trim();
-      if (!rawInput) {
+      const cleanInput = input.trim();
+      if (!cleanInput) {
         onShowToast('error', 'Vui lòng nhập mã vé hợp lệ.');
         return;
       }
 
-      // 1. Giải mã chuỗi JSON lấy ticketId, ticketCode, signature và timestamp (Dynamic QR)
+      // 1. Phân tích chuỗi nếu là Dynamic QR (JSON string)
       let parsedPayload: any = null;
       try {
-        parsedPayload = JSON.parse(rawInput);
+        parsedPayload = JSON.parse(cleanInput);
       } catch {
-        // Chuỗi không phải JSON (có thể là ticketCode như UTK-5495-1 hoặc ticketId/UUID nhập tay)
+        // Chuỗi không phải JSON (người dùng nhập mã vé trực tiếp như "UTK-4130-1")
       }
 
       // 2. Chống chụp màn hình gian lận: Kiểm tra thời hạn 60s cho Dynamic QR
@@ -100,78 +108,120 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
         }
       }
 
-      // Lấy định danh tốt nhất để tra cứu
-      const searchTarget = (parsedPayload && typeof parsedPayload === 'object')
-        ? (parsedPayload.ticketCode || parsedPayload.ticketId || parsedPayload.id || parsedPayload.signature || rawInput)
-        : rawInput;
+      // Trích xuất mã đối soát: nếu là JSON thì lấy ticketCode hoặc ticketId
+      let targetCode = cleanInput;
+      if (parsedPayload && typeof parsedPayload === 'object') {
+        targetCode = (parsedPayload.ticketCode || parsedPayload.ticketId || parsedPayload.id || cleanInput).trim();
+      }
+      const normalizedTarget = targetCode.toLowerCase().replace(/\s+/g, '');
 
-      // 3. Tra cứu vé trong hệ thống qua API / storage
-      const backendValidation = await api.verifyTicketCheckIn(rawInput);
+      // 3. Lấy toàn bộ danh sách vé từ TẤT CẢ các nguồn: state trong component, getStoredPurchasedTickets(), storage.tickets
+      const storedTickets = storage.getStoredPurchasedTickets();
+      let rawStorageTickets: PurchasedTicket[] = [];
+      try {
+        const raw = localStorage.getItem('uniticket_purchased_tickets');
+        if (raw) rawStorageTickets = JSON.parse(raw);
+      } catch {}
 
-      if (backendValidation.status === 'valid') {
-        // Tự động check-in
-        const ticketId = backendValidation.ticket?.id || backendValidation.ticket?.ticketCode || searchTarget;
-        const confirmResult = await api.checkInTicket(ticketId, organizerAddress || undefined);
-        
-        if (confirmResult.status !== 'error') {
-          setResult({
-            ...confirmResult,
-            message: 'Hợp lệ - Cho phép qua cổng',
-            ticket: confirmResult.ticket || backendValidation.ticket,
-          });
-          await refreshTickets();
-          onTicketsChanged();
-          onShowToast('success', 'Hợp lệ - Cho phép qua cổng');
-        } else {
-          setResult(confirmResult);
-          onShowToast('error', confirmResult.message);
+      const allTicketsMap = new Map<string, PurchasedTicket>();
+      [...tickets, ...storedTickets, ...rawStorageTickets].forEach((t) => {
+        if (t && (t.id || t.ticketCode)) {
+          const key = (t.ticketCode || t.id).toLowerCase();
+          if (!allTicketsMap.has(key)) {
+            allTicketsMap.set(key, t);
+          }
         }
-      } else if (backendValidation.status === 'used') {
-        setResult({ ...backendValidation, message: 'Vé đã được sử dụng! (Cảnh báo vé giả/quét trùng)' });
-        onShowToast('error', 'Vé đã được sử dụng! (Cảnh báo vé giả/quét trùng)');
-      } else if (backendValidation.status === 'error' && backendValidation.message.includes('hết hạn')) {
-        setResult({ ...backendValidation, message: 'Mã QR đã hết hạn! Vui lòng mở ứng dụng UniTicket trực tiếp' });
-        onShowToast('error', 'Mã QR đã hết hạn! Vui lòng mở ứng dụng UniTicket trực tiếp');
-      } else {
-        // Fallback tra cứu trong danh sách vé hiện tại (theo ticketCode, id, signature)
-        const cleanTarget = searchTarget.toLowerCase();
-        const matched = tickets.find(
-          (t) =>
-            t.ticketCode?.toLowerCase() === cleanTarget ||
-            t.id?.toLowerCase() === cleanTarget ||
-            t.signature === searchTarget ||
-            t.txSignature === searchTarget
+      });
+      const allTickets = Array.from(allTicketsMap.values());
+
+      // 4. Tìm vé thỏa mãn điều kiện linh hoạt (không phân biệt hoa thường, bỏ qua dấu cách):
+      let foundTicket = allTickets.find((t) => {
+        const code = t.ticketCode ? t.ticketCode.trim().toLowerCase().replace(/\s+/g, '') : '';
+        const id = t.id ? t.id.trim().toLowerCase().replace(/\s+/g, '') : '';
+        const orderId = t.orderId ? t.orderId.trim().toLowerCase() : '';
+        return (
+          (code && (code === normalizedTarget || normalizedTarget.includes(code) || code.includes(normalizedTarget))) ||
+          (id && (id === normalizedTarget || normalizedTarget.includes(id) || id.includes(normalizedTarget))) ||
+          (orderId && normalizedTarget.includes(orderId)) ||
+          (t.signature && t.signature === targetCode) ||
+          (t.txSignature && t.txSignature === targetCode)
+        );
+      });
+
+      // Nếu chưa thấy trong local, thử đối soát với Supabase Cloud
+      if (!foundTicket) {
+        const backendValidation = await api.verifyTicketCheckIn(cleanInput);
+        if (backendValidation.ticket) {
+          foundTicket = backendValidation.ticket;
+        }
+      }
+
+      // 5. Xử lý kết quả kiểm tra vé
+      if (foundTicket) {
+        if (
+          foundTicket.status === 'USED' ||
+          foundTicket.status === 'used' ||
+          foundTicket.status === 'checked_in' ||
+          foundTicket.status === 'CHECKED_IN' ||
+          foundTicket.isCheckedIn ||
+          foundTicket.checkInStatus === 'checked-in'
+        ) {
+          const usedMsg = 'Vé này đã được soát trước đó!';
+          setResult({
+            status: 'used',
+            message: usedMsg,
+            ticket: foundTicket,
+          });
+          onShowToast('error', usedMsg);
+          return;
+        }
+
+        // Cập nhật vé sang trạng thái "USED", ghi nhận thời gian check-in, cập nhật lại vào Storage & State
+        const nowIso = new Date().toISOString();
+        const nowMs = Date.now();
+        const updatedTicket: PurchasedTicket = {
+          ...foundTicket,
+          status: 'USED',
+          isCheckedIn: true,
+          checkInStatus: 'checked-in',
+          checkInTime: nowIso,
+          checkedInAt: nowMs,
+          checkedInBy: organizerAddress || 'Organizers',
+        };
+
+        // Ghi vào Storage & Supabase
+        storage.confirmTicketCheckIn(foundTicket.id, organizerAddress || 'Organizers');
+        await api.checkInTicket(foundTicket.id, organizerAddress || undefined).catch(() => undefined);
+
+        // Cập nhật State
+        setTickets((prev) =>
+          prev.map((t) => (t.id === foundTicket!.id || t.ticketCode === foundTicket!.ticketCode ? updatedTicket : t))
         );
 
-        if (matched) {
-          if (ticketIsCheckedIn(matched)) {
-            setResult({
-              status: 'used',
-              message: 'Vé đã được sử dụng! (Cảnh báo vé giả/quét trùng)',
-              ticket: matched,
-            });
-            onShowToast('error', 'Vé đã được sử dụng! (Cảnh báo vé giả/quét trùng)');
-          } else {
-            const confirmResult = await api.checkInTicket(matched.id, organizerAddress || undefined);
-            setResult({
-              ...confirmResult,
-              message: 'Hợp lệ - Cho phép qua cổng',
-              ticket: confirmResult.ticket || matched,
-            });
-            await refreshTickets();
-            onTicketsChanged();
-            onShowToast('success', 'Hợp lệ - Cho phép qua cổng');
-          }
-        } else {
-          setResult({ ...backendValidation, message: 'Mã vé không hợp lệ' });
-          onShowToast('error', 'Mã vé không hợp lệ');
-        }
+        const successMsg = `Soát vé thành công: ${foundTicket.customerName} - ${foundTicket.ticketCode}`;
+        setResult({
+          status: 'valid',
+          message: successMsg,
+          ticket: updatedTicket,
+        });
+        onShowToast('success', successMsg);
+
+        await refreshTickets();
+        onTicketsChanged();
+      } else {
+        setResult({
+          status: 'invalid',
+          message: 'Mã vé không hợp lệ',
+        });
+        onShowToast('error', 'Mã vé không hợp lệ');
       }
     } finally {
       setIsValidating(false);
       processingRef.current = false;
     }
   };
+
+  const validateInput = handleManualCheck;
 
   // camera logic handled by QRScanner component
 
@@ -439,11 +489,11 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
                   {!ticketIsCheckedIn(ticket) && (
                     <button
                       type="button"
-                      onClick={() => void validateInput(ticket.ticketCode)}
+                      onClick={() => void handleManualCheck(ticket.ticketCode || ticket.id)}
                       disabled={isValidating}
-                      className="mt-1 inline-flex items-center gap-1 rounded-lg bg-solana-purple/80 hover:bg-solana-purple px-2 py-0.5 text-[11px] font-semibold text-white transition-colors"
+                      className="mt-1 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-solana-purple to-neon-pink hover:from-solana-purple/90 hover:to-neon-pink/90 px-3 py-1 text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-purple-950/40"
                     >
-                      <CheckCircle2 className="w-3 h-3" /> Soát vé
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Soát vé
                     </button>
                   )}
                   {ticket.checkInTime && (

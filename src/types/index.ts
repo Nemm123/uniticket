@@ -106,7 +106,7 @@ export interface PurchasedTicket {
   customerWallet: string;
   purchasedAt: string;      // ISO string
   purchaseDate: string;      // ISO string nghiệp vụ
-  status: 'valid' | 'checked_in' | 'transferred' | 'VALID' | 'CHECKED_IN';
+  status: 'valid' | 'checked_in' | 'transferred' | 'VALID' | 'CHECKED_IN' | 'USED' | 'used' | 'UNUSED' | 'unused' | (string & {});
   isCheckedIn: boolean;
   isUsed?: boolean;
   transferredAt?: string;

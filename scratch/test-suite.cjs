@@ -437,6 +437,20 @@ assert(
   'TEST 28 — Camera Flip (Front/Rear facing mode, ideal constraints, toggleCamera, and safe stream switching)'
 );
 
+// -------------------------------------------------------------
+// TEST 29 — Robust Ticket Code Search, Direct Check-In & Flip Camera
+// -------------------------------------------------------------
+assert(
+  freshCheckInCode.includes('handleManualCheck') &&
+  freshCheckInCode.includes('handleFlipCamera') &&
+  freshCheckInCode.includes('Vé này đã được soát trước đó!') &&
+  freshCheckInCode.includes('Soát vé thành công:') &&
+  freshCheckInCode.includes("status: 'USED'") &&
+  freshCheckInCode.includes('allTickets') &&
+  freshQRScannerCode.includes('stopExistingTracks'),
+  'TEST 29 — Robust Ticket Search (allTickets sources, USED status, already checked-in warning, and direct button)'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);

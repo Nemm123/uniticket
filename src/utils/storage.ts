@@ -454,7 +454,14 @@ function restoreStorageValue(key: string, value: string | null): void {
  */
 
 function isCheckedIn(ticket: PurchasedTicket): boolean {
-  return ticket.isCheckedIn || ticket.checkInStatus === 'checked-in' || ticket.status === 'checked_in' || ticket.status === 'CHECKED_IN';
+  return (
+    ticket.isCheckedIn ||
+    ticket.checkInStatus === 'checked-in' ||
+    ticket.status === 'checked_in' ||
+    ticket.status === 'CHECKED_IN' ||
+    ticket.status === 'USED' ||
+    ticket.status === 'used'
+  );
 }
 
 /** Validates a QR payload against the stored ticket without changing ticket state. */
@@ -522,6 +529,8 @@ export function validateTicketForCheckIn(input: string): CheckInResult {
         (payloadCode && itemCode === payloadCode) ||
         itemOrderId === cleanTarget ||
         itemOrderId === cleanInput ||
+        (cleanInput && itemOrderId && cleanInput.includes(itemOrderId)) ||
+        (cleanTarget && itemOrderId && cleanTarget.includes(itemOrderId)) ||
         (Boolean(itemSig) && (itemSig === input.trim() || itemSig === targetTicketId || itemSig === payloadSig))
       );
     });
@@ -539,7 +548,7 @@ export function validateTicketForCheckIn(input: string): CheckInResult {
     }
 
     if (isCheckedIn(ticket)) {
-      return { status: 'used', message: 'Vé đã được sử dụng! (Cảnh báo vé giả/quét trùng)', ticket };
+      return { status: 'used', message: 'Vé này đã được soát trước đó!', ticket };
     }
 
     return { status: 'valid', message: 'Hợp lệ - Cho phép qua cổng', ticket };
@@ -575,14 +584,14 @@ export function confirmTicketCheckIn(ticketId: string, checkedInBy: string): Che
     );
     if (ticketIndex === -1) return { status: 'invalid', message: 'Ticket not found.' };
     const ticket = tickets[ticketIndex] as PurchasedTicket;
-    if (isCheckedIn(ticket)) return { status: 'used', message: 'This ticket has already been checked in.', ticket };
+    if (isCheckedIn(ticket)) return { status: 'used', message: 'Vé này đã được soát trước đó!', ticket };
 
     const checkedInAt = new Date().toISOString();
     const checkedInAtTimestamp = Date.now();
     const updatedTicket: PurchasedTicket = {
       ...ticket,
       isCheckedIn: true,
-      status: 'checked_in',
+      status: 'USED',
       checkInTime: checkedInAt,
       checkedInBy,
       checkInStatus: 'checked-in',
@@ -599,7 +608,12 @@ export function confirmTicketCheckIn(ticketId: string, checkedInBy: string): Che
 
     localStorage.setItem(TICKETS_KEY, JSON.stringify(updatedTickets));
     localStorage.setItem(CHECKIN_HISTORY_KEY, JSON.stringify([historyRecord, ...history]));
-    return { status: 'valid', message: 'Check-in confirmed.', ticket: updatedTicket };
+
+    return {
+      status: 'valid',
+      message: `Soát vé thành công: ${ticket.customerName} - ${ticket.ticketCode}`,
+      ticket: updatedTicket,
+    };
   } catch (error) {
     console.error('[UniTicket Storage] Failed to confirm check-in:', error);
     if (hasTicketsSnapshot) restoreStorageValue(TICKETS_KEY, previousTickets);

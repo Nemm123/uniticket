@@ -24,6 +24,16 @@ export const QRScanner: React.FC<QRScannerProps> = ({
   useEffect(() => {
     let isCancelled = false;
 
+    const stopExistingTracks = () => {
+      try {
+        const videoEl = document.querySelector('#qr-reader video') as HTMLVideoElement | null;
+        if (videoEl && videoEl.srcObject instanceof MediaStream) {
+          videoEl.srcObject.getTracks().forEach((track) => track.stop());
+          videoEl.srcObject = null;
+        }
+      } catch {}
+    };
+
     if (!isEnabled) {
       if (scannerRef.current) {
         if (scannerRef.current.isScanning) {
@@ -31,12 +41,14 @@ export const QRScanner: React.FC<QRScannerProps> = ({
             try {
               scannerRef.current?.clear();
             } catch {}
+            stopExistingTracks();
             scannerRef.current = null;
           });
         } else {
           try {
             scannerRef.current.clear();
           } catch {}
+          stopExistingTracks();
           scannerRef.current = null;
         }
       }
@@ -59,6 +71,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({
         }
         scannerRef.current = null;
       }
+      stopExistingTracks();
 
       if (isCancelled) return;
 
@@ -117,12 +130,14 @@ export const QRScanner: React.FC<QRScannerProps> = ({
             try {
               scannerRef.current?.clear();
             } catch {}
+            stopExistingTracks();
             scannerRef.current = null;
           });
         } else {
           try {
             scannerRef.current.clear();
           } catch {}
+          stopExistingTracks();
           scannerRef.current = null;
         }
       }
@@ -166,6 +181,20 @@ export const QRScanner: React.FC<QRScannerProps> = ({
       </div>
 
       <div className="relative min-h-[280px] bg-black flex items-center justify-center">
+        {/* Nút nổi tròn ở góc trên bên phải khung quét để đổi camera tức thì trên mobile */}
+        {onToggleCamera && (
+          <button
+            type="button"
+            onClick={onToggleCamera}
+            disabled={isStarting}
+            title={`Chuyển sang ${facingMode === 'environment' ? 'Camera Trước' : 'Camera Sau'}`}
+            className="absolute top-3 right-3 z-20 flex items-center gap-1.5 rounded-full bg-black/70 hover:bg-black/90 border border-solana-cyan/50 text-solana-cyan px-3 py-1.5 text-xs font-bold backdrop-blur-md transition-all active:scale-90 shadow-xl disabled:opacity-50"
+          >
+            <SwitchCamera className={`w-4 h-4 ${isStarting ? 'animate-spin' : ''}`} />
+            <span>{facingMode === 'environment' ? 'Camera Sau 🔄' : 'Camera Trước 🔄'}</span>
+          </button>
+        )}
+
         {isStarting && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/70 gap-2 text-solana-cyan">
             <Loader2 className="w-8 h-8 animate-spin" />
