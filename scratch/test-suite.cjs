@@ -594,6 +594,33 @@ assert(
   'TEST 34 — Cross-Device Cloud Realtime Sync (Laptop Purchase direct insert, Phone Check-In direct query fallback & realtime updates)'
 );
 
+// -------------------------------------------------------------
+// TEST 35 — Continuous Camera Stream, Scan Throttling (2s Cooldown), Supabase Query & Demo Fallback
+// -------------------------------------------------------------
+const checkInCodeForTest35 = fs.readFileSync('src/pages/CheckIn/index.tsx', 'utf8');
+const qrScannerCodeForTest35 = fs.readFileSync('src/components/organizer/QRScanner.tsx', 'utf8');
+const storageCodeForTest35 = fs.readFileSync('src/utils/storage.ts', 'utf8');
+
+assert(
+  // 1. Throttling and cooldown
+  checkInCodeForTest35.includes('isProcessingRef') &&
+  checkInCodeForTest35.includes('onScanSuccess') &&
+  checkInCodeForTest35.includes('handleVerifyTicket') &&
+  checkInCodeForTest35.includes('2000') &&
+  qrScannerCodeForTest35.includes('isScanLockedRef') &&
+  qrScannerCodeForTest35.includes('2000') &&
+  // 2. Dynamic QR extraction & Supabase Cloud query
+  checkInCodeForTest35.includes('cleanCode.match(/UTK-[A-Za-z0-9]+-\\d+/i)') &&
+  checkInCodeForTest35.includes('ticket_code.ilike.%${cleanCode}%,id.eq.${cleanCode}') &&
+  // 3. Fallback demo acceptance
+  checkInCodeForTest35.includes('UTK-[A-Za-z0-9]+-\\d+') &&
+  checkInCodeForTest35.includes('Khán giả') &&
+  storageCodeForTest35.includes('UTK-[A-Za-z0-9]+-\\d+') &&
+  // 4. Camera stays open
+  !checkInCodeForTest35.includes('setCameraEnabled(false);\n    setIsScanning(false);\n\n    try'),
+  'TEST 35 — Continuous Camera Stream (No unmount on scan/error, 2s Cooldown), Supabase ilike query, and Demo UTK Fallback'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);

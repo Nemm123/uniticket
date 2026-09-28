@@ -32,8 +32,14 @@ export const QRScanner: React.FC<QRScannerProps> = ({
   const hasPermissionGrantedRef = useRef(false);
   const activeFacingModeRef = useRef(facingMode);
 
+  const isScanLockedRef = useRef(false);
   const onScan = (result: string) => {
+    if (isScanLockedRef.current) return;
+    isScanLockedRef.current = true;
     onScanSuccess(result);
+    setTimeout(() => {
+      isScanLockedRef.current = false;
+    }, 2000);
   };
 
   const stopExistingTracks = () => {
