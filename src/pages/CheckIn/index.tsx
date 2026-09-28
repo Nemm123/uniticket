@@ -3,6 +3,7 @@ import { BarChart3, Camera, CheckCircle2, Keyboard, Loader2, RefreshCw, ScanLine
 import { CheckInResult, PurchasedTicket, UserRole } from '../../types';
 import * as api from '../../services/api';
 import * as storage from '../../utils/storage';
+import { supabase, isSupabaseConfigured } from '../../services/supabase';
 import { useTranslation } from '../../i18n';
 import { QRScanner } from '../../components/organizer/QRScanner';
 
@@ -51,22 +52,77 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
   const [isValidating, setIsValidating] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const refreshTickets = async () => {
+  const loadTickets = async () => {
     setIsRefreshing(true);
     try {
+      // 1. Fetch trực tiếp từ bảng tickets trên Supabase
+      if (isSupabaseConfigured) {
+        const { data: cloudTickets, error } = await supabase.from('tickets').select('*').order('created_at', { ascending: false });
+
+        if (!error && Array.isArray(cloudTickets) && cloudTickets.length > 0) {
+          const mapped = cloudTickets.map(api.supabaseRowToTicket);
+          setTickets(mapped);
+          storage.savePurchasedTickets(mapped);
+          return;
+        }
+      }
+
+      // 2. Fallback qua api.fetchMyTickets
       const remoteTickets = await api.fetchMyTickets();
-      setTickets(remoteTickets);
-      return;
+      if (remoteTickets && remoteTickets.length > 0) {
+        setTickets(remoteTickets);
+        return;
+      }
     } catch (err) {
-      console.warn('[UniTicket CheckIn] Could not fetch remote tickets:', err);
+      console.warn('[UniTicket CheckIn] Could not fetch tickets from cloud:', err);
     } finally {
       setIsRefreshing(false);
     }
-    setTickets([]);
+
+    const fallbackTickets = storage.getStoredPurchasedTickets();
+    setTickets(fallbackTickets);
   };
+  const refreshTickets = loadTickets;
+  const fetchAllTickets = loadTickets;
+  if (false as boolean) {
+    void fetchAllTickets();
+  }
 
   useEffect(() => {
-    void refreshTickets();
+    void loadTickets();
+
+    // Lắng nghe sự kiện Supabase Realtime (khi laptop mua vé, điện thoại tự cập nhật ngay lập tức)
+    if (isSupabaseConfigured) {
+      const channel = supabase
+        .channel('checkin-tickets-realtime')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'tickets' },
+          (payload) => {
+            console.log('[CheckIn Realtime] Nhận thay đổi từ Supabase:', payload);
+            if (payload.eventType === 'INSERT') {
+              const newTicket = api.supabaseRowToTicket(payload.new);
+              setTickets((prev) => {
+                const exists = prev.some((t) => t.id === newTicket.id || (t.ticketCode && t.ticketCode === newTicket.ticketCode));
+                if (exists) return prev;
+                return [newTicket, ...prev];
+              });
+            } else if (payload.eventType === 'UPDATE') {
+              const updated = api.supabaseRowToTicket(payload.new);
+              setTickets((prev) =>
+                prev.map((t) => (t.id === updated.id || t.ticketCode === updated.ticketCode ? updated : t))
+              );
+            } else {
+              void loadTickets();
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
   }, []);
 
   const handleFlipCamera = () => {
@@ -128,9 +184,19 @@ function extractTicketCode(raw: string): string {
         }
       }
 
-      // Bóc tách mã vé thông minh:
+      // Bóc tách mã vé từ Dynamic QR / chuỗi nhập vào:
+      let rawCode = cleanInput;
+      let targetCode = rawCode.trim();
+      if (targetCode.startsWith('{') && targetCode.endsWith('}')) {
+        try {
+          const parsed = JSON.parse(targetCode);
+          targetCode = parsed.ticketCode || parsed.ticketId || targetCode;
+        } catch (e) {}
+      }
       const ticketCode = extractTicketCode(cleanInput);
-      let targetCode = ticketCode || cleanInput;
+      if (ticketCode) {
+        targetCode = ticketCode;
+      }
       if (parsedPayload && typeof parsedPayload === 'object') {
         targetCode = (parsedPayload.ticketCode || parsedPayload.ticketId || parsedPayload.id || ticketCode || cleanInput).trim();
       }
@@ -156,7 +222,7 @@ function extractTicketCode(raw: string): string {
       });
       const allTickets = Array.from(allTicketsMap.values());
 
-      // 4. Tiến hành đối soát trong toàn bộ danh sách vé:
+      // 4. Tiến hành đối soát trong toàn bộ danh sách vé cục bộ:
       const found = allTickets.find(t => 
         (t.ticketCode && t.ticketCode.trim().toLowerCase() === cleanCode) ||
         (t.ticketCode && t.ticketCode.toLowerCase() === ticketCode.toLowerCase()) ||
@@ -177,7 +243,24 @@ function extractTicketCode(raw: string): string {
         );
       });
 
-      // Nếu chưa thấy trong local, thử đối soát với Supabase Cloud
+      // 5. Nếu tìm trong state cục bộ không thấy, HÃY TRUY VẤN TRỰC TIẾP LÊN SUPABASE:
+      if (!foundTicket && isSupabaseConfigured) {
+        try {
+          const { data: matchedTicket } = await supabase
+            .from('tickets')
+            .select('*')
+            .or(`ticket_code.eq.${targetCode},id.eq.${targetCode}`)
+            .maybeSingle();
+
+          if (matchedTicket) {
+            foundTicket = api.supabaseRowToTicket(matchedTicket);
+          }
+        } catch (cloudQueryErr) {
+          console.warn('[CheckIn] Lỗi truy vấn Supabase:', cloudQueryErr);
+        }
+      }
+
+      // Nếu chưa thấy trong local hoặc Cloud query, thử tiếp backend verifyTicketCheckIn
       if (!foundTicket) {
         const backendValidation = await api.verifyTicketCheckIn(cleanInput);
         if (backendValidation.ticket) {
@@ -185,31 +268,44 @@ function extractTicketCode(raw: string): string {
         }
       }
 
-      // 5. Xử lý kết quả kiểm tra vé
+      // 6. Xử lý kết quả kiểm tra vé:
       if (foundTicket) {
-        if (
-          foundTicket.status === 'USED' ||
-          foundTicket.status === 'used' ||
-          foundTicket.status === 'checked_in' ||
-          foundTicket.status === 'CHECKED_IN' ||
-          foundTicket.isCheckedIn ||
-          foundTicket.checkInStatus === 'checked-in'
-        ) {
+        const ticket = foundTicket;
+        const isAlreadyCheckedIn = Boolean(
+          ticket.status === 'USED' ||
+          ticket.status === 'used' ||
+          ticket.status === 'checked_in' ||
+          ticket.status === 'CHECKED_IN' ||
+          ticket.isCheckedIn ||
+          ticket.checkInStatus === 'checked-in'
+        );
+
+        if (isAlreadyCheckedIn) {
           const usedMsg = 'Vé này đã được soát trước đó!';
           setResult({
             status: 'used',
             message: usedMsg,
-            ticket: foundTicket,
+            ticket,
           });
           onShowToast('error', usedMsg);
           return;
+        }
+
+        // Nếu status === 'UNUSED' (hoặc chưa soát):
+        // Cập nhật trực tiếp lên Supabase:
+        if (isSupabaseConfigured) {
+          try {
+            await supabase.from('tickets').update({ status: 'USED', checked_in_at: new Date().toISOString() }).eq('id', ticket.id);
+          } catch (supaErr) {
+            console.warn('[CheckIn] Lỗi update Supabase status USED:', supaErr);
+          }
         }
 
         // Cập nhật vé sang trạng thái "USED", ghi nhận thời gian check-in, cập nhật lại vào Storage & State
         const nowIso = new Date().toISOString();
         const nowMs = Date.now();
         const updatedTicket: PurchasedTicket = {
-          ...foundTicket,
+          ...ticket,
           status: 'USED',
           isCheckedIn: true,
           checkInStatus: 'checked-in',
@@ -219,15 +315,19 @@ function extractTicketCode(raw: string): string {
         };
 
         // Ghi vào Storage & Supabase
-        storage.confirmTicketCheckIn(foundTicket.id, organizerAddress || 'Organizers');
-        await api.checkInTicket(foundTicket.id, organizerAddress || undefined).catch(() => undefined);
+        storage.confirmTicketCheckIn(ticket.id, organizerAddress || 'Organizers');
+        await api.checkInTicket(ticket.id, organizerAddress || undefined).catch(() => undefined);
 
         // Cập nhật State
-        setTickets((prev) =>
-          prev.map((t) => (t.id === foundTicket!.id || t.ticketCode === foundTicket!.ticketCode ? updatedTicket : t))
-        );
+        setTickets((prev) => {
+          const exists = prev.some((t) => t.id === ticket.id || (t.ticketCode && t.ticketCode === ticket.ticketCode));
+          if (exists) {
+            return prev.map((t) => (t.id === ticket.id || t.ticketCode === ticket.ticketCode ? updatedTicket : t));
+          }
+          return [updatedTicket, ...prev];
+        });
 
-        const successMsg = `Soát vé thành công: ${foundTicket.customerName} - ${foundTicket.ticketCode}`;
+        const successMsg = `Soát vé thành công: ${ticket.customerName} - ${ticket.ticketCode}`;
         setResult({
           status: 'valid',
           message: successMsg,

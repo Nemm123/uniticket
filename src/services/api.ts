@@ -29,10 +29,15 @@ export function ticketToSupabaseRow(ticket: PurchasedTicket) {
     seat: ticket.seat || '',
     price_sol: Number(ticket.priceSol) || 0,
     ticket_code: ticket.ticketCode || `UTK-${ticket.id.slice(-6)}`,
+    ticketCode: ticket.ticketCode || `UTK-${ticket.id.slice(-6)}`,
     customer_name: ticket.customerName || 'Khách tham dự',
     customer_email: ticket.customerEmail || 'customer@uniticket.io',
     customer_wallet: ticket.customerWallet || '',
-    status: ticket.status ? String(ticket.status).toLowerCase() : (ticket.isCheckedIn ? 'checked_in' : 'valid'),
+    buyer_name: ticket.customerName || 'Khách tham dự',
+    buyer_email: ticket.customerEmail || 'customer@uniticket.io',
+    owner_address: ticket.customerWallet || '',
+    wallet_address: ticket.customerWallet || '',
+    status: ticket.status && (ticket.status === 'checked_in' || ticket.status === 'USED' || ticket.status === 'used') ? 'USED' : 'UNUSED',
     is_checked_in: Boolean(ticket.isCheckedIn || ticket.isUsed),
     is_used: Boolean(ticket.isUsed || ticket.isCheckedIn),
     check_in_time: ticket.checkInTime || null,
@@ -303,8 +308,29 @@ export async function createTickets(
 
   if (isSupabaseConfigured) {
     try {
-      const rows = tickets.map(ticketToSupabaseRow);
-      const { error } = await supabase.from('tickets').insert(rows);
+      const ticketsToInsert = tickets.map((t) => ({
+        id: t.id,
+        order_id: t.orderId || `ORD-${Date.now()}`,
+        event_id: t.eventId || '',
+        event_title: t.eventTitle || '',
+        tier_id: t.tierId || '',
+        tier_name: t.tierName || '',
+        seat: t.seat || '',
+        price_sol: Number(t.priceSol) || 0,
+        ticket_code: t.ticketCode,
+        ticketCode: t.ticketCode,
+        owner_address: t.customerWallet || '',
+        wallet_address: t.customerWallet || '',
+        customer_wallet: t.customerWallet || '',
+        buyer_name: t.customerName || 'Khách tham dự',
+        customer_name: t.customerName || 'Khách tham dự',
+        buyer_email: t.customerEmail || 'customer@uniticket.io',
+        customer_email: t.customerEmail || 'customer@uniticket.io',
+        status: 'UNUSED',
+        created_at: t.purchasedAt || new Date().toISOString(),
+        qr_payload: t.qrPayload || '',
+      }));
+      const { error } = await supabase.from('tickets').insert(ticketsToInsert);
       if (error) {
         console.warn('[Supabase API] Lỗi chèn nhiều vé Supabase:', error.message);
       }

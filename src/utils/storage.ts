@@ -735,3 +735,11 @@ export function transferStoredTicket(
     return { ok: false, message: 'Đã xảy ra lỗi khi lưu thông tin chuyển nhượng.' };
   }
 }
+
+/**
+ * Tải danh sách vé từ bộ nhớ lưu trữ
+ */
+export function fetchAllTickets(): PurchasedTicket[] {
+  return getStoredPurchasedTickets();
+}
+export const loadTickets = fetchAllTickets;

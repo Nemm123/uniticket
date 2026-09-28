@@ -560,6 +560,36 @@ assert(
   'TEST 33 — Smart Dynamic QR Extraction (extractTicketCode UTK regex, allTickets lookup, USED transition) and Camera Permission Persistence (hasPermissionGranted, audio: false constraints)'
 );
 
+// -------------------------------------------------------------
+// TEST 34 — Cross-Device Cloud Realtime Synchronization (Laptop Purchase -> Phone Check-In)
+// -------------------------------------------------------------
+const checkoutCodeForTest34 = fs.readFileSync('src/components/checkout/CheckoutModal.tsx', 'utf8');
+const apiCodeForTest34 = fs.readFileSync('src/services/api.ts', 'utf8');
+const checkInCodeForTest34 = fs.readFileSync('src/pages/CheckIn/index.tsx', 'utf8');
+const storageCodeForTest34 = fs.readFileSync('src/utils/storage.ts', 'utf8');
+
+assert(
+  // 1. Direct Supabase insert in CheckoutModal & api
+  checkoutCodeForTest34.includes("supabase.from('tickets').insert(ticketsToInsert)") &&
+  checkoutCodeForTest34.includes("status: 'UNUSED'") &&
+  checkoutCodeForTest34.includes('buyer_name') &&
+  checkoutCodeForTest34.includes('buyer_email') &&
+  checkoutCodeForTest34.includes('owner_address') &&
+  apiCodeForTest34.includes("supabase.from('tickets').insert(ticketsToInsert)") &&
+  apiCodeForTest34.includes("status: 'UNUSED'") &&
+  // 2. Fetch directly from tickets table on Check-In load
+  checkInCodeForTest34.includes("supabase.from('tickets').select('*')") &&
+  checkInCodeForTest34.includes('postgres_changes') &&
+  checkInCodeForTest34.includes('loadTickets') &&
+  storageCodeForTest34.includes('loadTickets') &&
+  // 3. Dynamic QR JSON parsing & direct Cloud query fallback
+  checkInCodeForTest34.includes("targetCode.startsWith('{') && targetCode.endsWith('}')") &&
+  checkInCodeForTest34.includes("ticket_code.eq.${targetCode},id.eq.${targetCode}") &&
+  checkInCodeForTest34.includes("supabase.from('tickets').update({ status: 'USED'") &&
+  checkInCodeForTest34.includes('Soát vé thành công:'),
+  'TEST 34 — Cross-Device Cloud Realtime Sync (Laptop Purchase direct insert, Phone Check-In direct query fallback & realtime updates)'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);

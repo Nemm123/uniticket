@@ -20,6 +20,7 @@ import {
 import { EventItem, TicketTier, PurchasedTicket } from '../../types';
 import { demoPayOrder, type OrderSummary } from '../../services/ordersApi';
 import * as api from '../../services/api';
+import { supabase, isSupabaseConfigured } from '../../services/supabase';
 import { useTranslation } from '../../i18n';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
@@ -355,6 +356,41 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           nftTransactionSignature: signature,
           nftStatus: 'MINTED',
         });
+      }
+
+      // 1. Lưu vé trực tiếp lên Supabase Cloud khi thanh toán thành công (Laptop)
+      const ticketsToInsert = newTickets.map((t) => ({
+        id: t.id,
+        order_id: t.orderId || `ORD-${Date.now()}`,
+        event_id: t.eventId || '',
+        event_title: t.eventTitle || '',
+        tier_id: t.tierId || '',
+        tier_name: t.tierName || '',
+        seat: t.seat || '',
+        price_sol: Number(t.priceSol) || 0,
+        ticket_code: t.ticketCode,
+        ticketCode: t.ticketCode,
+        owner_address: t.customerWallet || '',
+        wallet_address: t.customerWallet || '',
+        customer_wallet: t.customerWallet || '',
+        buyer_name: t.customerName || 'Khách tham dự',
+        customer_name: t.customerName || 'Khách tham dự',
+        buyer_email: t.customerEmail || 'customer@uniticket.io',
+        customer_email: t.customerEmail || 'customer@uniticket.io',
+        status: 'UNUSED',
+        created_at: t.purchasedAt || nowIso,
+        qr_payload: t.qrPayload || '',
+      }));
+
+      try {
+        if (isSupabaseConfigured) {
+          const { error } = await supabase.from('tickets').insert(ticketsToInsert);
+          if (error) {
+            console.warn('[CheckoutModal] Supabase direct insert warning:', error.message);
+          }
+        }
+      } catch (insertErr) {
+        console.warn('[CheckoutModal] Supabase direct insert exception:', insertErr);
       }
 
       // Lưu vé thông qua Data Layer (Supabase + LocalStorage) đúng 1 lần duy nhất
