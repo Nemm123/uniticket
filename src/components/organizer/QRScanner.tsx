@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import QrScanner from 'qr-scanner';
 // Html5Qrcode fallback reference: optimized with native BarcodeDetector and QrScanner engine
-import { Camera, XCircle, SwitchCamera, Loader2, AlertCircle, CameraOff, Lock, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Camera, XCircle, Loader2, AlertCircle, CameraOff, Lock, RefreshCw, ShieldAlert } from 'lucide-react';
 
 interface QRScannerProps {
   onScanSuccess: (decodedText: string) => void;
   isEnabled: boolean;
   onClose: () => void;
-  facingMode?: 'environment' | 'user';
+  facingMode?: string;
   onToggleCamera?: () => void;
   onError?: (error: string) => void;
 }
@@ -16,8 +16,6 @@ export const QRScanner: React.FC<QRScannerProps> = ({
   onScanSuccess,
   isEnabled,
   onClose,
-  facingMode = 'environment',
-  onToggleCamera,
   onError,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -30,7 +28,6 @@ export const QRScanner: React.FC<QRScannerProps> = ({
   const [retryCount, setRetryCount] = useState(0);
   const [hasPermissionGranted, setHasPermissionGranted] = useState(false);
   const hasPermissionGrantedRef = useRef(false);
-  const activeFacingModeRef = useRef(facingMode);
 
   const isScanLockedRef = useRef(false);
   const onScan = (result: string) => {
@@ -39,7 +36,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({
     onScanSuccess(result);
     setTimeout(() => {
       isScanLockedRef.current = false;
-    }, 2000);
+    }, 2500);
   };
 
   const stopExistingTracks = () => {
@@ -78,13 +75,13 @@ export const QRScanner: React.FC<QRScannerProps> = ({
     setPermissionDenied(false);
 
     try {
-      // Duy trì luồng stream đang hoạt động tốt nếu không đổi facingMode
+      // Duy trì luồng stream đang hoạt động tốt
       const isLive = Boolean(
         streamRef.current &&
         streamRef.current.active &&
         streamRef.current.getVideoTracks().some((t) => t.readyState === 'live')
       );
-      if (isLive && activeFacingModeRef.current === facingMode) {
+      if (isLive) {
         if (videoRef.current && videoRef.current.srcObject !== streamRef.current) {
           videoRef.current.srcObject = streamRef.current;
           videoRef.current.setAttribute('playsinline', 'true');
@@ -113,13 +110,9 @@ export const QRScanner: React.FC<QRScannerProps> = ({
         throw new Error('Trình duyệt không hỗ trợ MediaDevices API.');
       }
 
-      // Cấu hình media constraints an toàn trên mobile
+      // Cố định cấu hình camera duy nhất (ưu tiên camera sau của thiết bị để quét mã):
       const constraints = {
-        video: {
-          facingMode: facingMode === 'environment' ? 'environment' : 'user',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
+        video: { facingMode: 'environment' },
         audio: false
       };
 
@@ -127,35 +120,23 @@ export const QRScanner: React.FC<QRScannerProps> = ({
       try {
         stream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (idealErr) {
-        console.warn('[QRScanner] Thử fallback constraints tuần tự:', idealErr);
+        console.warn('[QRScanner] Camera sau không khả dụng, thử fallback tuần tự:', idealErr);
         try {
+          // Bước 1: Thử exact
           stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: facingMode } },
+            video: { facingMode: { exact: 'environment' } },
             audio: false
           });
-        } catch (idealErr2) {
+        } catch (step1Err) {
           try {
+            // Bước 2: Thử soft
             stream = await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: facingMode === 'environment' ? 'environment' : 'user' },
+              video: { facingMode: 'environment' },
               audio: false
             });
-          } catch (softErr) {
-            try {
-              // Bước 1: Thử exact
-              stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: { exact: 'environment' } }
-              });
-            } catch (step1Err) {
-              try {
-                // Bước 2: Thử soft
-                stream = await navigator.mediaDevices.getUserMedia({
-                  video: { facingMode: 'environment' }
-                });
-              } catch (step2Err) {
-                // Bước 3: Mở bất kỳ camera nào khả dụng
-                stream = await navigator.mediaDevices.getUserMedia({ video: true });
-              }
-            }
+          } catch (step2Err) {
+            // Bước 3: Nếu thiết bị không có camera sau, tự động fallback an toàn về { video: true }
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
           }
         }
       }
@@ -165,7 +146,6 @@ export const QRScanner: React.FC<QRScannerProps> = ({
       }
 
       streamRef.current = stream;
-      activeFacingModeRef.current = facingMode;
       hasPermissionGrantedRef.current = true;
       setHasPermissionGranted(true);
 
@@ -277,7 +257,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({
       }
       stopExistingTracks();
     };
-  }, [isEnabled, facingMode, retryCount, onScanSuccess, onError]);
+  }, [isEnabled, retryCount, onScanSuccess, onError]);
 
   if (!isEnabled) return null;
 
@@ -288,48 +268,21 @@ export const QRScanner: React.FC<QRScannerProps> = ({
           <Camera className="w-4 h-4 text-solana-cyan" />
           <span className="text-sm font-semibold text-white">Scanner</span>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-solana-cyan/30 bg-solana-cyan/10 px-2.5 py-0.5 text-[11px] font-semibold text-solana-cyan">
-            {facingMode === 'environment' ? 'Camera Sau' : 'Camera Trước'}
+            <span>Camera</span>
             {hasPermissionGranted && <span className="inline-block w-1.5 h-1.5 rounded-full bg-solana-green animate-pulse" title="Đã cấp quyền" />}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          {onToggleCamera && (
-            <button
-              type="button"
-              onClick={onToggleCamera}
-              disabled={isStarting}
-              title={`Chuyển sang ${facingMode === 'environment' ? 'Camera Trước' : 'Camera Sau'}`}
-              className="inline-flex items-center gap-1.5 rounded-full border border-solana-cyan/40 bg-solana-cyan/15 hover:bg-solana-cyan/25 px-2.5 py-1 text-xs font-bold text-solana-cyan transition-all active:scale-95 disabled:opacity-50"
-            >
-              <SwitchCamera className={`w-3.5 h-3.5 ${isStarting ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Đổi camera 🔄</span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            title="Tắt camera"
-            className="text-slate-400 hover:text-white transition-colors"
-          >
-            <XCircle className="w-5 h-5" />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          title="Tắt camera"
+          className="text-slate-400 hover:text-white transition-colors"
+        >
+          <XCircle className="w-5 h-5" />
+        </button>
       </div>
 
       <div className="relative min-h-[280px] bg-black flex items-center justify-center">
-        {/* Nút nổi tròn ở góc trên bên phải khung quét để đổi camera tức thì trên mobile */}
-        {onToggleCamera && (
-          <button
-            type="button"
-            onClick={onToggleCamera}
-            disabled={isStarting}
-            title={`Chuyển sang ${facingMode === 'environment' ? 'Camera Trước' : 'Camera Sau'}`}
-            className="absolute top-3 right-3 z-20 flex items-center gap-1.5 rounded-full bg-black/70 hover:bg-black/90 border border-solana-cyan/50 text-solana-cyan px-3 py-1.5 text-xs font-bold backdrop-blur-md transition-all active:scale-90 shadow-xl disabled:opacity-50"
-          >
-            <SwitchCamera className={`w-4 h-4 ${isStarting ? 'animate-spin' : ''}`} />
-            <span>{facingMode === 'environment' ? 'Camera Sau 🔄' : 'Camera Trước 🔄'}</span>
-          </button>
-        )}
 
         {/* Thẻ video hiển thị stream chuẩn di động */}
         <video
@@ -358,7 +311,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({
         {isStarting && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/80 gap-2 text-solana-cyan">
             <Loader2 className="w-8 h-8 animate-spin" />
-            <p className="text-xs font-semibold">Đang kích hoạt {facingMode === 'environment' ? 'Camera Sau' : 'Camera Trước'}...</p>
+            <p className="text-xs font-semibold">Đang kích hoạt Camera...</p>
           </div>
         )}
 

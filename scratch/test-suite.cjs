@@ -419,30 +419,24 @@ assert(
 );
 
 // -------------------------------------------------------------
-// TEST 28 — Camera Flip (Front/Rear Facing Mode & Safe Stream Toggle)
+// TEST 28 — Streamlined Single Camera Mode (Fixed Environment Constraints, Removal of Flip Buttons)
 // -------------------------------------------------------------
 const freshCheckInCode = fs.readFileSync('src/pages/CheckIn/index.tsx', 'utf8');
 const freshQRScannerCode = fs.readFileSync('src/components/organizer/QRScanner.tsx', 'utf8');
 
 assert(
-  freshCheckInCode.includes("const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');") &&
-  freshCheckInCode.includes('toggleCamera') &&
   freshCheckInCode.includes('isScanning') &&
-  freshCheckInCode.includes('Đổi camera 🔄') &&
-  freshCheckInCode.includes('Camera Sau') &&
-  freshCheckInCode.includes('Camera Trước') &&
-  freshQRScannerCode.includes('facingMode: { ideal: facingMode }') &&
-  freshQRScannerCode.includes('onToggleCamera') &&
+  !freshCheckInCode.includes('Đổi camera') &&
+  freshQRScannerCode.includes("video: { facingMode: 'environment' }") &&
   freshQRScannerCode.includes('Html5Qrcode'),
-  'TEST 28 — Camera Flip (Front/Rear facing mode, ideal constraints, toggleCamera, and safe stream switching)'
+  'TEST 28 — Streamlined Single Camera Mode (Fixed environment constraints, removal of flip buttons)'
 );
 
 // -------------------------------------------------------------
-// TEST 29 — Robust Ticket Code Search, Direct Check-In & Flip Camera
+// TEST 29 — Robust Ticket Code Search & Direct Check-In
 // -------------------------------------------------------------
 assert(
   freshCheckInCode.includes('handleManualCheck') &&
-  freshCheckInCode.includes('handleFlipCamera') &&
   freshCheckInCode.includes('Vé này đã được soát trước đó!') &&
   freshCheckInCode.includes('Soát vé thành công:') &&
   freshCheckInCode.includes('allTickets') &&
@@ -465,7 +459,7 @@ assert(
   finalQRScannerCode.includes("errName === 'NotFoundError'") &&
   finalQRScannerCode.includes('Không tìm thấy thiết bị Camera trên thiết bị này.') &&
   // 2. Constraints Fallback for mobile compatibility
-  finalQRScannerCode.includes('facingMode: { ideal: facingMode }') &&
+  freshQRScannerCode.includes("video: { facingMode: 'environment' }") &&
   finalQRScannerCode.includes('{ video: true }') &&
   // 3. Friendly Permission Denied UI & Retry
   finalQRScannerCode.includes('CameraOff') &&
@@ -556,7 +550,7 @@ assert(
   // 3. Camera permission persistence & audio: false
   qrScannerCodeForTest33.includes('hasPermissionGranted') &&
   qrScannerCodeForTest33.includes('audio: false') &&
-  qrScannerCodeForTest33.includes('video: { facingMode: { ideal: facingMode } }'),
+  qrScannerCodeForTest33.includes("video: { facingMode: 'environment' }"),
   'TEST 33 — Smart Dynamic QR Extraction (extractTicketCode UTK regex, allTickets lookup, USED transition) and Camera Permission Persistence (hasPermissionGranted, audio: false constraints)'
 );
 
@@ -595,7 +589,7 @@ assert(
 );
 
 // -------------------------------------------------------------
-// TEST 35 — Continuous Camera Stream, Scan Throttling (2s Cooldown), Supabase Query & Demo Fallback
+// TEST 35 — Continuous Camera Stream, Scan Throttling (2.5s Cooldown), Supabase Query & Demo Fallback
 // -------------------------------------------------------------
 const checkInCodeForTest35 = fs.readFileSync('src/pages/CheckIn/index.tsx', 'utf8');
 const qrScannerCodeForTest35 = fs.readFileSync('src/components/organizer/QRScanner.tsx', 'utf8');
@@ -603,22 +597,22 @@ const storageCodeForTest35 = fs.readFileSync('src/utils/storage.ts', 'utf8');
 
 assert(
   // 1. Throttling and cooldown
-  checkInCodeForTest35.includes('isProcessingRef') &&
-  checkInCodeForTest35.includes('onScanSuccess') &&
-  checkInCodeForTest35.includes('handleVerifyTicket') &&
-  checkInCodeForTest35.includes('2000') &&
+  checkInCodeForTest35.includes('isProcessingScan') &&
+  checkInCodeForTest35.includes('handleScanResult') &&
+  checkInCodeForTest35.includes('processCheckIn') &&
+  checkInCodeForTest35.includes('2500') &&
   qrScannerCodeForTest35.includes('isScanLockedRef') &&
-  qrScannerCodeForTest35.includes('2000') &&
+  qrScannerCodeForTest35.includes('2500') &&
   // 2. Dynamic QR extraction & Supabase Cloud query
-  checkInCodeForTest35.includes('cleanCode.match(/UTK-[A-Za-z0-9]+-\\d+/i)') &&
-  checkInCodeForTest35.includes('ticket_code.ilike.%${cleanCode}%,id.eq.${cleanCode}') &&
+  checkInCodeForTest35.includes('match = text.match(/UTK-[A-Za-z0-9]+-\\d+/i)') &&
+  checkInCodeForTest35.includes("ticket_code.eq.${targetCode},id.eq.${targetCode}") &&
   // 3. Fallback demo acceptance
   checkInCodeForTest35.includes('UTK-[A-Za-z0-9]+-\\d+') &&
   checkInCodeForTest35.includes('Khán giả') &&
   storageCodeForTest35.includes('UTK-[A-Za-z0-9]+-\\d+') &&
   // 4. Camera stays open
   !checkInCodeForTest35.includes('setCameraEnabled(false);\n    setIsScanning(false);\n\n    try'),
-  'TEST 35 — Continuous Camera Stream (No unmount on scan/error, 2s Cooldown), Supabase ilike query, and Demo UTK Fallback'
+  'TEST 35 — Continuous Camera Stream (No unmount on scan/error, 2.5s Cooldown), Supabase direct query, and Demo UTK Fallback'
 );
 
 console.log('\n=====================================================');
