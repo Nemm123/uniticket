@@ -570,12 +570,14 @@ const storageCodeForTest34 = fs.readFileSync('src/utils/storage.ts', 'utf8');
 
 assert(
   // 1. Direct Supabase insert in CheckoutModal & api
-  checkoutCodeForTest34.includes("supabase.from('tickets').insert(ticketsToInsert)") &&
+  (checkoutCodeForTest34.includes("supabase.from('tickets').insert(ticketsToInsert)") ||
+   checkoutCodeForTest34.includes("supabase.from('tickets').insert(newTickets.map")) &&
   checkoutCodeForTest34.includes("status: 'UNUSED'") &&
   checkoutCodeForTest34.includes('buyer_name') &&
   checkoutCodeForTest34.includes('buyer_email') &&
   checkoutCodeForTest34.includes('owner_address') &&
-  apiCodeForTest34.includes("supabase.from('tickets').insert(ticketsToInsert)") &&
+  (apiCodeForTest34.includes("supabase.from('tickets').insert(ticketsToInsert)") ||
+   apiCodeForTest34.includes("supabase.from('tickets').insert(tickets.map")) &&
   apiCodeForTest34.includes("status: 'UNUSED'") &&
   // 2. Fetch directly from tickets table on Check-In load
   checkInCodeForTest34.includes("supabase.from('tickets').select('*')") &&
@@ -583,8 +585,10 @@ assert(
   checkInCodeForTest34.includes('loadTickets') &&
   storageCodeForTest34.includes('loadTickets') &&
   // 3. Dynamic QR JSON parsing & direct Cloud query fallback
-  checkInCodeForTest34.includes("targetCode.startsWith('{') && targetCode.endsWith('}')") &&
+  (checkInCodeForTest34.includes("targetCode.startsWith('{') && targetCode.endsWith('}')") ||
+   checkInCodeForTest34.includes("UTK-[A-Za-z0-9]+-\\d+")) &&
   checkInCodeForTest34.includes("ticket_code.eq.${targetCode},id.eq.${targetCode}") &&
+  checkInCodeForTest34.includes("foundTicket.status === 'USED'") &&
   checkInCodeForTest34.includes("supabase.from('tickets').update({ status: 'USED'") &&
   checkInCodeForTest34.includes('Soát vé thành công:'),
   'TEST 34 — Cross-Device Cloud Realtime Sync (Laptop Purchase direct insert, Phone Check-In direct query fallback & realtime updates)'

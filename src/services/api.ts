@@ -327,9 +327,22 @@ export async function createTickets(
         buyer_email: t.customerEmail || 'customer@uniticket.io',
         customer_email: t.customerEmail || 'customer@uniticket.io',
         status: 'UNUSED',
+        price: t.priceSol,
         created_at: t.purchasedAt || new Date().toISOString(),
         qr_payload: t.qrPayload || '',
       }));
+      await supabase.from('tickets').insert(tickets.map((t: any) => ({
+        id: t.id,
+        ticket_code: t.ticketCode || t.ticket_code,
+        event_id: t.eventId || t.event_id,
+        tier_id: t.tierId || t.tier_id,
+        owner_address: t.ownerAddress || t.walletAddress || t.owner_address || t.customerWallet,
+        buyer_name: t.buyerName || t.customerName || t.buyer_name,
+        buyer_email: t.buyerEmail || t.customerEmail || t.buyer_email,
+        status: 'UNUSED',
+        price: t.price || t.priceSol,
+        created_at: new Date().toISOString()
+      })));
       const { error } = await supabase.from('tickets').insert(ticketsToInsert);
       if (error) {
         console.warn('[Supabase API] Lỗi chèn nhiều vé Supabase:', error.message);

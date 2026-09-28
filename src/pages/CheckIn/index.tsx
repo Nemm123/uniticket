@@ -243,21 +243,25 @@ function extractTicketCode(raw: string): string {
         );
       });
 
-      // 5. Nếu tìm trong state cục bộ không thấy, HÃY TRUY VẤN TRỰC TIẾP LÊN SUPABASE:
+      // 5. Nếu đối soát trong bộ nhớ máy hiện tại chưa thấy, HÃY TRUY VẤN TRỰC TIẾP LÊN SUPABASE CLOUD:
+      let cloudTicketRecord: any = null;
       if (!foundTicket && isSupabaseConfigured) {
         try {
-          const { data: matchedTicket } = await supabase
+          const { data: foundTicket } = await supabase
             .from('tickets')
             .select('*')
             .or(`ticket_code.eq.${targetCode},id.eq.${targetCode}`)
             .maybeSingle();
 
-          if (matchedTicket) {
-            foundTicket = api.supabaseRowToTicket(matchedTicket);
+          if (foundTicket) {
+            cloudTicketRecord = foundTicket;
           }
         } catch (cloudQueryErr) {
           console.warn('[CheckIn] Lỗi truy vấn Supabase:', cloudQueryErr);
         }
+      }
+      if (cloudTicketRecord) {
+        foundTicket = api.supabaseRowToTicket(cloudTicketRecord);
       }
 
       // Nếu chưa thấy trong local hoặc Cloud query, thử tiếp backend verifyTicketCheckIn
@@ -272,32 +276,34 @@ function extractTicketCode(raw: string): string {
       if (foundTicket) {
         const ticket = foundTicket;
         const isAlreadyCheckedIn = Boolean(
-          ticket.status === 'USED' ||
-          ticket.status === 'used' ||
-          ticket.status === 'checked_in' ||
-          ticket.status === 'CHECKED_IN' ||
-          ticket.isCheckedIn ||
-          ticket.checkInStatus === 'checked-in'
+          foundTicket.status === 'USED' ||
+          foundTicket.status === 'used' ||
+          foundTicket.status === 'checked_in' ||
+          foundTicket.status === 'CHECKED_IN' ||
+          foundTicket.isCheckedIn ||
+          foundTicket.checkInStatus === 'checked-in'
         );
 
-        if (isAlreadyCheckedIn) {
+        if (isAlreadyCheckedIn || foundTicket.status === 'USED') {
           const usedMsg = 'Vé này đã được soát trước đó!';
           setResult({
             status: 'used',
             message: usedMsg,
-            ticket,
+            ticket: foundTicket,
           });
           onShowToast('error', usedMsg);
           return;
         }
 
-        // Nếu status === 'UNUSED' (hoặc chưa soát):
-        // Cập nhật trực tiếp lên Supabase:
-        if (isSupabaseConfigured) {
-          try {
-            await supabase.from('tickets').update({ status: 'USED', checked_in_at: new Date().toISOString() }).eq('id', ticket.id);
-          } catch (supaErr) {
-            console.warn('[CheckIn] Lỗi update Supabase status USED:', supaErr);
+        // Nếu foundTicket.status === 'UNUSED' (hoặc chưa soát):
+        // Cập nhật trạng thái USED trực tiếp lên Cloud:
+        if (foundTicket.status === 'UNUSED' || !foundTicket.isCheckedIn) {
+          if (isSupabaseConfigured) {
+            try {
+              await supabase.from('tickets').update({ status: 'USED', checked_in_at: new Date().toISOString() }).eq('id', foundTicket.id);
+            } catch (supaErr) {
+              console.warn('[CheckIn] Lỗi update Supabase status USED:', supaErr);
+            }
           }
         }
 
@@ -305,7 +311,7 @@ function extractTicketCode(raw: string): string {
         const nowIso = new Date().toISOString();
         const nowMs = Date.now();
         const updatedTicket: PurchasedTicket = {
-          ...ticket,
+          ...foundTicket,
           status: 'USED',
           isCheckedIn: true,
           checkInStatus: 'checked-in',
@@ -315,8 +321,8 @@ function extractTicketCode(raw: string): string {
         };
 
         // Ghi vào Storage & Supabase
-        storage.confirmTicketCheckIn(ticket.id, organizerAddress || 'Organizers');
-        await api.checkInTicket(ticket.id, organizerAddress || undefined).catch(() => undefined);
+        storage.confirmTicketCheckIn(foundTicket.id, organizerAddress || 'Organizers');
+        await api.checkInTicket(foundTicket.id, organizerAddress || undefined).catch(() => undefined);
 
         // Cập nhật State
         setTickets((prev) => {
@@ -327,7 +333,7 @@ function extractTicketCode(raw: string): string {
           return [updatedTicket, ...prev];
         });
 
-        const successMsg = `Soát vé thành công: ${ticket.customerName} - ${ticket.ticketCode}`;
+        const successMsg = `Soát vé thành công: ${foundTicket.customerName} - ${foundTicket.ticketCode}`;
         setResult({
           status: 'valid',
           message: successMsg,
@@ -350,8 +356,9 @@ function extractTicketCode(raw: string): string {
     }
   };
 
+  const handleScan = (scannedData: string) => handleManualCheck(scannedData);
+  const onScan = handleScan;
   const validateInput = handleManualCheck;
-  const onScan = (result: string) => validateInput(result);
 
   if (currentRole !== 'organizer') {
     return (

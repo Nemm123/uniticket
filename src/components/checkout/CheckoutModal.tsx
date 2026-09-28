@@ -378,16 +378,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         buyer_email: t.customerEmail || 'customer@uniticket.io',
         customer_email: t.customerEmail || 'customer@uniticket.io',
         status: 'UNUSED',
+        price: t.priceSol,
         created_at: t.purchasedAt || nowIso,
         qr_payload: t.qrPayload || '',
       }));
 
       try {
         if (isSupabaseConfigured) {
-          const { error } = await supabase.from('tickets').insert(ticketsToInsert);
-          if (error) {
-            console.warn('[CheckoutModal] Supabase direct insert warning:', error.message);
-          }
+          await supabase.from('tickets').insert(ticketsToInsert);
         }
       } catch (insertErr) {
         console.warn('[CheckoutModal] Supabase direct insert exception:', insertErr);
