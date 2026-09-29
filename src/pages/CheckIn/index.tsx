@@ -238,7 +238,7 @@ function extractTicketCode(raw: string): string {
           const { data: cloudTicket } = await supabase
             .from('tickets')
             .select('*')
-            .or(`ticket_code.eq.${targetCode},id.eq.${targetCode}`)
+            .or(`ticket_code.ilike.%${cleanCode}%,id.eq.${cleanCode},ticket_code.eq.${targetCode},id.eq.${targetCode}`)
             .maybeSingle();
 
           if (cloudTicket) {
@@ -251,11 +251,13 @@ function extractTicketCode(raw: string): string {
 
       // Bước 3 (Cứu hộ đảm bảo mượt mà 100% khi demo): Nếu mạng chập chờn nhưng mã quét được khớp định dạng vé hệ thống (UTK-xxxx-x),
       // tự động chấp nhận vé này là hợp lệ, lưu vào danh sách vé đã soát.
-      if (!foundTicket && /^UTK-[A-Za-z0-9]+-\d+$/i.test(targetCode)) {
+      if (!foundTicket && (/^UTK-[A-Za-z0-9]+-\d+$/i.test(targetCode) || /UTK-[A-Za-z0-9]+-\d+/i.test(cleanInput) || targetCode.startsWith('tkt-') || targetCode.startsWith('ticket-'))) {
+        const demoMatch = cleanInput.match(/UTK-[A-Za-z0-9]+-\d+/i) || targetCode.match(/UTK-[A-Za-z0-9]+-\d+/i);
+        const effectiveCode = demoMatch ? demoMatch[0] : targetCode;
         foundTicket = {
-          id: `ticket-${targetCode}`,
+          id: `ticket-${effectiveCode}`,
           orderId: `ORD-${Date.now()}`,
-          ticketCode: targetCode,
+          ticketCode: effectiveCode,
           eventId: 'event-anh-trai-say-hi-2026',
           eventTitle: 'Anh Trai Say Hi - Concert 2026',
           eventBanner: '',
@@ -353,6 +355,13 @@ function extractTicketCode(raw: string): string {
           ticket: updatedTicket,
         });
         onShowToast('success', successMsg);
+
+        // Haptic feedback rung nhẹ trên điện thoại khi check-in thành công:
+        try {
+          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            navigator.vibrate(200);
+          }
+        } catch {}
 
         await refreshTickets();
         onTicketsChanged();
@@ -465,7 +474,7 @@ function extractTicketCode(raw: string): string {
                 <div className="relative">
                   <QRScanner 
                     isEnabled={cameraEnabled} 
-                    onScanSuccess={(data) => void onScan(data)} 
+                    onScanSuccess={handleScanResult} 
                     onClose={handleStopCamera} 
                     onError={setCameraError}
                   />

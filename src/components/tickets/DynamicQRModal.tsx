@@ -38,6 +38,7 @@ export function generateDynamicQRPayload(ticket: PurchasedTicket, timestamp: num
   const hash = generateDynamicQRHash(ticket.id, owner, timestamp);
   return JSON.stringify({
     ticketId: ticket.id,
+    ticketCode: ticket.ticketCode || ticket.id,
     owner,
     timestamp,
     hash,

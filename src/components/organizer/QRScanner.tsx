@@ -12,12 +12,17 @@ interface QRScannerProps {
   onError?: (error: string) => void;
 }
 
-export const QRScanner: React.FC<QRScannerProps> = ({
+const QRScannerComponent: React.FC<QRScannerProps> = ({
   onScanSuccess,
   isEnabled,
   onClose,
   onError,
 }) => {
+  const onScanSuccessRef = useRef(onScanSuccess);
+  onScanSuccessRef.current = onScanSuccess;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanIntervalRef = useRef<any>(null);
@@ -34,6 +39,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({
     if (isScanLockedRef.current) return;
     isScanLockedRef.current = true;
     onScanSuccess(result);
+    onScanSuccessRef.current?.(result);
     setTimeout(() => {
       isScanLockedRef.current = false;
     }, 2500);
@@ -202,6 +208,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({
           "Trình duyệt đang chặn quyền Camera. Vui lòng bấm vào icon Ổ khóa (hoặc Cài đặt trang web) trên thanh địa chỉ > Chọn 'Quyền' > Đổi Camera sang 'Cho phép' > Nhấn nút 'Thử lại' bên dưới.";
         // Trình duyệt chưa được cấp quyền truy cập Camera. Vui lòng bấm vào icon Ổ Khóa trên thanh địa chỉ để cấp quyền.
         setCameraError(deniedMsg);
+        onErrorRef.current?.(deniedMsg);
         onError?.(deniedMsg);
       } else if (
         errName === 'NotFoundError' ||
@@ -210,10 +217,12 @@ export const QRScanner: React.FC<QRScannerProps> = ({
       ) {
         const notFoundMsg = 'Không tìm thấy thiết bị Camera trên thiết bị này.';
         setCameraError(notFoundMsg);
+        onErrorRef.current?.(notFoundMsg);
         onError?.(notFoundMsg);
       } else {
         const otherMsg = err?.message || 'Không thể truy cập camera. Vui lòng kiểm tra lại thiết bị.';
         setCameraError(otherMsg);
+        onErrorRef.current?.(otherMsg);
         onError?.(otherMsg);
       }
     } finally {
@@ -230,18 +239,8 @@ export const QRScanner: React.FC<QRScannerProps> = ({
     await startScanner();
   };
 
+  // Chỉ dọn dẹp track khi component thực sự unmount hoàn toàn
   useEffect(() => {
-    if (!isEnabled) {
-      if (scanIntervalRef.current) {
-        clearInterval(scanIntervalRef.current);
-        scanIntervalRef.current = null;
-      }
-      stopExistingTracks();
-      return;
-    }
-
-    void startScanner();
-
     return () => {
       if (scanIntervalRef.current) {
         clearInterval(scanIntervalRef.current);
@@ -257,7 +256,20 @@ export const QRScanner: React.FC<QRScannerProps> = ({
       }
       stopExistingTracks();
     };
-  }, [isEnabled, retryCount, onScanSuccess, onError]);
+  }, []);
+
+  useEffect(() => {
+    if (!isEnabled) {
+      if (scanIntervalRef.current) {
+        clearInterval(scanIntervalRef.current);
+        scanIntervalRef.current = null;
+      }
+      stopExistingTracks();
+      return;
+    }
+
+    void startScanner();
+  }, [isEnabled, retryCount]);
 
   if (!isEnabled) return null;
 
@@ -377,3 +389,5 @@ export const QRScanner: React.FC<QRScannerProps> = ({
     </div>
   );
 };
+
+export const QRScanner = React.memo(QRScannerComponent);
