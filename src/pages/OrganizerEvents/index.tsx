@@ -28,20 +28,22 @@ const fallbackImage = 'https://images.unsplash.com/photo-1492684223066-81342ee5f
 const emptyTier = (): TierDraft => ({ id: `tier-${Date.now()}`, name: 'General Admission', priceSol: 0.5, description: 'Standard event access.', totalQuantity: 100, remainingQuantity: 100, perks: 'Event entry' });
 
 const toForm = (event?: EventItem): EventFormState => ({
-  title: event?.title ?? '', subtitle: event?.subtitle ?? '', description: event?.description ?? '', category: event?.category ?? 'Concert', bannerImage: event?.bannerImage ?? fallbackImage, thumbnailImage: event?.thumbnailImage ?? event?.bannerImage ?? fallbackImage, date: event?.date ?? '', time: event?.time ?? '', venue: event?.venue ?? '', city: event?.city ?? '', status: event?.status ?? 'published',
-  tiers: event?.tiers?.map((tier) => ({
-    id: tier.id,
-    name: tier.name,
-    priceSol: tier.priceSol,
-    description: tier.description,
-    totalQuantity: tier.totalQuantity,
-    remainingQuantity: tier.remainingQuantity,
-    perks: Array.isArray(tier.perks) ? tier.perks.join(', ') : (typeof (tier as any)?.perks === 'string' ? (tier as any).perks : 'Event entry')
-  })) ?? [emptyTier()],
+  title: event?.title ?? '', subtitle: event?.subtitle ?? '', description: event?.description ?? '', category: event?.category ?? 'Concert', bannerImage: event?.bannerImage ?? fallbackImage, thumbnailImage: event?.thumbnailImage ?? event?.bannerImage ?? fallbackImage, date: event?.date ?? '', time: event?.time ?? '', venue: event?.venue ?? (event as any)?.location ?? '', city: event?.city ?? '', status: event?.status ?? 'published',
+  tiers: (event?.tiers && event.tiers.length > 0)
+    ? event.tiers.map((tier) => ({
+        id: tier?.id || `tier-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name: tier?.name || 'General Admission',
+        priceSol: Number(tier?.priceSol ?? 0.5),
+        description: tier?.description || '',
+        totalQuantity: Number(tier?.totalQuantity ?? 100),
+        remainingQuantity: Number(tier?.remainingQuantity ?? 100),
+        perks: Array.isArray(tier?.perks) ? tier.perks.join(', ') : (typeof (tier as any)?.perks === 'string' ? (tier as any).perks : 'Event entry')
+      }))
+    : [emptyTier()],
 });
 
-const remainingTickets = (event: EventItem) => event.tiers?.reduce((total, tier) => total + tier.remainingQuantity, 0) ?? 0;
-const soldTickets = (event: EventItem) => Math.max(0, event.totalTickets - remainingTickets(event));
+const remainingTickets = (event?: EventItem | null) => (event?.tiers || []).reduce((total, tier) => total + (tier?.remainingQuantity || 0), 0);
+const soldTickets = (event?: EventItem | null) => Math.max(0, (event?.totalTickets || 0) - remainingTickets(event));
 const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
 export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events = [], onNavigate, onEventsChanged, organizerWallet, eventsLoading: _eventsLoading = false, eventsError: _eventsError = null, startInCreate = false }) => {
@@ -69,46 +71,67 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events = [], o
   }, [isFormOpen]);
 
   const visibleEvents = useMemo(() => {
-    const safeEvents = Array.isArray(events) ? events : [];
-    const myEvents = safeEvents.filter((e) => {
-      const org = ((e as any).organizer_address || (e as any).organizer || e.createdBy || (typeof e.organizer === 'string' ? e.organizer : e.organizer?.name) || '').toLowerCase().trim();
-      const cur = currentWallet.toLowerCase().trim();
-      return org === cur || !org; // nếu chưa có thì hiển thị cho ví tạo
+    const currentWalletSafe = (currentWallet || '').toLowerCase().trim();
+
+    const myEvents = (events || []).filter((e) => {
+      if (!currentWalletSafe) return true; // Nếu chưa có ví thì hiển thị sự kiện mặc định
+      const org = (
+        (e as any)?.organizer_address || 
+        (e as any)?.organizer || 
+        (e as any)?.createdBy || 
+        (typeof e?.organizer === 'string' ? e.organizer : e?.organizer?.name) || 
+        ''
+      ).toString().toLowerCase().trim();
+
+      return org === currentWalletSafe || !org;
     });
 
-    const targetList = scopeFilter === 'my' ? myEvents : events;
+    const targetList = scopeFilter === 'my' ? myEvents : (events || []);
 
-    return targetList.filter((event) => {
-      const normalized = query.trim().toLowerCase();
-      const matchesQuery = !normalized || event.title.toLowerCase().includes(normalized) || event.venue.toLowerCase().includes(normalized) || event.city.toLowerCase().includes(normalized);
-      const matchesStatus = statusFilter === 'all' || (event.status ?? 'published') === statusFilter;
+    return (targetList || []).filter((event) => {
+      const normalized = (query || '').trim().toLowerCase();
+      const title = ((event as any)?.title || '').toString().toLowerCase();
+      const venue = ((event as any)?.venue || (event as any)?.location || '').toString().toLowerCase();
+      const city = ((event as any)?.city || '').toString().toLowerCase();
+      const matchesQuery = !normalized || title.includes(normalized) || venue.includes(normalized) || city.includes(normalized);
+      const matchesStatus = statusFilter === 'all' || ((event as any)?.status ?? 'published') === statusFilter;
       return matchesQuery && matchesStatus;
     });
   }, [events, query, statusFilter, scopeFilter, currentWallet]);
 
   const updateTier = (index: number, key: keyof TierDraft, value: string | number) => {
-    setForm((current) => current && ({ ...current, tiers: current.tiers.map((tier, tierIndex) => tierIndex === index ? { ...tier, [key]: value } : tier) }));
+    setForm((current) => current && ({ ...current, tiers: (current.tiers || []).map((tier, tierIndex) => tierIndex === index ? { ...tier, [key]: value } : tier) }));
   };
 
   const submitForm = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!form) return;
     setFeedback(null);
-    const title = form.title.trim();
-    const description = form.description.trim();
-    const venue = form.venue.trim();
-    if (!title || !description || !venue || !form.date || !form.time || !form.city.trim()) { setFeedback({ type: 'error', text: t('organizerEvents.validationError') }); return; }
-    if (form.tiers.length === 0 || form.tiers.some((tier) => !tier.name.trim() || !Number.isFinite(tier.priceSol) || tier.priceSol < 0 || !Number.isInteger(tier.totalQuantity) || tier.totalQuantity <= 0 || !Number.isInteger(tier.remainingQuantity) || tier.remainingQuantity < 0 || tier.remainingQuantity > tier.totalQuantity)) { setFeedback({ type: 'error', text: t('organizerEvents.tiersValidationError') }); return; }
+    const title = (form.title || '').trim();
+    const description = (form.description || '').trim();
+    const venue = (form.venue || '').trim();
+    if (!title || !description || !venue || !form.date || !form.time || !(form.city || '').trim()) { setFeedback({ type: 'error', text: t('organizerEvents.validationError') }); return; }
+    const formTiers = form.tiers || [];
+    if (formTiers.length === 0 || formTiers.some((tier) => !tier?.name?.trim() || !Number.isFinite(tier.priceSol) || tier.priceSol < 0 || !Number.isInteger(tier.totalQuantity) || tier.totalQuantity <= 0 || !Number.isInteger(tier.remainingQuantity) || tier.remainingQuantity < 0 || tier.remainingQuantity > tier.totalQuantity)) { setFeedback({ type: 'error', text: t('organizerEvents.tiersValidationError') }); return; }
 
-    const existing = editingId ? events.find((item) => item.id === editingId) : undefined;
-    const purchased = getStoredPurchasedTickets().filter((ticket) => ticket.eventId === editingId);
+    const existing = editingId ? (events || []).find((item) => item?.id === editingId) : undefined;
+    const purchased = getStoredPurchasedTickets().filter((ticket) => ticket?.eventId === editingId);
     for (const ticket of purchased) {
-      const tier = form.tiers.find((item) => item.id === ticket.tierId);
+      const tier = formTiers.find((item) => item?.id === ticket?.tierId);
       if (!tier) { setFeedback({ type: 'error', text: t('organizerEvents.cannotDeletePurchasedTier') }); return; }
-      const soldForTier = purchased.filter((item) => item.tierId === tier.id).length;
+      const soldForTier = purchased.filter((item) => item?.tierId === tier.id).length;
       if (tier.remainingQuantity > tier.totalQuantity - soldForTier) { setFeedback({ type: 'error', text: t('organizerEvents.remainingExceedsCapacity') }); return; }
     }
-    const tiers: TicketTier[] = form.tiers.map((tier) => ({ id: tier.id, name: tier.name.trim(), priceSol: Number(tier.priceSol), description: tier.description.trim() || 'Event access.', perks: tier.perks.split(',').map((item) => item.trim()).filter(Boolean), totalQuantity: Number(tier.totalQuantity), remainingQuantity: Number(tier.remainingQuantity), colorHex: existing?.tiers?.find((item) => item.id === tier.id)?.colorHex ?? '#9945FF' }));
+    const tiers: TicketTier[] = formTiers.map((tier) => ({
+      id: tier.id,
+      name: (tier.name || '').trim(),
+      priceSol: Number(tier.priceSol),
+      description: (tier.description || '').trim() || 'Event access.',
+      perks: typeof tier.perks === 'string' ? tier.perks.split(',').map((item) => item.trim()).filter(Boolean) : (Array.isArray(tier.perks) ? tier.perks : ['Event entry']),
+      totalQuantity: Number(tier.totalQuantity),
+      remainingQuantity: Number(tier.remainingQuantity),
+      colorHex: existing?.tiers?.find((item) => item.id === tier.id)?.colorHex ?? '#9945FF'
+    }));
     const nextEvent: EventItem = {
       id: editingId ?? `event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       title,
@@ -128,9 +151,9 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events = [], o
       },
       organizer_address: currentWallet || 'community',
       organizer_wallet: currentWallet || 'community',
-      minPriceSol: Math.min(...tiers.map((tier) => tier.priceSol)),
-      totalTickets: tiers.reduce((total, tier) => total + tier.totalQuantity, 0),
-      soldTickets: tiers.reduce((total, tier) => total + tier.totalQuantity - tier.remainingQuantity, 0),
+      minPriceSol: tiers.length > 0 ? Math.min(...tiers.map((tier) => tier.priceSol)) : 0,
+      totalTickets: tiers.reduce((total, tier) => total + (tier.totalQuantity || 0), 0),
+      soldTickets: tiers.reduce((total, tier) => total + (tier.totalQuantity || 0) - (tier.remainingQuantity || 0), 0),
       featured: existing?.featured ?? false,
       tags: existing?.tags ?? [],
       status: form.status,
@@ -332,17 +355,17 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events = [], o
           </section>
         ) : (
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-            {visibleEvents.map((event) => (
-              <article key={event.id} className="overflow-hidden rounded-2xl border border-white/10 bg-[#120B30] shadow-xl">
-                <img src={event.thumbnailImage} alt={event.title} className="h-40 w-full object-cover" />
+            {(visibleEvents || []).map((event) => (
+              <article key={event?.id || Math.random()} className="overflow-hidden rounded-2xl border border-white/10 bg-[#120B30] shadow-xl">
+                <img src={event?.thumbnailImage || event?.bannerImage || fallbackImage} alt={event?.title || ''} className="h-40 w-full object-cover" />
                 <div className="space-y-4 p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h2 className="break-words text-lg font-bold text-white">{event.title}</h2>
-                      <p className="mt-1 text-xs text-slate-400">{formatDate(event.date)} · {event.venue}</p>
+                      <h2 className="break-words text-lg font-bold text-white">{event?.title || 'Sự kiện'}</h2>
+                      <p className="mt-1 text-xs text-slate-400">{event?.date ? formatDate(event.date) : ''} · {event?.venue || (event as any)?.location || ''}</p>
                     </div>
                     <span className="shrink-0 rounded-full border border-solana-cyan/30 bg-solana-cyan/10 px-2 py-1 text-[10px] font-bold uppercase text-solana-cyan">
-                      {event.status ?? 'published'}
+                      {event?.status ?? 'published'}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
@@ -475,13 +498,13 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events = [], o
                 <h3 className="font-bold text-white">{t('organizerEvents.tiersHeading')}</h3>
                 <button
                   type="button"
-                  onClick={() => setForm({ ...form, tiers: [...form.tiers, emptyTier()] })}
+                  onClick={() => setForm({ ...form, tiers: [...(form.tiers || []), emptyTier()] })}
                   className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-solana-cyan/30 px-3 text-xs font-semibold text-solana-cyan"
                 >
                   <Plus className="h-4 w-4" /> {t('organizerEvents.addTierBtn')}
                 </button>
               </div>
-              {form.tiers.map((tier, index) => (
+              {(form.tiers || []).map((tier, index) => (
                 <div key={tier.id} className="grid grid-cols-1 gap-2 rounded-xl border border-white/10 bg-black/20 p-3 sm:grid-cols-2">
                   <input
                     value={tier.name}
@@ -526,10 +549,10 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events = [], o
                     placeholder={t('organizerEvents.tierPerks')}
                     className="min-h-11 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white sm:col-span-2"
                   />
-                  {form.tiers.length > 1 && (
+                  {(form.tiers || []).length > 1 && (
                     <button
                       type="button"
-                      onClick={() => setForm({ ...form, tiers: form.tiers.filter((_, tierIndex) => tierIndex !== index) })}
+                      onClick={() => setForm({ ...form, tiers: (form.tiers || []).filter((_, tierIndex) => tierIndex !== index) })}
                       className="min-h-11 text-left text-xs font-semibold text-neon-pink"
                     >
                       {t('organizerEvents.removeTier')}
@@ -569,8 +592,8 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events = [], o
           <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-solana-purple/40 bg-[#0F0A28] p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-xl font-bold text-white">{viewing.title}</h2>
-                <p className="mt-1 text-xs text-solana-cyan">{formatDate(viewing.date)} · {viewing.time} · {viewing.venue}</p>
+                <h2 className="text-xl font-bold text-white">{viewing.title || 'Sự kiện'}</h2>
+                <p className="mt-1 text-xs text-solana-cyan">{viewing.date ? formatDate(viewing.date) : ''} · {viewing.time || ''} · {viewing.venue || (viewing as any)?.location || ''}</p>
               </div>
               <button
                 type="button"
@@ -581,8 +604,8 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events = [], o
                 <X />
               </button>
             </div>
-            <img src={viewing.bannerImage} alt="" className="mt-4 h-40 w-full rounded-xl object-cover" />
-            <p className="mt-4 text-sm leading-relaxed text-slate-300">{viewing.description}</p>
+            <img src={viewing.bannerImage || fallbackImage} alt="" className="mt-4 h-40 w-full rounded-xl object-cover" />
+            <p className="mt-4 text-sm leading-relaxed text-slate-300">{viewing.description || ''}</p>
             <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
               <div className="rounded-xl bg-black/20 p-3 text-slate-300">
                 {t('organizerEvents.categoryLabel')}
