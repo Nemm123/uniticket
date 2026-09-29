@@ -87,24 +87,35 @@ export const VerifyTicketPage: React.FC<VerifyTicketPageProps> = ({ ticketId: pr
           const { data: cloudTicket, error: cloudErr } = await supabase
             .from('tickets')
             .select('*')
-            .or(`id.eq.${clean},ticket_code.eq.${clean},id.ilike.%${clean}%,ticket_code.ilike.%${clean}%`)
+            .or(`id.eq.${clean},ticket_code.eq.${clean}`)
             .maybeSingle();
 
-          if (!cloudErr && cloudTicket) {
-            const mapped = supabaseRowToTicket(cloudTicket);
-            const isUsedCloud = Boolean(
-              cloudTicket.status === 'USED' ||
-              cloudTicket.status === 'used' ||
-              cloudTicket.checked_in_at ||
-              cloudTicket.is_checked_in
-            );
+          let targetCloudTicket = cloudTicket;
+          if (!targetCloudTicket && !cloudErr) {
+            const { data: fuzzyTicket } = await supabase
+              .from('tickets')
+              .select('*')
+              .or(`id.ilike.%${clean}%,ticket_code.ilike.%${clean}%`)
+              .maybeSingle();
+            if (fuzzyTicket) targetCloudTicket = fuzzyTicket;
+          }
+
+          if (targetCloudTicket) {
+            const isUsed = 
+              targetCloudTicket.status === 'USED' || 
+              targetCloudTicket.status === 'used' || 
+              Boolean(targetCloudTicket.checked_in_at) || 
+              Boolean(targetCloudTicket.is_checked_in);
+
+            const mapped = supabaseRowToTicket(targetCloudTicket);
             const resolvedTicket: PurchasedTicket = {
               ...mapped,
-              status: isUsedCloud ? 'USED' : (cloudTicket.status || 'UNUSED'),
-              isCheckedIn: isUsedCloud,
-              checkInStatus: isUsedCloud ? 'checked-in' : 'unused',
-              checkInTime: cloudTicket.checked_in_at || mapped.checkInTime,
-              checkedInBy: cloudTicket.checked_in_by || (mapped as any).checkedInBy || 'Staff Gate',
+              status: isUsed ? 'USED' : 'UNUSED',
+              isCheckedIn: isUsed,
+              isUsed: isUsed,
+              checkInStatus: isUsed ? 'checked-in' : 'unused',
+              checkInTime: targetCloudTicket.checked_in_at || targetCloudTicket.check_in_time || mapped.checkInTime,
+              checkedInBy: targetCloudTicket.checked_in_by || (mapped as any).checkedInBy || 'Staff Gate',
             };
             setTicket(resolvedTicket);
             return;
@@ -345,13 +356,15 @@ export const VerifyTicketPage: React.FC<VerifyTicketPageProps> = ({ ticketId: pr
                     )}
                   </div>
                   <h2 className="text-lg sm:text-xl font-bold text-white mt-1">
-                    {isCheckedIn ? 'ĐÃ SỬ DỤNG (Đã check-in)' : 'HỢP LỆ (Chưa sử dụng)'}
+                    {isCheckedIn ? 'ĐÃ SỬ DỤNG (Đã qua cổng soát vé)' : 'HỢP LỆ (Chưa sử dụng)'}
                   </h2>
                   <p className="text-xs text-slate-300 mt-0.5">
                     {isCheckedIn
                       ? `Vé đã được check-in vào lúc ${
-                          formatDateTime(ticket.checkInTime) || (ticket.checkInTime ? formatDate(ticket.checkInTime) : 'vừa qua')
-                        } bởi ${ticket.checkedInBy || (ticket as any).checked_in_by || 'Staff Gate'}.`
+                          formatDateTime((ticket as any)?.checked_in_at || ticket.checkInTime) ||
+                          formatDate((ticket as any)?.checked_in_at || ticket.checkInTime) ||
+                          (ticket.checkInTime || (ticket as any)?.checked_in_at || 'vừa qua')
+                        } bởi ${ticket.checkedInBy || (ticket as any)?.checked_in_by || 'Staff Gate'}.`
                       : 'Vé nguyên bản, chưa qua cổng soát vé. Sẵn sàng tham gia sự kiện.'}
                   </p>
                 </div>

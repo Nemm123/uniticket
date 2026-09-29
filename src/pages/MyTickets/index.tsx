@@ -251,8 +251,12 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                   <h2 className="break-words text-base font-bold text-white">{ticket.eventTitle}</h2>
                   <p className="mt-1 text-xs text-solana-cyan">{ticket.tierName}</p>
                 </div>
-                <span className="shrink-0 rounded-full border border-solana-green/40 bg-solana-green/15 px-2 py-1 text-[10px] font-bold text-solana-green">
-                  {ticket.isCheckedIn || ticket.status === 'checked_in' || ticket.status === 'CHECKED_IN' ? t('myTickets.statusCheckedIn') : t('myTickets.statusUnused')}
+                <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-bold ${
+                  ticket.isCheckedIn || ticket.isUsed || ticket.status === 'USED' || ticket.status === 'used' || ticket.status === 'checked_in' || ticket.status === 'CHECKED_IN' || Boolean((ticket as any).checked_in_at)
+                    ? 'border-solana-green/40 bg-solana-green/15 text-solana-green'
+                    : 'border-solana-cyan/40 bg-solana-cyan/15 text-solana-cyan'
+                }`}>
+                  {ticket.isCheckedIn || ticket.isUsed || ticket.status === 'USED' || ticket.status === 'used' || ticket.status === 'checked_in' || ticket.status === 'CHECKED_IN' || Boolean((ticket as any).checked_in_at) ? t('myTickets.statusCheckedIn') : t('myTickets.statusUnused')}
                 </span>
               </div>
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
@@ -274,7 +278,7 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                     </button>
 
                     {/* Nút Chuyển nhượng vé chỉ khả dụng khi vé chưa check-in */}
-                    {!ticket.isCheckedIn && !ticket.isUsed && ticket.status !== 'checked_in' && ticket.status !== 'CHECKED_IN' && (
+                    {!ticket.isCheckedIn && !ticket.isUsed && ticket.status !== 'USED' && ticket.status !== 'used' && ticket.status !== 'checked_in' && ticket.status !== 'CHECKED_IN' && !(ticket as any).checked_in_at && (
                       <button
                         onClick={() => onSelectTransferTicket?.(ticket)}
                         className="min-h-11 rounded-xl border border-solana-purple/40 bg-solana-purple/20 px-3.5 py-2 text-xs font-bold text-purple-200 hover:bg-solana-purple/35 hover:text-white hover:border-solana-cyan/40 transition-colors flex items-center gap-1.5"
@@ -285,7 +289,7 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                       </button>
                     )}
                   </div>
-                  {ticket.isCheckedIn && ticket.checkInTime && <span className="text-[11px] text-solana-green">{t('myTickets.checkedInAt', { time: formatDate(ticket.checkInTime, { dateStyle: 'short', timeStyle: 'short' }) })}</span>}
+                  {(ticket.isCheckedIn || (ticket as any).checked_in_at || ticket.status === 'USED') && (ticket.checkInTime || (ticket as any).checked_in_at) && <span className="text-[11px] text-solana-green">{t('myTickets.checkedInAt', { time: formatDate(ticket.checkInTime || (ticket as any).checked_in_at, { dateStyle: 'short', timeStyle: 'short' }) })}</span>}
                 </div>
               </div>
               {/* Solana Explorer & Tra cứu công khai */}

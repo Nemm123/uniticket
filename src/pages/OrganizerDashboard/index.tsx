@@ -34,12 +34,20 @@ interface OrganizerDashboardProps {
 }
 
 const isCheckedIn = (ticket: PurchasedTicket) =>
-  ticket.isCheckedIn ||
-  ticket.checkInStatus === 'checked-in' ||
-  ticket.status === 'checked_in' ||
-  ticket.status === 'CHECKED_IN' ||
-  ticket.status === 'USED' ||
-  ticket.status === 'used';
+  Boolean(
+    ticket?.isCheckedIn ||
+    (ticket as any)?.is_checked_in ||
+    ticket?.isUsed ||
+    (ticket as any)?.is_used ||
+    ticket?.checkInStatus === 'checked-in' ||
+    ticket?.status === 'checked_in' ||
+    ticket?.status === 'CHECKED_IN' ||
+    ticket?.status === 'USED' ||
+    ticket?.status === 'used' ||
+    Boolean(ticket?.checkInTime) ||
+    Boolean((ticket as any)?.checked_in_at) ||
+    Boolean((ticket as any)?.checkedInAt)
+  );
 
 const getRemainingTickets = (event: EventItem) =>
   event.tiers?.reduce((total, tier) => total + tier.remainingQuantity, 0) ?? 0;

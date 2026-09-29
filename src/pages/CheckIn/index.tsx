@@ -369,11 +369,43 @@ function extractTicketCode(raw: string): string {
         const nowIso = checkInTime;
         const nowMs = Date.now();
         const staffWallet = staffWalletAddress || organizerAddress || 'Staff Gate';
+        const scannedCode = cleanCode;
+        const ticketId = foundTicket.id;
+        const ticketCodeStr = foundTicket.ticketCode;
+
         if (foundTicket.status === 'UNUSED' || !foundTicket.isCheckedIn) {
           if (isSupabaseConfigured) {
             try {
-              await supabase.from('tickets').update({ status: 'USED', checked_in_at: new Date().toISOString(), checked_in_by: staffWallet || 'Staff Gate' })
-                .or(`ticket_code.eq.${cleanCode},id.eq.${cleanCode},ticket_code.eq.${targetCode},id.eq.${targetCode}`);
+              // 1. Đồng bộ cả 2 mã (id và ticket_code) lên Supabase Cloud khi check-in
+              await supabase.from('tickets').update({ status: 'USED', checked_in_at: checkInTime, is_checked_in: true, checked_in_by: staffWalletAddress || 'Staff Gate' })
+                .or(`ticket_code.eq.${scannedCode},id.eq.${scannedCode}`);
+
+              // Cập nhật bổ sung cho cả ticket_code và id của vé tìm được để đảm bảo 100% không lệch khóa
+              await supabase.from('tickets').update({ status: 'USED', checked_in_at: checkInTime, is_checked_in: true, checked_in_by: staffWalletAddress || 'Staff Gate' })
+                .or(`ticket_code.eq.${targetCode},id.eq.${targetCode}`);
+
+              if (ticketId) {
+                await supabase
+                  .from('tickets')
+                  .update({
+                    status: 'USED',
+                    checked_in_at: checkInTime,
+                    is_checked_in: true,
+                    checked_in_by: staffWalletAddress || 'Staff Gate'
+                  })
+                  .eq('id', ticketId);
+              }
+              if (ticketCodeStr && ticketCodeStr !== scannedCode) {
+                await supabase
+                  .from('tickets')
+                  .update({
+                    status: 'USED',
+                    checked_in_at: checkInTime,
+                    is_checked_in: true,
+                    checked_in_by: staffWalletAddress || 'Staff Gate'
+                  })
+                  .eq('ticket_code', ticketCodeStr);
+              }
             } catch (supaErr) {
               console.warn('[CheckIn] Lỗi update Supabase status USED:', supaErr);
             }
@@ -384,6 +416,7 @@ function extractTicketCode(raw: string): string {
           ...foundTicket,
           status: 'USED',
           isCheckedIn: true,
+          isUsed: true,
           checkInStatus: 'checked-in',
           checkInTime: nowIso,
           checkedInAt: nowMs,
@@ -391,21 +424,39 @@ function extractTicketCode(raw: string): string {
         };
 
         // Ghi vào Storage & Supabase (đồng thời cập nhật cả localStorage trên máy quét để đồng bộ offline)
-        // Cập nhật cả localStorage của storage.ts:
+        // Cập nhật cả localStorage của storage.ts cho cả hai mã:
         storage.markTicketAsUsed(cleanCode, staffWallet);
+        if (ticketCodeStr) storage.markTicketAsUsed(ticketCodeStr, staffWallet);
+        if (ticketId) storage.markTicketAsUsed(ticketId, staffWallet);
         storage.confirmTicketCheckIn(foundTicket.id, organizerAddress || staffWalletAddress || 'Organizers');
         try {
           const raw = localStorage.getItem('uniticket_purchased_tickets');
           if (raw) {
             const parsed = JSON.parse(raw);
             const updatedRaw = parsed.map((t: any) => {
-              if (t.id === foundTicket.id || t.ticketCode === foundTicket.ticketCode || t.ticketCode === cleanCode || t.ticketCode === targetCode) {
+              if (
+                t.id === foundTicket.id ||
+                t.id === ticketId ||
+                t.id === scannedCode ||
+                t.id === targetCode ||
+                t.ticketCode === foundTicket.ticketCode ||
+                t.ticket_code === foundTicket.ticketCode ||
+                t.ticketCode === ticketCodeStr ||
+                t.ticket_code === ticketCodeStr ||
+                t.ticketCode === scannedCode ||
+                t.ticket_code === scannedCode ||
+                t.ticketCode === targetCode ||
+                t.ticket_code === targetCode
+              ) {
                 return {
                   ...t,
                   status: 'USED',
                   isCheckedIn: true,
+                  is_checked_in: true,
+                  isUsed: true,
                   checkInStatus: 'checked-in',
                   checked_in_at: checkInTime,
+                  checkInTime: checkInTime,
                   checkedInAt: nowMs,
                   checked_in_by: staffWalletAddress || 'Staff Gate'
                 };
