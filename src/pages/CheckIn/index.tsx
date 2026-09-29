@@ -16,6 +16,19 @@ interface CheckInPageProps {
 }
 
 type TicketFilter = 'all' | 'checked-in' | 'unused';
+
+interface CheckedInTicketDetail {
+  ticketCode: string;
+  eventName: string;
+  tierName: string;
+  seat: string;
+  buyerName: string;
+  status: string;
+  formattedPurchaseDate: string;
+  formattedCheckInDate: string;
+  staffAddress: string;
+}
+
 const ticketIsCheckedIn = (ticket: PurchasedTicket) =>
   ticket.isCheckedIn ||
   ticket.status === 'checked_in' ||
@@ -32,6 +45,43 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [checkedInTicketDetail, setCheckedInTicketDetail] = useState<CheckedInTicketDetail | null>(null);
+  const successCardRef = useRef<HTMLDivElement | null>(null);
+
+  const playSuccessBeep = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.15);
+      }
+    } catch {}
+  };
+
+  const formatDateTime = (dateStr?: string) => {
+    if (!dateStr) return formatDate(new Date().toISOString());
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return formatDate(dateStr);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      const hours = String(d.getHours()).padStart(2, '0');
+      const mins = String(d.getMinutes()).padStart(2, '0');
+      return `${day}/${month}/${year} ${hours}:${mins}`;
+    } catch {
+      return formatDate(dateStr);
+    }
+  };
 
   const handleStartCamera = () => {
     setResult(null);
@@ -302,6 +352,7 @@ function extractTicketCode(raw: string): string {
         );
 
         if (isAlreadyCheckedIn || foundTicket.status === 'USED') {
+          setCheckedInTicketDetail(null);
           const usedMsg = 'Vé này đã check-in trước đó!';
           setResult({
             status: 'used',
@@ -356,16 +407,45 @@ function extractTicketCode(raw: string): string {
         });
         onShowToast('success', successMsg);
 
+        // Lưu thông tin vé vừa soát vào state checkedInTicketDetail
+        const code = foundTicket.ticketCode || targetCode || 'UTK-TICKET';
+        const eventName = updatedTicket.eventTitle || foundTicket.eventTitle || 'Anh Trai Say Hi - Concert 2026';
+        const tierName = updatedTicket.tierName || foundTicket.tierName || 'Standard GA';
+        const seat = updatedTicket.seat || foundTicket.seat || 'GA';
+        const buyerName = updatedTicket.customerName || foundTicket.customerName || (foundTicket as any).buyerName || 'Khán giả';
+        const staffAddress = organizerAddress || 'CzQC2PR2ZuMeh5qMqGm4Cqw...';
+
+        setCheckedInTicketDetail({
+          ticketCode: code,
+          eventName,
+          tierName,
+          seat,
+          buyerName,
+          status: 'ĐÃ CHECK-IN',
+          formattedPurchaseDate: formatDateTime(updatedTicket.purchasedAt || updatedTicket.purchaseDate || foundTicket.purchasedAt),
+          formattedCheckInDate: formatDateTime(updatedTicket.checkInTime || nowIso),
+          staffAddress,
+        });
+
+        // Hiệu ứng âm thanh beep ngắn
+        playSuccessBeep();
+
         // Haptic feedback rung nhẹ trên điện thoại khi check-in thành công:
         try {
           if (typeof navigator !== 'undefined' && navigator.vibrate) {
-            navigator.vibrate(200);
+            navigator.vibrate([100, 50, 100]);
           }
         } catch {}
+
+        // Tự động cuộn nhẹ màn hình tới thẻ kết quả (smooth scroll)
+        setTimeout(() => {
+          successCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 150);
 
         await refreshTickets();
         onTicketsChanged();
       } else {
+        setCheckedInTicketDetail(null);
         setResult({
           status: 'invalid',
           message: 'Mã vé không hợp lệ',
@@ -545,14 +625,87 @@ function extractTicketCode(raw: string): string {
           </section>
         </div>
 
-        {result && (
+        {/* THẺ KẾT QUẢ CHI TIẾT SOÁT VÉ THÀNH CÔNG (SUCCESS TICKET CARD) */}
+        {checkedInTicketDetail && (
+          <section
+            ref={successCardRef}
+            className="rounded-2xl border border-emerald-500/80 bg-slate-900/80 bg-[#0d1322] p-5 sm:p-6 shadow-[0_0_25px_rgba(16,185,129,0.25)] animate-fadeIn text-left transition-all"
+            role="status"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-emerald-500/20 pb-4 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-emerald-400 flex items-center gap-2">
+                    Soát vé thành công: <span className="font-mono text-white">{checkedInTicketDetail.ticketCode}</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Vé hợp lệ đã được xác thực và check-in thành công vào hệ thống
+                  </p>
+                </div>
+              </div>
+              <span className="self-start sm:self-auto inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-1 text-xs font-bold text-emerald-400 shadow-sm">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                {checkedInTicketDetail.status}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3.5 gap-x-6 text-sm">
+              <div className="flex flex-col">
+                <span className="text-xs text-gray-400">Sự kiện:</span>
+                <span className="font-medium text-white">{checkedInTicketDetail.eventName}</span>
+              </div>
+
+              <div className="flex flex-col">
+                <span className="text-xs text-gray-400">Hạng vé:</span>
+                <span className="font-medium text-white">{checkedInTicketDetail.tierName}</span>
+              </div>
+
+              <div className="flex flex-col">
+                <span className="text-xs text-gray-400">Ghế:</span>
+                <span className="font-medium text-white">{checkedInTicketDetail.seat}</span>
+              </div>
+
+              <div className="flex flex-col">
+                <span className="text-xs text-gray-400">Mã vé:</span>
+                <span className="font-mono font-bold text-emerald-400">{checkedInTicketDetail.ticketCode}</span>
+              </div>
+
+              <div className="flex flex-col">
+                <span className="text-xs text-gray-400">Người mua:</span>
+                <span className="font-medium text-white">{checkedInTicketDetail.buyerName}</span>
+              </div>
+
+              <div className="flex flex-col">
+                <span className="text-xs text-gray-400">Trạng thái:</span>
+                <span className="font-bold text-emerald-400">{checkedInTicketDetail.status}</span>
+              </div>
+
+              <div className="flex flex-col">
+                <span className="text-xs text-gray-400">Thời điểm mua:</span>
+                <span className="font-medium text-white">{checkedInTicketDetail.formattedPurchaseDate}</span>
+              </div>
+
+              <div className="flex flex-col">
+                <span className="text-xs text-gray-400">Check-in:</span>
+                <span className="font-medium text-emerald-400">{checkedInTicketDetail.formattedCheckInDate}</span>
+              </div>
+
+              <div className="flex flex-col sm:col-span-2">
+                <span className="text-xs text-gray-400">Soát vé bởi:</span>
+                <span className="font-mono text-xs text-slate-300 truncate">{checkedInTicketDetail.staffAddress}</span>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Khung thông báo lỗi / cảnh báo khi vé không hợp lệ hoặc đã dùng */}
+        {result && result.status !== 'valid' && (
           <section className={`rounded-2xl border p-5 ${resultStyle}`} role="status">
             <div className="flex items-start gap-3">
-              {result.status === 'valid' ? (
-                <CheckCircle2 className="h-5 w-5 shrink-0 text-solana-green" />
-              ) : (
-                <ShieldAlert className="h-5 w-5 shrink-0" />
-              )}
+              <ShieldAlert className="h-5 w-5 shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="font-bold">{result.message}</p>
                 {result.ticket && (
@@ -572,7 +725,6 @@ function extractTicketCode(raw: string): string {
                     )}
                   </div>
                 )}
-
               </div>
             </div>
           </section>
