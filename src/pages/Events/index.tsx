@@ -2,9 +2,12 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Search, Filter, Calendar, MapPin, Tag, RotateCcw, Sparkles, Clock, ArrowLeft } from 'lucide-react';
 import { EventItem } from '../../types';
 import { EventCard } from '../../components/common/EventCard';
-import { listEvents, EventFilterParams } from '../../services/eventsApi';
+import { EventFilterParams } from '../../services/eventsApi';
 import { getStoredEvents } from '../../utils/storage';
 import { useTranslation } from '../../i18n';
+import { mockEvents } from '../../data/mockEvents';
+import { supabase, isSupabaseConfigured } from '../../services/supabase';
+import { supabaseRowToEvent } from '../../services/api';
 
 interface EventsPageProps {
   onSelectEvent: (eventId: string) => void;
@@ -120,20 +123,17 @@ export const EventsPage: React.FC<EventsPageProps> = ({
     }
 
     try {
-      const local = getStoredEvents();
-      const remoteEvents = await listEvents(apiFilters);
-      if (remoteEvents.length > 0) {
-        // Gộp sự kiện mockEvents chuẩn để không bao giờ thiếu 4 sự kiện mới
-        const merged = [...remoteEvents];
-        for (const m of local) {
-          if (!merged.some((r) => r.id === m.id || r.title.toLowerCase().trim() === m.title.toLowerCase().trim())) {
-            merged.push(m);
-          }
-        }
-        setEvents(merged);
-      } else {
-        setEvents(local);
-      }
+      const { data: cloudEvents } = await supabase
+        .from('events')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      const combinedEvents = [...(cloudEvents || []), ...mockEvents].filter(
+        (event, index, self) => index === self.findIndex((e) => e.id === event.id)
+      );
+
+      const normalized = combinedEvents.map((e) => supabaseRowToEvent(e));
+      setEvents(normalized);
     } catch {
       // Khi API lỗi hoặc offline, sử dụng dữ liệu đầy đủ từ stored events
       setEvents(getStoredEvents());
@@ -141,10 +141,25 @@ export const EventsPage: React.FC<EventsPageProps> = ({
     } finally {
       setEventsLoading(false);
     }
-  }, [debouncedSearch, selectedCategory, selectedCity, selectedTime, selectedPrice]);
+  }, []);
 
   useEffect(() => {
     void fetchFilteredEvents();
+  }, [fetchFilteredEvents]);
+
+  // Realtime update khi có sự kiện mới trên Supabase Cloud
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    const channel = supabase
+      .channel('events-list-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => {
+        void fetchFilteredEvents();
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, [fetchFilteredEvents]);
 
   // Client-side filter fallback & custom date filter

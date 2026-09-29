@@ -3,6 +3,7 @@ import { ArrowLeft, CalendarDays, CheckCircle2, Edit3, Eye, Package, Plus, Searc
 import { EventItem, TicketTier } from '../../types';
 import { deleteStoredEvent, getStoredPurchasedTickets, getStoredEvents, saveStoredEvents } from '../../utils/storage';
 import { createEvent as createEventApi, deleteEvent as deleteEventApi, updateEvent as updateEventApi } from '../../services/eventsApi';
+import { supabase, isSupabaseConfigured } from '../../services/supabase';
 import { useTranslation } from '../../i18n';
 
 type EventStatus = NonNullable<EventItem['status']>;
@@ -38,6 +39,7 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
   const { t, formatDate } = useTranslation();
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | EventStatus>('all');
+  const [scopeFilter, setScopeFilter] = useState<'my' | 'all'>('my');
   const [form, setForm] = useState<EventFormState | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<EventItem | null>(null);
@@ -56,8 +58,21 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
   const visibleEvents = useMemo(() => events.filter((event) => {
     const normalized = query.trim().toLowerCase();
     const matchesQuery = !normalized || event.title.toLowerCase().includes(normalized) || event.venue.toLowerCase().includes(normalized) || event.city.toLowerCase().includes(normalized);
-    return matchesQuery && (statusFilter === 'all' || (event.status ?? 'published') === statusFilter);
-  }), [events, query, statusFilter]);
+    const matchesStatus = statusFilter === 'all' || (event.status ?? 'published') === statusFilter;
+    if (!matchesQuery || !matchesStatus) return false;
+
+    if (scopeFilter === 'my' && organizerWallet) {
+      const myWallet = organizerWallet.toLowerCase();
+      const isMine =
+        (event.createdBy && event.createdBy.toLowerCase() === myWallet) ||
+        ((event as any).organizer_address && (event as any).organizer_address.toLowerCase() === myWallet) ||
+        ((event as any).organizer_wallet && (event as any).organizer_wallet.toLowerCase() === myWallet) ||
+        (event.organizer?.name && event.organizer.name.toLowerCase() === myWallet) ||
+        (event.organizer?.name && event.organizer.name.toLowerCase().includes(myWallet.slice(0, 4)));
+      return isMine;
+    }
+    return true;
+  }), [events, query, statusFilter, scopeFilter, organizerWallet]);
 
   const updateTier = (index: number, key: keyof TierDraft, value: string | number) => {
     setForm((current) => current && ({ ...current, tiers: current.tiers.map((tier, tierIndex) => tierIndex === index ? { ...tier, [key]: value } : tier) }));
@@ -86,6 +101,42 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
     setIsSaving(true);
     try {
       const savedEvent = nextEvent;
+
+      // ĐỒNG BỘ SỰ KIỆN LÊN SUPABASE CLOUD KHI TẠO
+      try {
+        if (isSupabaseConfigured) {
+          const newEvent = {
+            ...nextEvent,
+            location: nextEvent.venue,
+            imageUrl: nextEvent.bannerImage,
+            image: nextEvent.bannerImage,
+          };
+          const walletAddress = organizerWallet || 'community';
+          const newEventPayload = {
+            id: newEvent.id,
+            title: newEvent.title,
+            description: newEvent.description,
+            category: newEvent.category || 'music',
+            location: newEvent.location,
+            city: newEvent.city || 'Hà Nội',
+            date: newEvent.date,
+            image_url: newEvent.imageUrl || newEvent.image,
+            organizer_address: walletAddress || 'community',
+            is_published: true,
+            tiers: newEvent.tiers, // Mảng JSON các hạng vé
+            created_at: new Date().toISOString()
+          };
+
+          if (editingId) {
+            await supabase.from('events').upsert([newEventPayload]);
+          } else {
+            await supabase.from('events').insert([newEventPayload]);
+          }
+        }
+      } catch (cloudErr) {
+        console.warn('[OrganizerEvents] Supabase sync error:', cloudErr);
+      }
+
       // Thử đồng bộ qua API ngầm nếu có backend mà không chặn trải nghiệm người dùng
       try {
         if (!editingId) {
@@ -123,6 +174,14 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
     }
     setIsDeleting(true);
     try {
+      try {
+        if (isSupabaseConfigured) {
+          await supabase.from('events').delete().eq('id', deleteTarget.id);
+        }
+      } catch (cloudErr) {
+        console.warn('[OrganizerEvents] Supabase event delete error:', cloudErr);
+      }
+
       if (isUuid(deleteTarget.id)) {
         try {
           await deleteEventApi(deleteTarget.id).catch(() => undefined);
@@ -169,7 +228,31 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
 
         {feedback && <div role="status" className={`rounded-xl border p-3 text-sm ${feedback.type === 'success' ? 'border-solana-green/30 bg-solana-green/10 text-solana-green' : 'border-neon-pink/40 bg-neon-pink/10 text-pink-100'}`}>{feedback.text}</div>}
 
-        <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[#120B30] p-4 sm:flex-row">
+        <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[#120B30] p-4 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-1 rounded-xl bg-black/40 p-1 border border-white/10">
+            <button
+              type="button"
+              onClick={() => setScopeFilter('my')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                scopeFilter === 'my'
+                  ? 'bg-solana-purple text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Sự kiện của tôi
+            </button>
+            <button
+              type="button"
+              onClick={() => setScopeFilter('all')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                scopeFilter === 'all'
+                  ? 'bg-solana-purple text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Tất cả sự kiện
+            </button>
+          </div>
           <label className="relative flex-1">
             <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
             <input

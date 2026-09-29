@@ -30,9 +30,10 @@ import { TransferTicketModal } from './components/tickets/TransferTicketModal';
 import { EventItem, PurchasedTicket, TicketTier, ToastMessage, UserRole } from './types';
 import { getStoredEvents, getStoredPurchasedTickets, saveStoredEvents, savePurchasedTickets } from './utils/storage';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { getEvent as getEventFromApi, isApiEventId, listEvents } from './services/eventsApi';
+import { getEvent as getEventFromApi, isApiEventId } from './services/eventsApi';
 
 import * as api from './services/api';
+import { mockEvents } from './data/mockEvents';
 import { supabase, isSupabaseConfigured } from './services/supabase';
 import { clearWalletSession, getWalletSession, setWalletSession, WalletSession } from './services/authSession';
 import { logoutWalletSession } from './services/authApi';
@@ -237,31 +238,26 @@ export function App() {
     };
   }, [refreshSolBalance]);
 
-  // Backend is the source of truth for events when available, merged with mockEvents.
+  // Backend and Supabase Cloud is the source of truth for events, merged with mockEvents.
   useEffect(() => {
     let cancelled = false;
     const loadEvents = async () => {
       setEventsLoading(true);
       setEventsError(null);
       try {
-        const stored = getStoredEvents();
-        setEvents(stored);
+        const { data: cloudEvents } = await supabase
+          .from('events')
+          .select('*')
+          .order('created_at', { ascending: false });
 
-        const remoteEvents = await listEvents();
+        const combinedEvents = [...(cloudEvents || []), ...mockEvents].filter(
+          (event, index, self) => index === self.findIndex((e) => e.id === event.id)
+        );
+
         if (cancelled) return;
-        if (remoteEvents.length > 0) {
-          // Luôn đảm bảo nạp đè và giữ trọn vẹn 4 sự kiện mới từ mockEvents
-          const merged = [...remoteEvents];
-          for (const m of stored) {
-            if (!merged.some((r) => r.id === m.id || r.title.toLowerCase().trim() === m.title.toLowerCase().trim())) {
-              merged.push(m);
-            }
-          }
-          setEvents(merged);
-          saveStoredEvents(merged);
-        } else {
-          setEvents(getStoredEvents());
-        }
+        const normalized = combinedEvents.map((e) => api.supabaseRowToEvent(e));
+        setEvents(normalized);
+        saveStoredEvents(normalized);
       } catch (error) {
         if (cancelled) return;
         // Fallback an toàn về danh sách sự kiện mặc định mà không hiển thị lỗi đỏ
@@ -271,6 +267,21 @@ export function App() {
       }
     };
     void loadEvents();
+
+    if (isSupabaseConfigured) {
+      const channel = supabase
+        .channel('app-events-realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => {
+          void loadEvents();
+        })
+        .subscribe();
+
+      return () => {
+        cancelled = true;
+        void supabase.removeChannel(channel);
+      };
+    }
+
     return () => { cancelled = true; };
   }, []);
 

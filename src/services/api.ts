@@ -1,4 +1,4 @@
-import { EventItem, PurchasedTicket, CheckInResult } from '../types';
+import { EventItem, PurchasedTicket, CheckInResult, TicketTier } from '../types';
 import * as storage from '../utils/storage';
 import { getWalletSession } from './authSession';
 import { supabase, isSupabaseConfigured } from './supabase';
@@ -88,6 +88,71 @@ export function supabaseRowToTicket(row: any): PurchasedTicket {
     nftTransactionSignature: row.tx_signature || undefined,
     nftMintAddress: row.nft_mint_address || undefined,
     nftStatus: row.nft_status || 'MINTED',
+  };
+}
+
+export function supabaseRowToEvent(row: any): EventItem {
+  const fallbackImg = 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=80';
+  const img = row.image_url || row.image || row.banner_image || row.bannerImage || row.thumbnail_image || fallbackImg;
+  const tiers = Array.isArray(row.tiers) ? row.tiers.map((t: any) => ({
+    id: t.id || `tier-${Math.random().toString(36).slice(2, 8)}`,
+    name: t.name || 'General Admission',
+    priceSol: Number(t.priceSol || t.price || 0.05),
+    price: Number(t.priceSol || t.price || 0.05),
+    priceVnd: t.priceVnd ? Number(t.priceVnd) : undefined,
+    description: t.description || 'Standard event access.',
+    perks: Array.isArray(t.perks) ? t.perks : (typeof t.perks === 'string' ? t.perks.split(',').map((p: string) => p.trim()) : ['Vé NFT Solana']),
+    totalQuantity: Number(t.totalQuantity || 100),
+    remainingQuantity: Number(t.remainingQuantity ?? t.totalQuantity ?? 100),
+    colorHex: t.colorHex || '#9945FF',
+  })) : [
+    {
+      id: `tier-${row.id || 'ga'}`,
+      name: 'General Admission',
+      priceSol: 0.05,
+      price: 0.05,
+      priceVnd: 200000,
+      description: 'Standard event access.',
+      perks: ['Cổng vào tiêu chuẩn', 'Vé NFT Solana'],
+      totalQuantity: 500,
+      remainingQuantity: 500,
+      colorHex: '#9945FF',
+    }
+  ];
+
+  const totalTickets = tiers.reduce((acc: number, t: TicketTier) => acc + (t.totalQuantity || 0), 0);
+  const remainingTickets = tiers.reduce((acc: number, t: TicketTier) => acc + (t.remainingQuantity || 0), 0);
+  const soldTickets = Math.max(0, totalTickets - remainingTickets);
+  const minPriceSol = tiers.length > 0 ? Math.min(...tiers.map((t: TicketTier) => t.priceSol)) : Number(row.minPriceSol || row.min_price_sol || 0.05);
+
+  return {
+    ...row,
+    id: String(row.id),
+    title: row.title || 'Untitled Event',
+    subtitle: row.subtitle || row.description?.slice(0, 100) || '',
+    description: row.description || '',
+    category: row.category || 'music',
+    bannerImage: img,
+    thumbnailImage: row.thumbnail_image || row.thumbnailImage || img,
+    date: row.date || row.event_date || '2026-12-31',
+    time: row.time || row.event_time || '19:00',
+    venue: row.venue || row.location || 'Việt Nam',
+    city: row.city || 'Hà Nội',
+    organizer: row.organizer || {
+      name: (row.organizer_address || row.organizer_wallet || 'UniTicket Organizer').slice(0, 12),
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+      verified: true,
+    },
+    minPriceSol,
+    minPriceVnd: tiers[0]?.priceVnd,
+    totalTickets: totalTickets || 1000,
+    soldTickets,
+    featured: Boolean(row.featured || row.is_featured),
+    status: row.status || (row.is_published ? 'published' : 'upcoming'),
+    tags: Array.isArray(row.tags) ? row.tags : [row.category || 'Event', row.city || 'Việt Nam'],
+    lineup: Array.isArray(row.lineup) ? row.lineup : [],
+    tiers,
+    createdBy: row.organizer_address || row.organizer_wallet || row.createdBy,
   };
 }
 
