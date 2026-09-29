@@ -104,7 +104,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   }, [propPublicKey, adapterPublicKey, effectiveWalletAddress]);
 
   const activeWallet = isWalletConnected ? effectiveWalletAddress : null;
-  const unitPriceSol = 0.05;
+  const unitPriceSol = typeof tier.priceSol === 'number' && tier.priceSol > 0
+    ? tier.priceSol
+    : (typeof (tier as any).price === 'number' && (tier as any).price > 0 ? (tier as any).price : 0.05);
   const totalSol = unitPriceSol * selectedQuantity;
 
   useEffect(() => {
@@ -338,7 +340,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           tierId: tier.id,
           tierName: tier.name,
           seat: `ZONE-${tier.name.slice(0, 2).toUpperCase()}-${Math.floor(10 + Math.random() * 90)}`,
-          priceSol: 0.05,
+          priceSol: unitPriceSol,
           ticketCode,
           customerName: customerName.trim() || 'Khách tham dự',
           customerEmail: customerEmail.trim() || 'customer@uniticket.io',
@@ -524,7 +526,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <div>
                   <span className="text-slate-400 block text-[11px]">Đơn giá:</span>
                   <span className="text-solana-green block mt-0.5 font-mono font-bold">
-                    0.05 SOL (Solana Devnet)
+                    {unitPriceSol} SOL (Solana Devnet)
                   </span>
                 </div>
                 <div>
@@ -682,7 +684,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[11px]">Giá vé:</span>
-                  <span className="text-solana-green block mt-0.5 font-mono font-bold">0.05 SOL (Solana Devnet)</span>
+                  <span className="text-solana-green block mt-0.5 font-mono font-bold">{unitPriceSol} SOL (Solana Devnet)</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[11px]">Phí mạng (Gas fee):</span>
@@ -694,7 +696,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <div>
                   <span className="text-xs font-bold text-white block">Tổng thanh toán:</span>
                   <span className="text-[11px] text-slate-400 font-mono">
-                    {selectedQuantity > 1 ? `${selectedQuantity} × 0.05 SOL` : '0.05 SOL (Solana Devnet)'}
+                    {selectedQuantity > 1 ? `${selectedQuantity} × ${unitPriceSol} SOL` : `${unitPriceSol} SOL (Solana Devnet)`}
                   </span>
                 </div>
                 <span className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-solana-cyan via-white to-solana-green font-mono">

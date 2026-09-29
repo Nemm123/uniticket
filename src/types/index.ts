@@ -2,6 +2,7 @@ export interface TicketTier {
   id: string;
   name: string;
   priceSol: number;
+  price?: number;
   priceVnd?: number;
   description: string;
   perks: string[];
