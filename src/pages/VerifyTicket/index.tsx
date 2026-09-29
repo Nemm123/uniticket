@@ -18,7 +18,8 @@ import {
 } from 'lucide-react';
 import { PurchasedTicket } from '../../types';
 import { getStoredTicketById } from '../../utils/storage';
-import { getTicketById } from '../../services/api';
+import { getTicketById, supabaseRowToTicket } from '../../services/api';
+import { supabase, isSupabaseConfigured } from '../../services/supabase';
 import { useTranslation } from '../../i18n';
 
 interface VerifyTicketPageProps {
@@ -28,6 +29,22 @@ interface VerifyTicketPageProps {
 
 export const VerifyTicketPage: React.FC<VerifyTicketPageProps> = ({ ticketId: propTicketId, onNavigate }) => {
   const { t, formatDate } = useTranslation();
+
+  const formatDateTime = (dateStr?: string) => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      const hours = String(d.getHours()).padStart(2, '0');
+      const mins = String(d.getMinutes()).padStart(2, '0');
+      return `${day}/${month}/${year} ${hours}:${mins}`;
+    } catch {
+      return dateStr;
+    }
+  };
 
   // Extract ID from props, URL param, or pathname
   const initialIdentifier = React.useMemo(() => {
@@ -52,8 +69,9 @@ export const VerifyTicketPage: React.FC<VerifyTicketPageProps> = ({ ticketId: pr
   const [searched, setSearched] = useState<boolean>(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  const fetchTicket = async (identifier: string) => {
-    if (!identifier.trim()) {
+  const fetchTicket = async (queryCode: string) => {
+    const clean = queryCode.trim();
+    if (!clean) {
       setTicket(null);
       setLoading(false);
       setSearched(true);
@@ -63,14 +81,47 @@ export const VerifyTicketPage: React.FC<VerifyTicketPageProps> = ({ ticketId: pr
     setSearched(true);
 
     try {
+      // 1. Tìm trực tiếp trên Supabase bảng tickets:
+      if (isSupabaseConfigured) {
+        try {
+          const { data: cloudTicket, error: cloudErr } = await supabase
+            .from('tickets')
+            .select('*')
+            .or(`id.eq.${clean},ticket_code.eq.${clean},id.ilike.%${clean}%,ticket_code.ilike.%${clean}%`)
+            .maybeSingle();
+
+          if (!cloudErr && cloudTicket) {
+            const mapped = supabaseRowToTicket(cloudTicket);
+            const isUsedCloud = Boolean(
+              cloudTicket.status === 'USED' ||
+              cloudTicket.status === 'used' ||
+              cloudTicket.checked_in_at ||
+              cloudTicket.is_checked_in
+            );
+            const resolvedTicket: PurchasedTicket = {
+              ...mapped,
+              status: isUsedCloud ? 'USED' : (cloudTicket.status || 'UNUSED'),
+              isCheckedIn: isUsedCloud,
+              checkInStatus: isUsedCloud ? 'checked-in' : 'unused',
+              checkInTime: cloudTicket.checked_in_at || mapped.checkInTime,
+              checkedInBy: cloudTicket.checked_in_by || (mapped as any).checkedInBy || 'Staff Gate',
+            };
+            setTicket(resolvedTicket);
+            return;
+          }
+        } catch (supaQueryErr) {
+          console.warn('[VerifyTicket] Lỗi query Supabase:', supaQueryErr);
+        }
+      }
+
       // Prioritize API then fallback to storage
-      let found = await getTicketById(identifier.trim());
+      let found = await getTicketById(clean);
       if (!found) {
-        found = getStoredTicketById(identifier.trim());
+        found = getStoredTicketById(clean);
       }
       setTicket(found);
     } catch {
-      const fallback = getStoredTicketById(identifier.trim());
+      const fallback = getStoredTicketById(clean);
       setTicket(fallback);
     } finally {
       setLoading(false);
@@ -91,6 +142,58 @@ export const VerifyTicketPage: React.FC<VerifyTicketPageProps> = ({ ticketId: pr
       setLoading(false);
     }
   }, [initialIdentifier]);
+
+  // 3. TỰ ĐỘNG LẮNG NGHE SUPABASE REALTIME TRÊN TRANG TRA CỨU:
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    const channel = supabase
+      .channel('verify_ticket_realtime_stream')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'tickets',
+        },
+        (payload) => {
+          const updated = payload.new as any;
+          if (!updated) return;
+
+          setTicket((prevTicket) => {
+            if (!prevTicket) return prevTicket;
+            const currentCode = (prevTicket.ticketCode || '').toLowerCase().trim();
+            const currentId = (prevTicket.id || '').toLowerCase().trim();
+            const targetCode = (updated.ticket_code || '').toLowerCase().trim();
+            const targetId = (updated.id || '').toLowerCase().trim();
+
+            const isMatch =
+              (targetCode && (targetCode === currentCode || targetCode === currentId)) ||
+              (targetId && (targetId === currentId || targetId === currentCode));
+
+            if (isMatch) {
+              console.log('[VerifyTicket] Realtime check-in detected:', updated);
+              const mapped = supabaseRowToTicket(updated);
+              return {
+                ...prevTicket,
+                ...mapped,
+                status: 'USED',
+                isCheckedIn: true,
+                checkInStatus: 'checked-in',
+                checkInTime: updated.checked_in_at || new Date().toISOString(),
+                checkedInBy: updated.checked_in_by || prevTicket.checkedInBy || 'Staff Gate',
+              };
+            }
+            return prevTicket;
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,9 +216,13 @@ export const VerifyTicketPage: React.FC<VerifyTicketPageProps> = ({ ticketId: pr
   const isCheckedIn = Boolean(
     ticket?.isCheckedIn ||
     ticket?.isUsed ||
+    ticket?.status === 'USED' ||
+    ticket?.status === 'used' ||
     ticket?.status === 'checked_in' ||
     ticket?.status === 'CHECKED_IN' ||
-    ticket?.checkInStatus === 'checked-in'
+    ticket?.checkInStatus === 'checked-in' ||
+    (ticket as any)?.checked_in_at ||
+    (ticket as any)?.is_checked_in
   );
 
   const isTransferred = Boolean(
@@ -203,14 +310,14 @@ export const VerifyTicketPage: React.FC<VerifyTicketPageProps> = ({ ticketId: pr
             <div
               className={`p-5 rounded-2xl border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-xl ${
                 isCheckedIn
-                  ? 'bg-amber-950/30 border-amber-500/40 text-amber-200'
+                  ? 'bg-rose-950/40 border-rose-500/50 text-rose-200'
                   : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
               }`}
             >
               <div className="flex items-center gap-3">
                 {isCheckedIn ? (
-                  <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
-                    <CheckCircle2 className="w-7 h-7" />
+                  <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-400">
+                    <XCircle className="w-7 h-7" />
                   </div>
                 ) : (
                   <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
@@ -222,6 +329,15 @@ export const VerifyTicketPage: React.FC<VerifyTicketPageProps> = ({ ticketId: pr
                     <span className="text-xs uppercase tracking-wider font-mono font-bold px-2 py-0.5 rounded bg-black/40 border border-white/10">
                       Solana Devnet Verified
                     </span>
+                    {isCheckedIn ? (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                        ĐÃ SỬ DỤNG
+                      </span>
+                    ) : (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        HỢP LỆ
+                      </span>
+                    )}
                     {isTransferred && (
                       <span className="text-xs font-semibold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
                         {t('verifyPage.statusTransferred')}
@@ -229,11 +345,13 @@ export const VerifyTicketPage: React.FC<VerifyTicketPageProps> = ({ ticketId: pr
                     )}
                   </div>
                   <h2 className="text-lg sm:text-xl font-bold text-white mt-1">
-                    {isCheckedIn ? t('verifyPage.statusCheckedIn') : t('verifyPage.statusValid')}
+                    {isCheckedIn ? 'ĐÃ SỬ DỤNG (Đã qua cổng soát vé)' : 'HỢP LỆ (Chưa sử dụng)'}
                   </h2>
                   <p className="text-xs text-slate-300 mt-0.5">
-                    {isCheckedIn && ticket.checkInTime
-                      ? `Đã soát vé vào lúc: ${formatDate(ticket.checkInTime, { dateStyle: 'short', timeStyle: 'short' })}`
+                    {isCheckedIn
+                      ? `Vé đã được check-in vào lúc ${
+                          formatDateTime(ticket.checkInTime) || (ticket.checkInTime ? formatDate(ticket.checkInTime) : 'vừa qua')
+                        } bởi ${ticket.checkedInBy || (ticket as any).checked_in_by || 'Staff Gate'}.`
                       : 'Vé nguyên bản, chưa qua cổng soát vé. Sẵn sàng tham gia sự kiện.'}
                   </p>
                 </div>

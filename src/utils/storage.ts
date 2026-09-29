@@ -696,6 +696,16 @@ export function confirmTicketCheckIn(ticketId: string, checkedInBy: string): Che
 // Backwards-compatible validation entry point. It intentionally does not check in a ticket.
 export const checkInTicket = validateTicketForCheckIn;
 
+export function markTicketAsUsed(ticketIdentifier: string, checkedInBy: string = 'Staff Gate'): boolean {
+  if (!ticketIdentifier) return false;
+  try {
+    const res = confirmTicketCheckIn(ticketIdentifier, checkedInBy);
+    return res.status === 'valid';
+  } catch {
+    return false;
+  }
+}
+
 export function getStoredCheckInHistory(): CheckInRecord[] {
   try {
     const data = localStorage.getItem(CHECKIN_HISTORY_KEY);

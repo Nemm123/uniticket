@@ -368,10 +368,11 @@ function extractTicketCode(raw: string): string {
         const checkInTime = new Date().toISOString();
         const nowIso = checkInTime;
         const nowMs = Date.now();
+        const staffWallet = staffWalletAddress || organizerAddress || 'Staff Gate';
         if (foundTicket.status === 'UNUSED' || !foundTicket.isCheckedIn) {
           if (isSupabaseConfigured) {
             try {
-              await supabase.from('tickets').update({ status: 'USED', checked_in_at: checkInTime, checked_in_by: staffWalletAddress || 'Staff Gate' })
+              await supabase.from('tickets').update({ status: 'USED', checked_in_at: new Date().toISOString(), checked_in_by: staffWallet || 'Staff Gate' })
                 .or(`ticket_code.eq.${cleanCode},id.eq.${cleanCode},ticket_code.eq.${targetCode},id.eq.${targetCode}`);
             } catch (supaErr) {
               console.warn('[CheckIn] Lỗi update Supabase status USED:', supaErr);
@@ -390,6 +391,8 @@ function extractTicketCode(raw: string): string {
         };
 
         // Ghi vào Storage & Supabase (đồng thời cập nhật cả localStorage trên máy quét để đồng bộ offline)
+        // Cập nhật cả localStorage của storage.ts:
+        storage.markTicketAsUsed(cleanCode, staffWallet);
         storage.confirmTicketCheckIn(foundTicket.id, organizerAddress || staffWalletAddress || 'Organizers');
         try {
           const raw = localStorage.getItem('uniticket_purchased_tickets');
