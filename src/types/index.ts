@@ -105,6 +105,9 @@ export interface PurchasedTicket {
   customerName: string;
   customerEmail: string;
   customerWallet: string;
+  ownerAddress?: string;
+  walletAddress?: string;
+  owner_address?: string;
   purchasedAt: string;      // ISO string
   purchaseDate: string;      // ISO string nghiệp vụ
   status: 'valid' | 'checked_in' | 'transferred' | 'VALID' | 'CHECKED_IN' | 'USED' | 'used' | 'UNUSED' | 'unused' | (string & {});
