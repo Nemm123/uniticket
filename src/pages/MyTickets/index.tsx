@@ -14,6 +14,7 @@ import { PurchasedTicket } from '../../types';
 import { getStoredPurchasedTickets } from '../../utils/storage';
 import { supabase, isSupabaseConfigured } from '../../services/supabase';
 import { supabaseRowToTicket } from '../../services/api';
+import { getWalletSession } from '../../services/authSession';
 import { useTranslation } from '../../i18n';
 import { PhantomLogo } from '../../components/common/PhantomLogo';
 
@@ -22,6 +23,7 @@ export interface MyTicketsProps {
   onOpenWalletModal?: () => void;
   onSelectQrTicket?: (ticket: PurchasedTicket) => void;
   onSelectTransferTicket?: (ticket: PurchasedTicket) => void;
+  walletAddress?: string | null;
 }
 
 export const MyTicketsPage: React.FC<MyTicketsProps> = ({
@@ -29,20 +31,31 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
   onOpenWalletModal,
   onSelectQrTicket,
   onSelectTransferTicket,
+  walletAddress: propWalletAddress,
 }) => {
   const { t, formatDate } = useTranslation();
-  // 1. Lấy trạng thái kết nối ví từ Solana Wallet Adapter
+  // 1. ĐỒNG BỘ NGUỒN LẤY ĐỊA CHỈ VÍ:
+  // Lấy trạng thái kết nối ví từ Solana Wallet Adapter, props, Session hoặc LocalStorage
   const { publicKey, connected } = useWallet();
-  const walletAddress = publicKey?.toBase58();
+  const sessionWallet = getWalletSession()?.walletAddress;
+  const effectiveWalletAddress = 
+    publicKey?.toBase58() || 
+    propWalletAddress || 
+    sessionWallet || 
+    localStorage.getItem('wallet_address') || 
+    localStorage.getItem('phantom_wallet_address') || 
+    '';
+
+  const isWalletConnected = Boolean(connected && publicKey) || Boolean(effectiveWalletAddress);
 
   const [tickets, setTickets] = useState<PurchasedTicket[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
 
   // 1. QUẢN LÝ TRẠNG THÁI KHI NGẮT KẾT NỐI VÍ (DISCONNECTED STATE):
-  // Thêm useEffect theo dõi trạng thái connected và walletAddress:
-  // Khi !connected hoặc !walletAddress: Lập tức xóa trắng danh sách vé và không fetch/đọc vé nào.
+  // Thêm useEffect theo dõi trạng thái isWalletConnected và effectiveWalletAddress:
+  // Khi !isWalletConnected hoặc !effectiveWalletAddress: Lập tức xóa trắng danh sách vé và không fetch/đọc vé nào.
   useEffect(() => {
-    if (!connected || !walletAddress) {
+    if (!isWalletConnected || !effectiveWalletAddress) {
       setTickets([]);
       return;
     }
@@ -89,7 +102,7 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
 
         // 3. LỌC CHÍNH XÁC VÉ THEO ĐỊA CHỈ VÍ ĐANG KẾT NỐI (STRICT WALLET FILTER):
         const filtered = combined.filter(
-          t => (t.ownerAddress || t.walletAddress || t.owner_address)?.toLowerCase() === walletAddress.toLowerCase()
+          t => (t.ownerAddress || t.walletAddress || t.owner_address || t.customerWallet)?.toLowerCase() === effectiveWalletAddress.toLowerCase()
         );
 
         if (!isCancelled) {
@@ -105,7 +118,7 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
             owner_address: t.owner_address || t.customerWallet || t.ownerAddress || t.walletAddress,
           }));
           const filtered = localTickets.filter(
-            t => (t.ownerAddress || t.walletAddress || t.owner_address)?.toLowerCase() === walletAddress.toLowerCase()
+            t => (t.ownerAddress || t.walletAddress || t.owner_address || t.customerWallet)?.toLowerCase() === effectiveWalletAddress.toLowerCase()
           );
           setTickets(filtered);
         }
@@ -134,10 +147,10 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [connected, walletAddress]);
+  }, [isWalletConnected, effectiveWalletAddress]);
 
   // 2. HIỂN THỊ MÀN HÌNH YÊU CẦU KẾT NỐI VÍ (WALLET GUARD UI):
-  if (!connected || !walletAddress) {
+  if (!isWalletConnected || !effectiveWalletAddress) {
     return (
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16 space-y-8 animate-fadeIn">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/10">
@@ -208,7 +221,7 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
           className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-solana-purple/40 bg-solana-purple/20 px-4 py-2 text-xs font-semibold text-solana-cyan transition-colors hover:bg-solana-purple/30 shrink-0"
         >
           <PhantomLogo className="h-4 w-4" />
-          {walletAddress ? `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}` : t('myTickets.connectWalletNotice')}
+          {effectiveWalletAddress ? `${effectiveWalletAddress.slice(0, 4)}...${effectiveWalletAddress.slice(-4)}` : t('myTickets.connectWalletNotice')}
         </button>
       </div>
 

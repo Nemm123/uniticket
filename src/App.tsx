@@ -867,6 +867,7 @@ export function App() {
             onOpenWalletModal={() => setIsWalletModalOpen(true)}
             onSelectQrTicket={setSelectedQrTicket}
             onSelectTransferTicket={setTransferTicketTarget}
+            walletAddress={walletAddress}
           />
         )}
 
