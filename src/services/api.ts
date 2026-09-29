@@ -53,7 +53,16 @@ export function ticketToSupabaseRow(ticket: PurchasedTicket) {
 }
 
 export function supabaseRowToTicket(row: any): PurchasedTicket {
-  const isCheckedIn = Boolean(row.is_checked_in || row.is_used || row.status === 'checked_in');
+  const isCheckedIn = Boolean(
+    row.is_checked_in ||
+    row.is_used ||
+    row.status === 'checked_in' ||
+    row.status === 'CHECKED_IN' ||
+    row.status === 'USED' ||
+    row.status === 'used' ||
+    row.checked_in_at ||
+    row.check_in_time
+  );
   return {
     id: String(row.id),
     orderId: row.order_id || '',
@@ -77,9 +86,9 @@ export function supabaseRowToTicket(row: any): PurchasedTicket {
     owner_address: row.owner_address || row.customer_wallet || row.wallet_address || '',
     purchasedAt: row.created_at || row.purchased_at || new Date().toISOString(),
     purchaseDate: row.created_at || row.purchase_date || new Date().toISOString(),
-    status: isCheckedIn ? 'checked_in' : (row.status || 'valid'),
+    status: isCheckedIn ? (row.status === 'USED' || row.status === 'used' ? 'USED' : 'checked_in') : (row.status || 'valid'),
     isCheckedIn,
-    isUsed: Boolean(row.is_used || row.is_checked_in),
+    isUsed: Boolean(row.is_used || row.is_checked_in || isCheckedIn),
     checkInTime: row.check_in_time || row.checked_in_at || undefined,
     checkedInBy: row.checked_in_by || undefined,
     transferredAt: row.transferred_at || undefined,

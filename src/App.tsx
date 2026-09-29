@@ -13,12 +13,7 @@ import { OrganizerEvents } from './pages/OrganizerEvents';
 import { AccessDenied } from './pages/AccessDenied';
 import { MyTicketsPage } from './pages/MyTickets';
 import { SearchModal } from './components/common/SearchModal';
-import { 
-  ArrowLeft, 
-  PlusCircle, 
-  ArrowUp, 
-  Sparkles
-} from 'lucide-react';
+import { ArrowUp } from 'lucide-react';
 import { VerifyTicketPage } from './pages/VerifyTicket';
 import { DynamicQRModal } from './components/tickets/DynamicQRModal';
 import { TransferTicketModal } from './components/tickets/TransferTicketModal';
@@ -911,7 +906,7 @@ export function App() {
 
         {currentPage === 'create-event' && (
           <OrganizerEvents
-            events={events}
+            events={events || []}
             onNavigate={handleNavigate}
             organizerWallet={walletAddress}
             eventsLoading={eventsLoading}
@@ -933,89 +928,6 @@ export function App() {
             onConnectWallet={() => setIsWalletModalOpen(true)}
             onNavigate={handleNavigate}
           />
-        )}
-
-        {/* Trang Tạo Sự Kiện (Create Event Preview) */}
-        {false && currentPage === 'create-event' && (
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10 sm:py-16 space-y-6 animate-fadeIn">
-            <button
-              onClick={() => handleNavigate('home')}
-              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-solana-cyan mb-2 transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Quay lại Trang Chủ</span>
-            </button>
-
-            <div className="rounded-2xl bg-[#120B30] border border-solana-purple/30 p-6 sm:p-8 shadow-2xl space-y-6">
-              <div className="flex items-center gap-3 pb-4 border-b border-white/10">
-                <div className="p-3 rounded-xl bg-solana-green/20 text-solana-green">
-                  <PlusCircle className="w-6 h-6" />
-                </div>
-                <div>
-                  <h1 className="text-xl sm:text-2xl font-extrabold text-white">
-                    Tạo Sự Kiện Mới & Phát Hành Vé NFT
-                  </h1>
-                  <p className="text-xs text-slate-300">
-                    Dành cho Ban tổ chức concert & lễ hội âm nhạc Web3
-                  </p>
-                </div>
-              </div>
-
-              {/* Form Xem Trước */}
-              <div className="space-y-4 text-sm">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-200 mb-1">
-                    Tên Sự Kiện / Hòa Nhạc *
-                  </label>
-                  <input
-                    type="text"
-                    disabled
-                    placeholder="VD: Neon Cyber Live Concert 2026"
-                    className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-slate-400 text-xs cursor-not-allowed"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-200 mb-1">
-                      Thể Loại *
-                    </label>
-                    <input
-                      type="text"
-                      disabled
-                      placeholder="EDM Festival"
-                      className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-slate-400 text-xs cursor-not-allowed"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-200 mb-1">
-                      Giá Vé Khởi Điểm (SOL) *
-                    </label>
-                    <input
-                      type="text"
-                      disabled
-                      placeholder="0.85 SOL"
-                      className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-slate-400 text-xs cursor-not-allowed"
-                    />
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-xl bg-purple-950/40 border border-solana-purple/30 text-xs text-purple-200 flex items-start gap-2">
-                  <Sparkles className="w-4 h-4 text-solana-cyan shrink-0 mt-0.5" />
-                  <span>
-                    Form tạo sự kiện đầy đủ kèm tính năng mint Smart Contract trên Solana sẽ hoàn thiện ở các giai đoạn tiếp theo.
-                  </span>
-                </div>
-
-                <button
-                  onClick={() => alert('Chức năng Tạo Sự Kiện sẽ sẵn sàng sau khi hoàn tất các giao diện phụ!')}
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-solana-purple to-neon-pink text-white font-bold text-xs sm:text-sm shadow-lg hover:shadow-solana-purple/50 transition-all active:scale-95"
-                >
-                  Gửi Thông Tin Duyệt Sự Kiện (Bản Thử Nghiệm)
-                </button>
-              </div>
-            </div>
-          </div>
         )}
       </main>
 

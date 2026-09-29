@@ -345,7 +345,7 @@ export const VerifyTicketPage: React.FC<VerifyTicketPageProps> = ({ ticketId: pr
                     )}
                   </div>
                   <h2 className="text-lg sm:text-xl font-bold text-white mt-1">
-                    {isCheckedIn ? 'ĐÃ SỬ DỤNG (Đã qua cổng soát vé)' : 'HỢP LỆ (Chưa sử dụng)'}
+                    {isCheckedIn ? 'ĐÃ SỬ DỤNG (Đã check-in)' : 'HỢP LỆ (Chưa sử dụng)'}
                   </h2>
                   <p className="text-xs text-slate-300 mt-0.5">
                     {isCheckedIn

@@ -29,14 +29,22 @@ const emptyTier = (): TierDraft => ({ id: `tier-${Date.now()}`, name: 'General A
 
 const toForm = (event?: EventItem): EventFormState => ({
   title: event?.title ?? '', subtitle: event?.subtitle ?? '', description: event?.description ?? '', category: event?.category ?? 'Concert', bannerImage: event?.bannerImage ?? fallbackImage, thumbnailImage: event?.thumbnailImage ?? event?.bannerImage ?? fallbackImage, date: event?.date ?? '', time: event?.time ?? '', venue: event?.venue ?? '', city: event?.city ?? '', status: event?.status ?? 'published',
-  tiers: event?.tiers?.map((tier) => ({ id: tier.id, name: tier.name, priceSol: tier.priceSol, description: tier.description, totalQuantity: tier.totalQuantity, remainingQuantity: tier.remainingQuantity, perks: tier.perks.join(', ') })) ?? [emptyTier()],
+  tiers: event?.tiers?.map((tier) => ({
+    id: tier.id,
+    name: tier.name,
+    priceSol: tier.priceSol,
+    description: tier.description,
+    totalQuantity: tier.totalQuantity,
+    remainingQuantity: tier.remainingQuantity,
+    perks: Array.isArray(tier.perks) ? tier.perks.join(', ') : (typeof (tier as any)?.perks === 'string' ? (tier as any).perks : 'Event entry')
+  })) ?? [emptyTier()],
 });
 
 const remainingTickets = (event: EventItem) => event.tiers?.reduce((total, tier) => total + tier.remainingQuantity, 0) ?? 0;
 const soldTickets = (event: EventItem) => Math.max(0, event.totalTickets - remainingTickets(event));
 const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
-export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavigate, onEventsChanged, organizerWallet, eventsLoading: _eventsLoading = false, eventsError: _eventsError = null, startInCreate = false }) => {
+export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events = [], onNavigate, onEventsChanged, organizerWallet, eventsLoading: _eventsLoading = false, eventsError: _eventsError = null, startInCreate = false }) => {
   const { t, formatDate } = useTranslation();
   const { publicKey } = useWallet();
   const walletAddress = organizerWallet;
@@ -45,7 +53,7 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | EventStatus>('all');
   const [scopeFilter, setScopeFilter] = useState<'my' | 'all'>('my');
-  const [form, setForm] = useState<EventFormState | null>(null);
+  const [form, setForm] = useState<EventFormState | null>(() => (startInCreate ? toForm() : null));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<EventItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<EventItem | null>(null);
@@ -61,7 +69,8 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
   }, [isFormOpen]);
 
   const visibleEvents = useMemo(() => {
-    const myEvents = events.filter((e) => {
+    const safeEvents = Array.isArray(events) ? events : [];
+    const myEvents = safeEvents.filter((e) => {
       const org = ((e as any).organizer_address || (e as any).organizer || e.createdBy || (typeof e.organizer === 'string' ? e.organizer : e.organizer?.name) || '').toLowerCase().trim();
       const cur = currentWallet.toLowerCase().trim();
       return org === cur || !org; // nếu chưa có thì hiển thị cho ví tạo
@@ -198,6 +207,9 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
       onEventsChanged(nextEvents);
       setFeedback({ type: 'success', text: editingId ? t('organizerEvents.eventUpdatedSuccess') : t('organizerEvents.eventCreatedSuccess') });
       setForm(null); setEditingId(null);
+      if (startInCreate) {
+        onNavigate('organizer-events');
+      }
     } finally {
       setIsSaving(false);
     }
@@ -384,7 +396,13 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
           <form onSubmit={submitForm} className="relative my-4 w-full max-w-3xl space-y-5 rounded-2xl border border-solana-purple/40 bg-[#0F0A28] p-5 shadow-2xl sm:p-7">
             <button
               type="button"
-              onClick={() => { setForm(null); setEditingId(null); }}
+              onClick={() => {
+                setForm(null);
+                setEditingId(null);
+                if (startInCreate) {
+                  onNavigate('organizer-events');
+                }
+              }}
               aria-label={t('common.close')}
               className="absolute right-3 top-3 inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-300 hover:bg-white/10"
             >
@@ -523,7 +541,13 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
             <div className="flex flex-col-reverse gap-3 border-t border-white/10 pt-4 sm:flex-row sm:justify-end">
               <button
                 type="button"
-                onClick={() => { setForm(null); setEditingId(null); }}
+                onClick={() => {
+                  setForm(null);
+                  setEditingId(null);
+                  if (startInCreate) {
+                    onNavigate('organizer-events');
+                  }
+                }}
                 className="min-h-11 rounded-xl border border-white/10 px-5 text-sm font-semibold text-slate-300"
               >
                 {t('common.cancel')}
