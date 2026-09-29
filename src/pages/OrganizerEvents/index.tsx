@@ -70,23 +70,63 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events = [], o
     if (isFormOpen) createEventModalRef.current?.scrollTo(0, 0);
   }, [isFormOpen]);
 
+  const allEvents = useMemo(() => {
+    let customEvents: any[] = [];
+    try {
+      customEvents = JSON.parse(localStorage.getItem('uniticket_custom_events') || '[]');
+    } catch {}
+
+    const safeEvents = Array.isArray(events) ? events : [];
+    const safeCustom = Array.isArray(customEvents) ? customEvents : [];
+
+    const map = new Map<string, any>();
+    // Custom events first so they take precedence
+    safeCustom.forEach((e) => {
+      if (e?.id) {
+        map.set(e.id, { ...e, is_custom_created: true, createdByCurrentUser: true });
+      }
+    });
+    safeEvents.forEach((e) => {
+      if (e?.id && !map.has(e.id)) {
+        map.set(e.id, e);
+      } else if (e?.id && map.has(e.id)) {
+        map.set(e.id, { ...e, ...map.get(e.id) });
+      }
+    });
+    return Array.from(map.values());
+  }, [events]);
+
   const visibleEvents = useMemo(() => {
     const currentWalletSafe = (currentWallet || '').toLowerCase().trim();
 
-    const myEvents = (events || []).filter((e) => {
-      if (!currentWalletSafe) return true; // Nếu chưa có ví thì hiển thị sự kiện mặc định
-      const org = (
-        (e as any)?.organizer_address || 
-        (e as any)?.organizer || 
-        (e as any)?.createdBy || 
-        (typeof e?.organizer === 'string' ? e.organizer : e?.organizer?.name) || 
+    const myEvents = allEvents.filter((e: any) => {
+      const orgAddress = (
+        e.organizer_address || 
+        e.organizerAddress || 
+        e.organizer_wallet || 
+        (typeof e.organizer === 'string' ? e.organizer : e.organizer?.address || e.organizer?.name) || 
         ''
       ).toString().toLowerCase().trim();
 
-      return org === currentWalletSafe || !org;
+      // Hiển thị nếu:
+      // 1. Khớp địa chỉ ví hiện tại
+      // 2. Hoặc sự kiện do chính trình duyệt này tạo ra (cờ is_custom_created)
+      // 3. Hoặc nếu ví hiện tại trống
+      return (
+        (currentWalletSafe && orgAddress === currentWalletSafe) ||
+        e.is_custom_created === true ||
+        e.createdByCurrentUser === true ||
+        !orgAddress
+      );
     });
 
-    const targetList = scopeFilter === 'my' ? myEvents : (events || []);
+    const finalMyEvents = myEvents.length > 0 
+      ? myEvents 
+      : allEvents.filter((e: any) => e.is_custom_created === true || e.createdByCurrentUser === true);
+
+    const targetList = scopeFilter === 'my' 
+      ? (finalMyEvents.length > 0 ? finalMyEvents : (currentWalletSafe ? [] : allEvents)) 
+      : allEvents;
 
     return (targetList || []).filter((event) => {
       const normalized = (query || '').trim().toLowerCase();
@@ -97,7 +137,7 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events = [], o
       const matchesStatus = statusFilter === 'all' || ((event as any)?.status ?? 'published') === statusFilter;
       return matchesQuery && matchesStatus;
     });
-  }, [events, query, statusFilter, scopeFilter, currentWallet]);
+  }, [allEvents, query, statusFilter, scopeFilter, currentWallet]);
 
   const updateTier = (index: number, key: keyof TierDraft, value: string | number) => {
     setForm((current) => current && ({ ...current, tiers: (current.tiers || []).map((tier, tierIndex) => tierIndex === index ? { ...tier, [key]: value } : tier) }));
@@ -162,9 +202,21 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events = [], o
       tiers,
     };
     (nextEvent as any).organizer = currentWallet;
+    (nextEvent as any).organizerAddress = currentWallet;
+    (nextEvent as any).is_custom_created = true;
+    (nextEvent as any).createdByCurrentUser = true;
     setIsSaving(true);
     try {
       const savedEvent = nextEvent;
+
+      // BẮT BUỘC lưu newEvent vào localStorage (uniticket_custom_events):
+      try {
+        const existingCustom = JSON.parse(localStorage.getItem('uniticket_custom_events') || '[]');
+        const filtered = existingCustom.filter((item: any) => item.id !== savedEvent.id);
+        localStorage.setItem('uniticket_custom_events', JSON.stringify([savedEvent, ...filtered]));
+      } catch (err) {
+        console.warn('[OrganizerEvents] Failed to store in uniticket_custom_events:', err);
+      }
 
       // ĐỒNG BỘ SỰ KIỆN LÊN SUPABASE CLOUD KHI TẠO
       try {
@@ -267,6 +319,11 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events = [], o
         setFeedback({ type: 'error', text: localResult.message });
         return;
       }
+      try {
+        const custom = JSON.parse(localStorage.getItem('uniticket_custom_events') || '[]');
+        const filtered = custom.filter((item: any) => item.id !== deleteTarget.id);
+        localStorage.setItem('uniticket_custom_events', JSON.stringify(filtered));
+      } catch {}
       onEventsChanged(events.filter((event) => event.id !== deleteTarget.id));
       setFeedback({ type: 'success', text: t('organizerEvents.eventDeletedSuccess') });
       setDeleteTarget(null);

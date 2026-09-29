@@ -232,7 +232,12 @@ export function App() {
           .select('*')
           .order('created_at', { ascending: false });
 
-        const combinedEvents = [...(cloudEvents || []), ...mockEvents].filter(
+        let customEvents: any[] = [];
+        try {
+          customEvents = JSON.parse(localStorage.getItem('uniticket_custom_events') || '[]');
+        } catch {}
+
+        const combinedEvents = [...(Array.isArray(customEvents) ? customEvents : []), ...(cloudEvents || []), ...mockEvents].filter(
           (event, index, self) => index === self.findIndex((e) => e.id === event.id)
         );
 

@@ -1,5 +1,6 @@
 import { EventItem, TicketTier } from '../types';
 import { getWalletSession } from './authSession';
+import { supabase, isSupabaseConfigured } from './supabase';
 
 /**
  * API client for the events resource. The browser talks to the local demo API
@@ -183,6 +184,48 @@ export async function getEvent(id: string): Promise<EventItem> {
 }
 
 export async function createEvent(input: EventMutationInput): Promise<EventItem> {
+  const currentWallet = input.organizerWallet || 
+    (typeof window !== 'undefined' ? (localStorage.getItem('wallet_address') || localStorage.getItem('phantom_wallet_address') || '') : '');
+
+  const newEvent: EventItem = {
+    ...input.event,
+    organizer_address: currentWallet || input.event.organizer_address || 'community',
+    organizer_wallet: currentWallet || input.event.organizer_wallet || 'community',
+  };
+  (newEvent as any).is_custom_created = true;
+  (newEvent as any).createdByCurrentUser = true;
+
+  if (typeof window !== 'undefined') {
+    try {
+      const existing = JSON.parse(localStorage.getItem('uniticket_custom_events') || '[]');
+      const filtered = existing.filter((item: any) => item.id !== newEvent.id);
+      localStorage.setItem('uniticket_custom_events', JSON.stringify([newEvent, ...filtered]));
+    } catch {}
+  }
+
+  try {
+    if (isSupabaseConfigured) {
+      const newEventPayload = {
+        id: newEvent.id,
+        title: newEvent.title,
+        description: newEvent.description,
+        category: newEvent.category || 'music',
+        location: newEvent.venue,
+        city: newEvent.city || 'Hà Nội',
+        date: newEvent.date,
+        image_url: newEvent.bannerImage || newEvent.thumbnailImage,
+        organizer_address: currentWallet || 'community',
+        organizer: currentWallet || 'community',
+        is_published: true,
+        tiers: newEvent.tiers,
+        created_at: new Date().toISOString()
+      };
+      await supabase.from('events').insert([newEventPayload]);
+    }
+  } catch (err) {
+    console.warn('[eventsApi] Supabase insert error:', err);
+  }
+
   return mapEvent(await request<ApiEvent>('/api/events', { method: 'POST', body: JSON.stringify(payload(input)) }));
 }
 
