@@ -47,6 +47,7 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [checkedInTicketDetail, setCheckedInTicketDetail] = useState<CheckedInTicketDetail | null>(null);
   const successCardRef = useRef<HTMLDivElement | null>(null);
+  const staffWalletAddress = (organizerAddress || localStorage.getItem('wallet_address') || 'Staff Gate').trim();
 
   const playSuccessBeep = () => {
     try {
@@ -364,12 +365,14 @@ function extractTicketCode(raw: string): string {
         }
 
         // Nếu vé hợp lệ (UNUSED): Chuyển trạng thái sang USED, ghi nhận checked_in_at, cập nhật lên Supabase/Storage và hiển thị thông báo xanh lá: Soát vé thành công: [Mã vé]
-        const nowIso = new Date().toISOString();
+        const checkInTime = new Date().toISOString();
+        const nowIso = checkInTime;
         const nowMs = Date.now();
         if (foundTicket.status === 'UNUSED' || !foundTicket.isCheckedIn) {
           if (isSupabaseConfigured) {
             try {
-              await supabase.from('tickets').update({ status: 'USED', checked_in_at: nowIso }).eq('id', foundTicket.id);
+              await supabase.from('tickets').update({ status: 'USED', checked_in_at: checkInTime, checked_in_by: staffWalletAddress || 'Staff Gate' })
+                .or(`ticket_code.eq.${cleanCode},id.eq.${cleanCode},ticket_code.eq.${targetCode},id.eq.${targetCode}`);
             } catch (supaErr) {
               console.warn('[CheckIn] Lỗi update Supabase status USED:', supaErr);
             }
@@ -383,11 +386,32 @@ function extractTicketCode(raw: string): string {
           checkInStatus: 'checked-in',
           checkInTime: nowIso,
           checkedInAt: nowMs,
-          checkedInBy: organizerAddress || 'Organizers',
+          checkedInBy: organizerAddress || staffWalletAddress || 'Organizers',
         };
 
-        // Ghi vào Storage & Supabase
-        storage.confirmTicketCheckIn(foundTicket.id, organizerAddress || 'Organizers');
+        // Ghi vào Storage & Supabase (đồng thời cập nhật cả localStorage trên máy quét để đồng bộ offline)
+        storage.confirmTicketCheckIn(foundTicket.id, organizerAddress || staffWalletAddress || 'Organizers');
+        try {
+          const raw = localStorage.getItem('uniticket_purchased_tickets');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const updatedRaw = parsed.map((t: any) => {
+              if (t.id === foundTicket.id || t.ticketCode === foundTicket.ticketCode || t.ticketCode === cleanCode || t.ticketCode === targetCode) {
+                return {
+                  ...t,
+                  status: 'USED',
+                  isCheckedIn: true,
+                  checkInStatus: 'checked-in',
+                  checked_in_at: checkInTime,
+                  checkedInAt: nowMs,
+                  checked_in_by: staffWalletAddress || 'Staff Gate'
+                };
+              }
+              return t;
+            });
+            localStorage.setItem('uniticket_purchased_tickets', JSON.stringify(updatedRaw));
+          }
+        } catch {}
         await api.checkInTicket(foundTicket.id, organizerAddress || undefined).catch(() => undefined);
 
         // Cập nhật State

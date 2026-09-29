@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, CalendarDays, CheckCircle2, Edit3, Eye, Package, Plus, Search, Trash2, X } from 'lucide-react';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { EventItem, TicketTier } from '../../types';
 import { deleteStoredEvent, getStoredPurchasedTickets, getStoredEvents, saveStoredEvents } from '../../utils/storage';
 import { createEvent as createEventApi, deleteEvent as deleteEventApi, updateEvent as updateEventApi } from '../../services/eventsApi';
@@ -37,6 +38,10 @@ const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89
 
 export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavigate, onEventsChanged, organizerWallet, eventsLoading: _eventsLoading = false, eventsError: _eventsError = null, startInCreate = false }) => {
   const { t, formatDate } = useTranslation();
+  const { publicKey } = useWallet();
+  const walletAddress = organizerWallet;
+  const currentWallet = (walletAddress || publicKey?.toBase58() || localStorage.getItem('wallet_address') || '').trim();
+
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | EventStatus>('all');
   const [scopeFilter, setScopeFilter] = useState<'my' | 'all'>('my');
@@ -55,24 +60,22 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
     if (isFormOpen) createEventModalRef.current?.scrollTo(0, 0);
   }, [isFormOpen]);
 
-  const visibleEvents = useMemo(() => events.filter((event) => {
-    const normalized = query.trim().toLowerCase();
-    const matchesQuery = !normalized || event.title.toLowerCase().includes(normalized) || event.venue.toLowerCase().includes(normalized) || event.city.toLowerCase().includes(normalized);
-    const matchesStatus = statusFilter === 'all' || (event.status ?? 'published') === statusFilter;
-    if (!matchesQuery || !matchesStatus) return false;
+  const visibleEvents = useMemo(() => {
+    const myEvents = events.filter((e) => {
+      const org = ((e as any).organizer_address || (e as any).organizer || e.createdBy || (typeof e.organizer === 'string' ? e.organizer : e.organizer?.name) || '').toLowerCase().trim();
+      const cur = currentWallet.toLowerCase().trim();
+      return org === cur || !org; // nếu chưa có thì hiển thị cho ví tạo
+    });
 
-    if (scopeFilter === 'my' && organizerWallet) {
-      const myWallet = organizerWallet.toLowerCase();
-      const isMine =
-        (event.createdBy && event.createdBy.toLowerCase() === myWallet) ||
-        ((event as any).organizer_address && (event as any).organizer_address.toLowerCase() === myWallet) ||
-        ((event as any).organizer_wallet && (event as any).organizer_wallet.toLowerCase() === myWallet) ||
-        (event.organizer?.name && event.organizer.name.toLowerCase() === myWallet) ||
-        (event.organizer?.name && event.organizer.name.toLowerCase().includes(myWallet.slice(0, 4)));
-      return isMine;
-    }
-    return true;
-  }), [events, query, statusFilter, scopeFilter, organizerWallet]);
+    const targetList = scopeFilter === 'my' ? myEvents : events;
+
+    return targetList.filter((event) => {
+      const normalized = query.trim().toLowerCase();
+      const matchesQuery = !normalized || event.title.toLowerCase().includes(normalized) || event.venue.toLowerCase().includes(normalized) || event.city.toLowerCase().includes(normalized);
+      const matchesStatus = statusFilter === 'all' || (event.status ?? 'published') === statusFilter;
+      return matchesQuery && matchesStatus;
+    });
+  }, [events, query, statusFilter, scopeFilter, currentWallet]);
 
   const updateTier = (index: number, key: keyof TierDraft, value: string | number) => {
     setForm((current) => current && ({ ...current, tiers: current.tiers.map((tier, tierIndex) => tierIndex === index ? { ...tier, [key]: value } : tier) }));
@@ -97,7 +100,36 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
       if (tier.remainingQuantity > tier.totalQuantity - soldForTier) { setFeedback({ type: 'error', text: t('organizerEvents.remainingExceedsCapacity') }); return; }
     }
     const tiers: TicketTier[] = form.tiers.map((tier) => ({ id: tier.id, name: tier.name.trim(), priceSol: Number(tier.priceSol), description: tier.description.trim() || 'Event access.', perks: tier.perks.split(',').map((item) => item.trim()).filter(Boolean), totalQuantity: Number(tier.totalQuantity), remainingQuantity: Number(tier.remainingQuantity), colorHex: existing?.tiers?.find((item) => item.id === tier.id)?.colorHex ?? '#9945FF' }));
-    const nextEvent: EventItem = { id: editingId ?? `event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title, subtitle: form.subtitle.trim(), description, category: form.category, bannerImage: form.bannerImage.trim() || fallbackImage, thumbnailImage: form.thumbnailImage.trim() || form.bannerImage.trim() || fallbackImage, date: form.date, time: form.time, venue, city: form.city.trim(), organizer: existing?.organizer ?? { name: 'UniTicket Organizer', avatar: fallbackImage, verified: false }, minPriceSol: Math.min(...tiers.map((tier) => tier.priceSol)), totalTickets: tiers.reduce((total, tier) => total + tier.totalQuantity, 0), soldTickets: tiers.reduce((total, tier) => total + tier.totalQuantity - tier.remainingQuantity, 0), featured: existing?.featured ?? false, tags: existing?.tags ?? [], status: form.status, createdBy: existing?.createdBy, lineup: existing?.lineup, tiers };
+    const nextEvent: EventItem = {
+      id: editingId ?? `event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      title,
+      subtitle: form.subtitle.trim(),
+      description,
+      category: form.category,
+      bannerImage: form.bannerImage.trim() || fallbackImage,
+      thumbnailImage: form.thumbnailImage.trim() || form.bannerImage.trim() || fallbackImage,
+      date: form.date,
+      time: form.time,
+      venue,
+      city: form.city.trim(),
+      organizer: {
+        name: currentWallet ? `${currentWallet.slice(0, 4)}...${currentWallet.slice(-4)}` : (existing?.organizer?.name || 'UniTicket Organizer'),
+        avatar: fallbackImage,
+        verified: true,
+      },
+      organizer_address: currentWallet || 'community',
+      organizer_wallet: currentWallet || 'community',
+      minPriceSol: Math.min(...tiers.map((tier) => tier.priceSol)),
+      totalTickets: tiers.reduce((total, tier) => total + tier.totalQuantity, 0),
+      soldTickets: tiers.reduce((total, tier) => total + tier.totalQuantity - tier.remainingQuantity, 0),
+      featured: existing?.featured ?? false,
+      tags: existing?.tags ?? [],
+      status: form.status,
+      createdBy: existing?.createdBy || currentWallet || 'community',
+      lineup: existing?.lineup,
+      tiers,
+    };
+    (nextEvent as any).organizer = currentWallet;
     setIsSaving(true);
     try {
       const savedEvent = nextEvent;
@@ -111,7 +143,6 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
             imageUrl: nextEvent.bannerImage,
             image: nextEvent.bannerImage,
           };
-          const walletAddress = organizerWallet || 'community';
           const newEventPayload = {
             id: newEvent.id,
             title: newEvent.title,
@@ -121,16 +152,23 @@ export const OrganizerEvents: React.FC<OrganizerEventsProps> = ({ events, onNavi
             city: newEvent.city || 'Hà Nội',
             date: newEvent.date,
             image_url: newEvent.imageUrl || newEvent.image,
-            organizer_address: walletAddress || 'community',
+            organizer_address: currentWallet || 'community',
+            organizer: currentWallet || 'community',
             is_published: true,
             tiers: newEvent.tiers, // Mảng JSON các hạng vé
             created_at: new Date().toISOString()
           };
 
           if (editingId) {
-            await supabase.from('events').upsert([newEventPayload]);
+            const { error: upsertErr } = await supabase.from('events').upsert([newEventPayload]);
+            if (upsertErr) {
+              console.warn('[OrganizerEvents] Supabase upsert error details:', upsertErr);
+            }
           } else {
-            await supabase.from('events').insert([newEventPayload]);
+            const { error: insertErr } = await supabase.from('events').insert([newEventPayload]);
+            if (insertErr) {
+              console.warn('[OrganizerEvents] Supabase insert error details:', insertErr);
+            }
           }
         }
       } catch (cloudErr) {

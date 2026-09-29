@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   BarChart3,
   CalendarDays,
@@ -21,7 +21,8 @@ import {
 import { EventItem, PurchasedTicket } from '../../types';
 import { useTranslation } from '../../i18n';
 import * as storage from '../../utils/storage';
-import { getInitialDemoTickets } from '../../services/api';
+import { getInitialDemoTickets, supabaseRowToTicket } from '../../services/api';
+import { supabase, isSupabaseConfigured } from '../../services/supabase';
 import { SOLANA_TREASURY_WALLET_STR } from '../../services/solanaClient';
 
 interface OrganizerDashboardProps {
@@ -36,7 +37,9 @@ const isCheckedIn = (ticket: PurchasedTicket) =>
   ticket.isCheckedIn ||
   ticket.checkInStatus === 'checked-in' ||
   ticket.status === 'checked_in' ||
-  ticket.status === 'CHECKED_IN';
+  ticket.status === 'CHECKED_IN' ||
+  ticket.status === 'USED' ||
+  ticket.status === 'used';
 
 const getRemainingTickets = (event: EventItem) =>
   event.tiers?.reduce((total, tier) => total + tier.remainingQuantity, 0) ?? 0;
@@ -68,7 +71,44 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
   const [withdrawnAmount, setWithdrawnAmount] = useState<number>(0);
   const [withdrawTxSig, setWithdrawTxSig] = useState<string | null>(null);
 
-  // Gather all tickets (from props, storage, or demo tickets if empty)
+  // Supabase Cloud Realtime tickets synchronization
+  const [cloudTickets, setCloudTickets] = useState<PurchasedTicket[]>([]);
+
+  const fetchCloudTickets = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    try {
+      const { data, error } = await supabase.from('tickets').select('*');
+      if (!error && data) {
+        const mapped = data.map((row: any) => supabaseRowToTicket(row));
+        setCloudTickets(mapped);
+      }
+    } catch (err) {
+      console.warn('[OrganizerDashboard] Failed to fetch tickets from Supabase:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCloudTickets();
+    if (!isSupabaseConfigured) return;
+
+    const channel = supabase
+      .channel('organizer_dashboard_tickets_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tickets' },
+        (payload) => {
+          console.log('[OrganizerDashboard] Realtime tickets update:', payload);
+          fetchCloudTickets();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchCloudTickets]);
+
+  // Gather all tickets (from props, storage, or demo tickets if empty, merged with cloudTickets)
   const allTickets = useMemo(() => {
     let list = Array.isArray(tickets) && tickets.length > 0 ? [...tickets] : [];
     if (list.length === 0) {
@@ -79,8 +119,27 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
         list = getInitialDemoTickets();
       }
     }
+    if (cloudTickets.length > 0) {
+      const map = new Map<string, PurchasedTicket>();
+      list.forEach((t) => {
+        const key = (t.ticketCode || t.id).toLowerCase();
+        map.set(key, t);
+      });
+      cloudTickets.forEach((ct) => {
+        const key = (ct.ticketCode || ct.id).toLowerCase();
+        const existing = map.get(key);
+        if (existing) {
+          if (isCheckedIn(ct)) {
+            map.set(key, { ...existing, ...ct, isCheckedIn: true, status: 'USED', checkInStatus: 'checked-in' });
+          }
+        } else {
+          map.set(key, ct);
+        }
+      });
+      return Array.from(map.values());
+    }
     return list;
-  }, [tickets]);
+  }, [tickets, cloudTickets]);
 
   const eventIds = useMemo(() => new Set(events.map((event) => event.id)), [events]);
   const eventTickets = useMemo(
@@ -655,7 +714,7 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                           {checked ? (
                             <span className="inline-flex items-center gap-1 rounded-full border border-solana-green/40 bg-solana-green/10 px-2.5 py-1 text-[11px] font-semibold text-solana-green">
                               <CheckCircle2 className="h-3 w-3" />
-                              {t('organizer.statusCheckedIn')}
+                              ĐÃ CHECK-IN
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded-full border border-solana-cyan/40 bg-solana-cyan/10 px-2.5 py-1 text-[11px] font-semibold text-solana-cyan">

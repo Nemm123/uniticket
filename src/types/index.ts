@@ -62,6 +62,8 @@ export interface EventItem {
   tags: string[];
   status?: 'draft' | 'published' | 'cancelled' | 'upcoming' | 'happening_soon' | (string & {});
   createdBy?: string;
+  organizer_address?: string;
+  organizer_wallet?: string;
   lineup?: string[];
   tiers?: TicketTier[];
 }

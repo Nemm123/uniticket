@@ -89,7 +89,8 @@ function mapEvent(value: ApiEvent): EventItem {
   };
 }
 
-function payload({ event }: EventMutationInput) {
+function payload({ event, organizerWallet }: EventMutationInput) {
+  const effectiveOrganizer = organizerWallet || event.organizer_address || event.organizer_wallet || event.organizer?.name;
   return {
     title: event.title,
     subtitle: event.subtitle,
@@ -103,6 +104,8 @@ function payload({ event }: EventMutationInput) {
     city: event.city,
     status: event.status || 'published',
     featured: event.featured,
+    organizerWallet: effectiveOrganizer,
+    organizer_address: effectiveOrganizer,
     tags: event.tags || [],
     lineup: event.lineup || [],
     tiers: (event.tiers || []).map((tier: TicketTier) => ({
