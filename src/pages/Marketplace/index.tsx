@@ -40,6 +40,7 @@ interface MarketplacePageProps {
   onOpenWalletModal?: () => void;
   onCloseWalletModal?: () => void;
   onShowToast?: (type: 'success' | 'error' | 'info', message: string, url?: string, label?: string) => void;
+  onTicketsChanged?: () => void;
 }
 
 // Hiệu ứng pháo hoa Confetti Canvas mượt mà dành cho Celebration Modal
@@ -226,6 +227,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
   onOpenWalletModal,
   onCloseWalletModal,
   onShowToast,
+  onTicketsChanged,
 }) => {
   const { formatDate } = useTranslation();
   const { publicKey, connected, sendTransaction } = useWallet();
@@ -295,10 +297,45 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
 
       // Hợp nhất dữ liệu không trùng lặp
       const map = new Map<string, PurchasedTicket>();
-      // Thêm vé mẫu nếu chưa có
-      SEED_MARKETPLACE_TICKETS.forEach((t) => map.set(t.id, t));
-      localListed.forEach((t: PurchasedTicket) => map.set(t.id, t));
-      cloudListed.forEach((t) => map.set(t.id, t));
+
+      // Tạo map tra cứu trạng thái trong LocalStorage
+      const storedById = new Map<string, PurchasedTicket>();
+      stored.forEach((item: PurchasedTicket) => {
+        if (item.id) storedById.set(item.id, item);
+        if (item.ticketCode) storedById.set(item.ticketCode, item);
+      });
+
+      // 1. Thêm vé mẫu: NẾU vé đã có trong LocalStorage thì BẮT BUỘC dùng trạng thái từ LocalStorage
+      // Nếu đã được mua hoặc đã hủy niêm yết (is_listed_for_sale !== true) thì TUYỆT ĐỐI không đưa lên Chợ
+      SEED_MARKETPLACE_TICKETS.forEach((seed) => {
+        const locallyUpdated = storedById.get(seed.id) || (seed.ticketCode ? storedById.get(seed.ticketCode) : undefined);
+        if (locallyUpdated) {
+          if (locallyUpdated.is_listed_for_sale === true && !locallyUpdated.isCheckedIn && !locallyUpdated.isUsed && locallyUpdated.status !== 'USED') {
+            map.set(locallyUpdated.id, locallyUpdated);
+          }
+        } else {
+          map.set(seed.id, seed);
+        }
+      });
+
+      // 2. Thêm các vé được đăng bán từ local
+      localListed.forEach((t: PurchasedTicket) => {
+        if (t.is_listed_for_sale === true && !t.isCheckedIn && !t.isUsed && t.status !== 'USED') {
+          map.set(t.id, t);
+        }
+      });
+
+      // 3. Thêm các vé từ Cloud (nếu trong local chưa ghi nhận là đã mua/hủy bán)
+      cloudListed.forEach((t) => {
+        const locallyUpdated = storedById.get(t.id) || (t.ticketCode ? storedById.get(t.ticketCode) : undefined);
+        if (locallyUpdated) {
+          if (locallyUpdated.is_listed_for_sale === true && !locallyUpdated.isCheckedIn && !locallyUpdated.isUsed && locallyUpdated.status !== 'USED') {
+            map.set(t.id, t);
+          }
+        } else {
+          map.set(t.id, t);
+        }
+      });
 
       setListedTickets(Array.from(map.values()));
     } catch (err) {
@@ -352,6 +389,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
       ownerAddress: buyerWalletStr,
       owner_address: buyerWalletStr,
       is_listed_for_sale: false,
+      listing_price_sol: undefined,
       transfer_count: nextTransferCount,
       royalty_sol: (Number(targetTicket.royalty_sol) || 0) + royaltyShare,
       transferredAt: nowIso,
@@ -372,6 +410,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
             owner_address: buyerWalletStr,
             customer_wallet: buyerWalletStr,
             is_listed_for_sale: false,
+            listing_price_sol: null,
             transfer_count: nextTransferCount,
             royalty_sol: updatedTicket.royalty_sol,
             updated_at: nowIso,
@@ -382,9 +421,14 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
       }
     }
 
-    // 3. Cập nhật lại UI Chợ Vé
-    setListedTickets((prev) => prev.filter((t) => t.id !== targetTicket.id));
+    // 3. Ngay lập tức cập nhật state danh sách vé đang bán:
+    setListedTickets((prevTickets) =>
+      prevTickets.filter((item) => item.id !== ticketId && item.id !== targetTicket.id && item.ticketCode !== targetTicket.ticketCode)
+    );
     setConfirmingTicket(null);
+
+    // Đồng bộ danh sách vé của toàn ứng dụng
+    onTicketsChanged?.();
 
     // Kích hoạt state mở isSuccessModalOpen = true và lưu thông tin vé vừa mua
     setPurchasedSuccessTicket(updatedTicket);
@@ -564,10 +608,31 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
     }
   };
 
+  const currentWalletAddress = (publicKey?.toBase58() || walletAddress || '').toLowerCase().trim();
+
+  // Danh sách vé hiển thị trên Marketplace BẮT BUỘC thỏa mãn:
+  // t.is_listed_for_sale === true && t.owner_address !== currentWalletAddress
+  const activeMarketplaceTickets = useMemo(() => {
+    return listedTickets.filter((t) => {
+      if (t.is_listed_for_sale !== true) return false;
+      const ticketOwner = (
+        t.owner_address ||
+        (t as any).seller_address ||
+        t.ownerAddress ||
+        t.customerWallet ||
+        ''
+      ).toLowerCase().trim();
+      if (currentWalletAddress && ticketOwner === currentWalletAddress) {
+        return false;
+      }
+      return true;
+    });
+  }, [listedTickets, currentWalletAddress]);
+
   const filteredTickets = useMemo(() => {
-    if (!searchQuery.trim()) return listedTickets;
+    if (!searchQuery.trim()) return activeMarketplaceTickets;
     const q = searchQuery.toLowerCase().trim();
-    return listedTickets.filter(
+    return activeMarketplaceTickets.filter(
       (t) =>
         t.eventTitle.toLowerCase().includes(q) ||
         t.tierName.toLowerCase().includes(q) ||
@@ -575,7 +640,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
         t.city.toLowerCase().includes(q) ||
         t.ticketCode.toLowerCase().includes(q)
     );
-  }, [listedTickets, searchQuery]);
+  }, [activeMarketplaceTickets, searchQuery]);
 
   return (
     <div className="min-h-screen bg-[#070412] text-slate-100 py-8 px-4 sm:px-6 lg:px-8 cyber-grid-bg text-left">

@@ -656,8 +656,10 @@ assert(
   marketplaceCode.includes('🎉 CHÚC MỪNG BẠN ĐÃ SỞ HỮU VÉ THÀNH CÔNG!') &&
   marketplaceCode.includes('Xem Vé Của Tôi Ngay 🎟️') &&
   marketplaceCode.includes('Tiếp tục dạo Chợ vé') &&
-  marketplaceCode.includes('ConfettiFireworks'),
-  'TEST 37 — Secondary Marketplace (Navbar Link, 85/10/5 Revenue Split, Transfer Cap, Buy Confirmation Modal, Celebration Success Modal & Phantom Signing)'
+  marketplaceCode.includes('ConfettiFireworks') &&
+  marketplaceCode.includes('activeMarketplaceTickets') &&
+  appMarketplaceCode.includes('onTicketsChanged'),
+  'TEST 37 — Secondary Marketplace (Navbar Link, 85/10/5 Revenue Split, Transfer Cap, Buy Confirmation Modal, Celebration Success Modal, activeMarketplaceTickets & Phantom Signing)'
 );
 
 // -------------------------------------------------------------

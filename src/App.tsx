@@ -881,6 +881,7 @@ export function App() {
             onOpenWalletModal={() => setIsWalletModalOpen(true)}
             onCloseWalletModal={() => setIsWalletModalOpen(false)}
             onShowToast={showToast}
+            onTicketsChanged={() => setPurchasedTickets(getStoredPurchasedTickets())}
           />
         )}
 
