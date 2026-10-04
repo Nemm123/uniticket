@@ -241,10 +241,13 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
   const [purchasedSuccessTicket, setPurchasedSuccessTicket] = useState<PurchasedTicket | null>(null);
   const [successTxSignature, setSuccessTxSignature] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const hasLoadedRef = useRef<boolean>(false);
 
   // Tải danh sách vé niêm yết từ Supabase và LocalStorage
   const loadMarketplaceTickets = async () => {
-    setLoading(true);
+    if (!hasLoadedRef.current) {
+      setLoading(true);
+    }
     try {
       const stored = storage.getStoredPurchasedTickets();
       const localListed = stored.filter((t: PurchasedTicket) => t.is_listed_for_sale && !t.isCheckedIn && !t.isUsed && t.status !== 'USED');
@@ -367,12 +370,23 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
       console.warn('[Marketplace] Lỗi nạp danh sách vé:', err);
       setListedTickets(SEED_MARKETPLACE_TICKETS);
     } finally {
+      hasLoadedRef.current = true;
       setLoading(false);
     }
   };
 
   useEffect(() => {
     void loadMarketplaceTickets();
+  }, []);
+
+  // Tự động kiểm tra và cập nhật danh sách vé từ Supabase mỗi 3.5 giây (Fallback Polling)
+  useEffect(() => {
+    // Tự động kiểm tra và cập nhật danh sách vé từ Supabase mỗi 3.5 giây
+    const intervalId = setInterval(() => {
+      void loadMarketplaceTickets();
+    }, 3500);
+
+    return () => clearInterval(intervalId);
   }, []);
 
   // 3. LẮNG NGHE SỰ KIỆN REALTIME (ĐỂ MÁY KHÁC TỰ ĐỘNG BIẾN MẤT VÉ MÀ KHÔNG CẦN F5):
