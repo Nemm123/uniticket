@@ -36,6 +36,7 @@
   "nav": {
     "home": "Home",
     "events": "Events",
+    "marketplace": "Marketplace",
     "myTickets": "My Tickets",
     "account": "Account",
     "connectWallet": "Connect Phantom",

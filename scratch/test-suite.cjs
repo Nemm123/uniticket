@@ -615,6 +615,57 @@ assert(
   'TEST 35 — Continuous Camera Stream (No unmount on scan/error, 2.5s Cooldown), Supabase direct query, and Demo UTK Fallback'
 );
 
+// -------------------------------------------------------------
+// TEST 36 — FOMO Countdown Effect & Sold-Out Secondary Marketplace Link
+// -------------------------------------------------------------
+const eventCardCode = fs.readFileSync('src/components/common/EventCard.tsx', 'utf8');
+const eventCardAlias = fs.existsSync('src/components/events/EventCard.tsx');
+
+assert(
+  eventCardCode.includes('countdownText') &&
+  eventCardCode.includes('Clock') &&
+  eventCardCode.includes('HẾT VÉ (SOLD OUT)') &&
+  eventCardCode.includes('Săn vé trên Chợ Vé →') &&
+  eventCardAlias,
+  'TEST 36 — FOMO Event Countdown Badge & Sold-Out Secondary Marketplace Redirection'
+);
+
+// -------------------------------------------------------------
+// TEST 37 — Secondary Marketplace (Navbar, 85/10/5 Revenue Split, Transfer Cap)
+// -------------------------------------------------------------
+const navbarMarketplaceCode = fs.readFileSync('src/components/layout/Navbar.tsx', 'utf8');
+const appMarketplaceCode = fs.readFileSync('src/App.tsx', 'utf8');
+const marketplaceCode = fs.readFileSync('src/pages/Marketplace/index.tsx', 'utf8');
+
+assert(
+  navbarMarketplaceCode.includes('marketplace') &&
+  navbarMarketplaceCode.includes('ShoppingBag') &&
+  appMarketplaceCode.includes('MarketplacePage') &&
+  appMarketplaceCode.includes("marketplace: '/marketplace'") &&
+  marketplaceCode.includes('0.85') &&
+  marketplaceCode.includes('0.10') &&
+  marketplaceCode.includes('0.05') &&
+  marketplaceCode.includes('Lượt đổi chủ:'),
+  'TEST 37 — Secondary Marketplace (Navbar Link, 85% Seller / 10% Royalty / 5% Fee Split & Transfer Cap)'
+);
+
+// -------------------------------------------------------------
+// TEST 38 — 2-Step Escrow Safe Transfer, Transfer Cap Lock & Organizer Royalties
+// -------------------------------------------------------------
+const myTicketsCode = fs.readFileSync('src/pages/MyTickets/index.tsx', 'utf8');
+const orgDashboardWithRoyalties = fs.readFileSync('src/pages/OrganizerDashboard/index.tsx', 'utf8');
+
+assert(
+  myTicketsCode.includes('PENDING_ACCEPTANCE') &&
+  myTicketsCode.includes('Đăng bán lại') &&
+  myTicketsCode.includes('Thu hồi vé (Revoke)') &&
+  myTicketsCode.includes('Chấp nhận vé') &&
+  myTicketsCode.includes('Transfer Locked') &&
+  orgDashboardWithRoyalties.includes('secondaryRoyaltySol') &&
+  orgDashboardWithRoyalties.includes('Bản quyền Thứ cấp (Secondary Royalties)'),
+  'TEST 38 — 2-Step Escrow Safe Transfer, Anti-Speculation Transfer Cap Lock & Organizer Secondary Royalties'
+);
+
 console.log('\n=====================================================');
 console.log(`TOTAL TESTS: ${passCount + failCount}`);
 console.log(`PASSED: ${passCount}`);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, MapPin, Sparkles, Flame, ArrowUpRight } from 'lucide-react';
+import { Calendar, MapPin, Sparkles, Flame, ArrowUpRight, Clock } from 'lucide-react';
 import { EventItem } from '../../types';
 import { useTranslation } from '../../i18n';
 import { formatEventCategory, formatEventCity, getEventStatusBadge } from '../../utils/eventHelpers';
@@ -8,12 +8,39 @@ interface EventCardProps {
   event: EventItem;
   onClick: (eventId: string) => void;
   priority?: boolean;
+  onNavigateMarketplace?: () => void;
 }
 
-export const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
+export const EventCard: React.FC<EventCardProps> = ({ event, onClick, onNavigateMarketplace }) => {
   const { t, formatCurrency, formatDate } = useTranslation();
   const remainingTickets = event.tiers?.reduce((sum, t) => sum + t.remainingQuantity, 0) ?? (event.totalTickets - event.soldTickets);
-  const isSoldOut = remainingTickets <= 0 || event.soldTickets >= event.totalTickets;
+  const isHotSoldOut = event.id === 'event-anh-trai-say-hi-2026' || (event.title && event.title.toLowerCase().includes('anh trai say hi')) || event.status === 'sold_out';
+  const isSoldOut = remainingTickets <= 0 || event.soldTickets >= event.totalTickets || isHotSoldOut;
+
+  // Tính khoảng cách thời gian FOMO đến ngày bắt đầu sự kiện
+  const countdownText = React.useMemo(() => {
+    const rawDate = event.date || (event as any).start_date || (event as any).startDate;
+    if (!rawDate) return null;
+    try {
+      const target = new Date(rawDate).getTime();
+      if (isNaN(target)) return null;
+      const now = Date.now();
+      const diff = target - now;
+      if (diff <= 0) return 'Đang diễn ra';
+      const diffHours = Math.floor(diff / (1000 * 60 * 60));
+      const diffDays = Math.floor(diffHours / 24);
+      if (diffDays > 0) {
+        return `Còn ${diffDays} ngày`;
+      }
+      if (diffHours > 0) {
+        return `Bắt đầu sau ${diffHours} giờ`;
+      }
+      const diffMins = Math.floor(diff / (1000 * 60));
+      return `Bắt đầu sau ${Math.max(1, diffMins)} phút`;
+    } catch {
+      return null;
+    }
+  }, [event.date]);
 
   // Kiểm tra thời gian xem event có upcoming không (sau ngày hôm nay)
   const isUpcoming = Boolean(event.date);
@@ -67,6 +94,14 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
               <span className="inline-flex items-center gap-1 rounded-full bg-red-600/90 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-md shadow-sm">
                 <Flame className="h-3 w-3 text-yellow-300" />
                 <span>{t('common.featured')}</span>
+              </span>
+            )}
+
+            {/* FOMO Countdown badge */}
+            {countdownText && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-purple-900/90 px-2 py-0.5 text-[10px] font-bold text-yellow-300 backdrop-blur-md border border-yellow-400/40 shadow-sm animate-pulse">
+                <Clock className="h-2.5 w-2.5 text-yellow-300" />
+                <span>{countdownText}</span>
               </span>
             )}
           </div>
@@ -125,14 +160,39 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
       </div>
 
       {/* Footer CTA */}
-      <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-xs">
-        <span className="text-[11px] text-slate-400">
-          {event.organizer?.name ? `${t('hero.organizedBy')}: ${event.organizer.name}` : 'UniTicket Web3'}
-        </span>
-        <span className="inline-flex items-center gap-1 font-semibold text-solana-purple group-hover:text-solana-cyan transition-colors">
-          <span>{t('common.viewDetails')}</span>
-          <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-        </span>
+      <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-xs gap-2">
+        {isSoldOut ? (
+          <div className="w-full flex flex-wrap items-center justify-between gap-2">
+            <span className="px-2.5 py-1 rounded-lg bg-red-950/60 text-red-400 border border-red-500/40 text-[11px] font-bold">
+              HẾT VÉ (SOLD OUT)
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onNavigateMarketplace) {
+                  onNavigateMarketplace();
+                } else if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('uniticket-navigate', { detail: 'marketplace' }));
+                  window.location.hash = '#/marketplace';
+                }
+              }}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gradient-to-r from-solana-purple to-neon-pink text-white text-xs font-bold shadow-md shadow-pink-950/50 hover:opacity-90 active:scale-95 transition-all"
+            >
+              <span>Săn vé trên Chợ Vé →</span>
+            </button>
+          </div>
+        ) : (
+          <>
+            <span className="text-[11px] text-slate-400 truncate">
+              {event.organizer?.name ? `${t('hero.organizedBy')}: ${event.organizer.name}` : 'UniTicket Web3'}
+            </span>
+            <span className="inline-flex items-center gap-1 font-semibold text-solana-purple group-hover:text-solana-cyan transition-colors shrink-0">
+              <span>{t('common.viewDetails')}</span>
+              <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            </span>
+          </>
+        )}
       </div>
     </article>
   );

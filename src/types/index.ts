@@ -131,6 +131,12 @@ export interface PurchasedTicket {
   nftTransactionSignature?: string;
   nftMintAddress?: string;
   nftStatus?: 'PENDING' | 'MINTING' | 'MINTED' | 'MINT_FAILED';
+  is_listed_for_sale?: boolean;
+  listing_price_sol?: number;
+  transfer_count?: number;
+  pending_recipient?: string;
+  royalty_sol?: number;
+  organizer_address?: string;
 }
 
 export interface CheckInRecord {

@@ -376,35 +376,45 @@ function extractTicketCode(raw: string): string {
         if (foundTicket.status === 'UNUSED' || !foundTicket.isCheckedIn) {
           if (isSupabaseConfigured) {
             try {
-              // 1. Đồng bộ cả 2 mã (id và ticket_code) lên Supabase Cloud khi check-in
-              await supabase.from('tickets').update({ status: 'USED', checked_in_at: checkInTime, is_checked_in: true, checked_in_by: staffWalletAddress || 'Staff Gate' })
-                .or(`ticket_code.eq.${scannedCode},id.eq.${scannedCode}`);
+              // 1. Truy vấn mã vé trên Supabase trước để lấy chuẩn id và ticket_code
+              const { data: existingTicket } = await supabase
+                .from('tickets')
+                .select('id, ticket_code')
+                .or(`ticket_code.eq.${scannedCode},id.eq.${scannedCode}`)
+                .maybeSingle();
 
-              // Cập nhật bổ sung cho cả ticket_code và id của vé tìm được để đảm bảo 100% không lệch khóa
-              await supabase.from('tickets').update({ status: 'USED', checked_in_at: checkInTime, is_checked_in: true, checked_in_by: staffWalletAddress || 'Staff Gate' })
+              const targetId = existingTicket?.id || foundTicket.id || scannedCode;
+              const cloudTargetCode = existingTicket?.ticket_code || foundTicket.ticketCode || scannedCode;
+
+              // 2. Cập nhật Supabase Cloud
+              const now = new Date().toISOString();
+              await supabase.from('tickets').update({ status: 'USED', checked_in_at: now, is_checked_in: true, checked_in_by: staffWalletAddress || 'Staff Gate' })
+                .or(`id.eq.${targetId},ticket_code.eq.${cloudTargetCode}`);
+
+              await supabase.from('tickets').update({ status: 'USED', checked_in_at: now, is_checked_in: true, checked_in_by: staffWalletAddress || 'Staff Gate' })
                 .or(`ticket_code.eq.${targetCode},id.eq.${targetCode}`);
 
-              if (ticketId) {
+              if (targetId) {
                 await supabase
                   .from('tickets')
                   .update({
                     status: 'USED',
-                    checked_in_at: checkInTime,
+                    checked_in_at: now,
                     is_checked_in: true,
                     checked_in_by: staffWalletAddress || 'Staff Gate'
                   })
-                  .eq('id', ticketId);
+                  .eq('id', targetId);
               }
-              if (ticketCodeStr && ticketCodeStr !== scannedCode) {
+              if (cloudTargetCode && cloudTargetCode !== targetId) {
                 await supabase
                   .from('tickets')
                   .update({
                     status: 'USED',
-                    checked_in_at: checkInTime,
+                    checked_in_at: now,
                     is_checked_in: true,
                     checked_in_by: staffWalletAddress || 'Staff Gate'
                   })
-                  .eq('ticket_code', ticketCodeStr);
+                  .eq('ticket_code', cloudTargetCode);
               }
             } catch (supaErr) {
               console.warn('[CheckIn] Lỗi update Supabase status USED:', supaErr);

@@ -19,7 +19,8 @@ import {
   ExternalLink,
   Loader2,
   ChevronDown,
-  Globe
+  Globe,
+  ShoppingBag
 } from 'lucide-react';
 import { UserRole } from '../../types';
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -306,6 +307,19 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             <button
               type="button"
+              onClick={() => handleNavClick('marketplace')}
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-xs sm:text-sm font-semibold transition-all ${
+                currentPage === 'marketplace'
+                  ? 'bg-gradient-to-r from-solana-purple/30 to-solana-cyan/20 border border-solana-purple/40 text-solana-cyan font-bold shadow-sm'
+                  : 'border border-transparent text-slate-300 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <ShoppingBag className="h-4 w-4 text-solana-cyan shrink-0" />
+              <span>{t('nav.marketplace')}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => handleNavClick('my-tickets')}
               className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-xs sm:text-sm font-semibold transition-all ${
                 currentPage === 'my-tickets'
@@ -522,6 +536,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Compass className={`w-3.5 h-3.5 ${currentPage === 'events' ? 'text-solana-cyan' : 'text-slate-400'}`} />
               <span>{t('nav.events')}</span>
+            </button>
+
+            <button
+              onClick={() => handleNavClick('marketplace')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 lg:px-3 lg:py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
+                currentPage === 'marketplace'
+                  ? 'bg-gradient-to-r from-solana-purple to-[#6E1FD6] text-white shadow-md shadow-solana-purple/40'
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <ShoppingBag className={`w-3.5 h-3.5 ${currentPage === 'marketplace' ? 'text-solana-cyan' : 'text-slate-400'}`} />
+              <span>{t('nav.marketplace')}</span>
             </button>
 
             {isOrganizerView ? (

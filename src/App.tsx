@@ -12,6 +12,7 @@ import { OrganizerDashboard } from './pages/OrganizerDashboard';
 import { OrganizerEvents } from './pages/OrganizerEvents';
 import { AccessDenied } from './pages/AccessDenied';
 import { MyTicketsPage } from './pages/MyTickets';
+import { MarketplacePage } from './pages/Marketplace';
 import { SearchModal } from './components/common/SearchModal';
 import { ArrowUp } from 'lucide-react';
 import { VerifyTicketPage } from './pages/VerifyTicket';
@@ -35,6 +36,7 @@ import { useTranslation } from './i18n';
 const PAGE_PATHS = {
   home: '/',
   events: '/events',
+  marketplace: '/marketplace',
   'my-tickets': '/my-tickets',
   'event-detail': '/event-detail',
   verify: '/verify',
@@ -423,6 +425,17 @@ export function App() {
     }
     scrollToTop();
   };
+
+  useEffect(() => {
+    const handleCustomNav = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && typeof detail === 'string') {
+        handleNavigate(detail);
+      }
+    };
+    window.addEventListener('uniticket-navigate', handleCustomNav);
+    return () => window.removeEventListener('uniticket-navigate', handleCustomNav);
+  }, []);
 
 
 
@@ -860,6 +873,16 @@ export function App() {
           />
         )}
 
+        {/* Trang Chợ Vé Thứ Cấp (Secondary Marketplace) */}
+        {currentPage === 'marketplace' && (
+          <MarketplacePage
+            onNavigate={handleNavigate}
+            walletAddress={walletAddress}
+            onOpenWalletModal={() => setIsWalletModalOpen(true)}
+            onShowToast={showToast}
+          />
+        )}
+
         {/* Trang Vé Của Tôi (Solana Explorer: explorer.solana.com/tx, viewOnExplorer, viewPublicVerification) */}
         {currentPage === 'my-tickets' && (
           <MyTicketsPage
@@ -868,6 +891,7 @@ export function App() {
             onSelectQrTicket={setSelectedQrTicket}
             onSelectTransferTicket={setTransferTicketTarget}
             walletAddress={walletAddress}
+            onShowToast={showToast}
           />
         )}
 

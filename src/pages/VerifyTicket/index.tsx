@@ -84,14 +84,22 @@ export const VerifyTicketPage: React.FC<VerifyTicketPageProps> = ({ ticketId: pr
       // 1. Tìm trực tiếp trên Supabase bảng tickets:
       if (isSupabaseConfigured) {
         try {
-          const { data: cloudTicket, error: cloudErr } = await supabase
+          const { data: cloudTicket, error } = await supabase
             .from('tickets')
             .select('*')
             .or(`id.eq.${clean},ticket_code.eq.${clean}`)
             .maybeSingle();
 
           let targetCloudTicket = cloudTicket;
-          if (!targetCloudTicket && !cloudErr) {
+          if (!targetCloudTicket && !error) {
+            const { data: byId } = await supabase.from('tickets').select('*').eq('id', clean).maybeSingle();
+            if (byId) targetCloudTicket = byId;
+          }
+          if (!targetCloudTicket && !error) {
+            const { data: byCode } = await supabase.from('tickets').select('*').eq('ticket_code', clean).maybeSingle();
+            if (byCode) targetCloudTicket = byCode;
+          }
+          if (!targetCloudTicket && !error) {
             const { data: fuzzyTicket } = await supabase
               .from('tickets')
               .select('*')
@@ -105,7 +113,8 @@ export const VerifyTicketPage: React.FC<VerifyTicketPageProps> = ({ ticketId: pr
               targetCloudTicket.status === 'USED' || 
               targetCloudTicket.status === 'used' || 
               Boolean(targetCloudTicket.checked_in_at) || 
-              Boolean(targetCloudTicket.is_checked_in);
+              Boolean(targetCloudTicket.is_checked_in) ||
+              targetCloudTicket.checkInStatus === 'checked-in';
 
             const mapped = supabaseRowToTicket(targetCloudTicket);
             const resolvedTicket: PurchasedTicket = {
@@ -116,6 +125,7 @@ export const VerifyTicketPage: React.FC<VerifyTicketPageProps> = ({ ticketId: pr
               checkInStatus: isUsed ? 'checked-in' : 'unused',
               checkInTime: targetCloudTicket.checked_in_at || targetCloudTicket.check_in_time || mapped.checkInTime,
               checkedInBy: targetCloudTicket.checked_in_by || (mapped as any).checkedInBy || 'Staff Gate',
+              ...( { checked_in_at: targetCloudTicket.checked_in_at, is_checked_in: isUsed } as any ),
             };
             setTicket(resolvedTicket);
             return;
@@ -129,6 +139,25 @@ export const VerifyTicketPage: React.FC<VerifyTicketPageProps> = ({ ticketId: pr
       let found = await getTicketById(clean);
       if (!found) {
         found = getStoredTicketById(clean);
+      }
+      if (found) {
+        const isUsedFound = Boolean(
+          found.isCheckedIn ||
+          found.isUsed ||
+          found.status === 'USED' ||
+          found.status === 'used' ||
+          found.status === 'checked_in' ||
+          found.status === 'CHECKED_IN' ||
+          found.checkInStatus === 'checked-in' ||
+          (found as any).checked_in_at ||
+          (found as any).is_checked_in
+        );
+        found = {
+          ...found,
+          isCheckedIn: isUsedFound,
+          isUsed: isUsedFound,
+          status: isUsedFound ? 'USED' : (found.status || 'UNUSED'),
+        };
       }
       setTicket(found);
     } catch {

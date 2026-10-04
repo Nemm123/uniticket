@@ -71,6 +71,11 @@ export const TransferTicketModal: React.FC<TransferTicketModalProps> = ({
       return;
     }
 
+    if ((Number(ticket.transfer_count) || 0) >= 2) {
+      setErrorMessage('Vé đã đạt giới hạn đổi chủ 2 lần (Transfer Cap). Đã khóa chuyển nhượng (Transfer Locked).');
+      return;
+    }
+
     if (!isValidAddress) {
       setErrorMessage(t('transferModal.invalidAddress'));
       return;
@@ -158,6 +163,17 @@ export const TransferTicketModal: React.FC<TransferTicketModalProps> = ({
               <span>{ticket.venue}</span>
             </div>
           </div>
+
+          <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs">
+            <span className="text-slate-400">Giới hạn đổi chủ (Transfer Cap):</span>
+            <span className="px-2 py-0.5 rounded-full bg-solana-purple/20 border border-solana-cyan/30 text-solana-cyan font-bold text-[11px]">
+              Lượt đổi chủ: {ticket.transfer_count || 0}/2
+            </span>
+          </div>
+
+          <p className="text-[11px] text-slate-400 leading-relaxed bg-black/30 p-2.5 rounded-lg border border-white/5">
+            🛡️ <span className="text-white font-semibold">Chuyển nhượng an toàn 2 bước:</span> Vé sẽ ở trạng thái <span className="text-yellow-300 font-mono">PENDING_ACCEPTANCE</span> cho đến khi người nhận bấm chấp nhận trên ví của họ. Bạn có thể thu hồi vé bất kỳ lúc nào nếu chưa được chấp nhận.
+          </p>
         </div>
 
         {/* Transfer Form */}

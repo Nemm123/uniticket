@@ -366,6 +366,31 @@ export function savePurchasedTickets(newTickets: PurchasedTicket[]): boolean {
 }
 
 /**
+ * Lưu hoặc cập nhật 1 vé duy nhất vào localStorage (Upsert)
+ */
+export function savePurchasedTicket(ticket: PurchasedTicket): boolean {
+  try {
+    const data = localStorage.getItem(TICKETS_KEY);
+    const currentTickets: PurchasedTicket[] = data ? JSON.parse(data) : [];
+    const index = currentTickets.findIndex(
+      (ct) => (ticket.id && ct.id === ticket.id) || (ticket.ticketCode && ct.ticketCode === ticket.ticketCode)
+    );
+
+    if (index >= 0) {
+      currentTickets[index] = { ...currentTickets[index], ...ticket };
+    } else {
+      currentTickets.unshift(ticket);
+    }
+
+    localStorage.setItem(TICKETS_KEY, JSON.stringify(currentTickets));
+    return true;
+  } catch (error) {
+    console.error('[UniTicket Storage] Lỗi cập nhật vé vào localStorage:', error);
+    return false;
+  }
+}
+
+/**
  * Cập nhật tồn kho và lưu vé như một thao tác duy nhất ở mức localStorage.
  * Nếu một trong hai lần ghi thất bại, dữ liệu trước thao tác được khôi phục.
  */
@@ -757,12 +782,20 @@ export function transferStoredTicket(
       return { ok: false, message: 'Không thể chuyển nhượng cho chính địa chỉ ví hiện tại.' };
     }
 
+    // Kiểm tra giới hạn đổi chủ tối đa 2 lần (Transfer Cap)
+    const currentTransferCount = Number(ticket.transfer_count) || 0;
+    if (currentTransferCount >= 2) {
+      return { ok: false, message: 'Vé đã đạt giới hạn đổi chủ 2 lần (Transfer Cap). Đã khóa chuyển nhượng (Transfer Locked).' };
+    }
+
     const previousOwner = ticket.customerWallet;
     const nowIso = new Date().toISOString();
+    // Chuyển nhượng an toàn 2 bước: chuyển sang trạng thái PENDING_ACCEPTANCE gắn với ví người nhận
     const updatedTicket: PurchasedTicket = {
       ...ticket,
-      customerWallet: trimmedWallet,
-      status: 'valid',
+      status: 'PENDING_ACCEPTANCE',
+      pending_recipient: trimmedWallet,
+      is_listed_for_sale: false,
       isCheckedIn: false,
       isUsed: false,
       transferredAt: nowIso,
@@ -775,6 +808,7 @@ export function transferStoredTicket(
         tierId: ticket.tierId,
         wallet: trimmedWallet,
         transferredAt: nowIso,
+        status: 'PENDING_ACCEPTANCE',
         v: 'p2p-v2',
       }),
     };
@@ -786,12 +820,160 @@ export function transferStoredTicket(
 
     return {
       ok: true,
-      message: 'Chuyển nhượng vé thành công!',
+      message: 'Đã gửi vé vào trạng thái chờ nhận (Pending Acceptance)!',
       ticket: updatedTicket,
     };
   } catch (error) {
     console.error('[UniTicket Storage] Lỗi chuyển nhượng vé:', error);
     return { ok: false, message: 'Đã xảy ra lỗi khi lưu thông tin chuyển nhượng.' };
+  }
+}
+
+/**
+ * Chấp nhận vé chuyển nhượng (Bước 2 của Escrow Safe Transfer)
+ */
+export function acceptPendingStoredTransfer(
+  ticketId: string,
+  recipientWallet: string
+): { ok: boolean; message: string; ticket?: PurchasedTicket } {
+  try {
+    const tickets = getStoredPurchasedTickets();
+    const index = tickets.findIndex((t) => t.id === ticketId || t.ticketCode === ticketId);
+    if (index === -1) return { ok: false, message: 'Không tìm thấy vé trong bộ nhớ.' };
+
+    const ticket = tickets[index];
+    const trimmed = recipientWallet.trim();
+    const nowIso = new Date().toISOString();
+    const nextTransferCount = (Number(ticket.transfer_count) || 0) + 1;
+
+    const updated: PurchasedTicket = {
+      ...ticket,
+      customerWallet: trimmed,
+      ownerAddress: trimmed,
+      owner_address: trimmed,
+      status: 'valid',
+      pending_recipient: undefined,
+      transfer_count: nextTransferCount,
+      transferredAt: nowIso,
+      transferredTo: trimmed,
+    };
+
+    const updatedTickets = [...tickets];
+    updatedTickets[index] = updated;
+    localStorage.setItem(TICKETS_KEY, JSON.stringify(updatedTickets));
+
+    return {
+      ok: true,
+      message: 'Đã chính thức nhận vé về ví của bạn!',
+      ticket: updated,
+    };
+  } catch (err) {
+    console.error('[UniTicket Storage] Lỗi chấp nhận vé:', err);
+    return { ok: false, message: 'Lỗi chấp nhận vé chuyển nhượng.' };
+  }
+}
+
+/**
+ * Thu hồi vé chuyển nhượng nếu bên nhận chưa bấm chấp nhận
+ */
+export function revokePendingStoredTransfer(
+  ticketId: string
+): { ok: boolean; message: string; ticket?: PurchasedTicket } {
+  try {
+    const tickets = getStoredPurchasedTickets();
+    const index = tickets.findIndex((t) => t.id === ticketId || t.ticketCode === ticketId);
+    if (index === -1) return { ok: false, message: 'Không tìm thấy vé trong bộ nhớ.' };
+
+    const ticket = tickets[index];
+    const updated: PurchasedTicket = {
+      ...ticket,
+      status: 'valid',
+      pending_recipient: undefined,
+      transferredTo: undefined,
+    };
+
+    const updatedTickets = [...tickets];
+    updatedTickets[index] = updated;
+    localStorage.setItem(TICKETS_KEY, JSON.stringify(updatedTickets));
+
+    return {
+      ok: true,
+      message: 'Đã thu hồi vé chuyển nhượng thành công!',
+      ticket: updated,
+    };
+  } catch (err) {
+    console.error('[UniTicket Storage] Lỗi thu hồi vé:', err);
+    return { ok: false, message: 'Lỗi thu hồi vé chuyển nhượng.' };
+  }
+}
+
+/**
+ * Đăng bán lại vé trên Chợ Thứ Cấp
+ */
+export function listStoredTicketForSale(
+  ticketId: string,
+  listingPriceSol: number
+): { ok: boolean; message: string; ticket?: PurchasedTicket } {
+  try {
+    const tickets = getStoredPurchasedTickets();
+    const index = tickets.findIndex((t) => t.id === ticketId || t.ticketCode === ticketId);
+    if (index === -1) return { ok: false, message: 'Không tìm thấy vé trong bộ nhớ.' };
+
+    const ticket = tickets[index];
+    if ((Number(ticket.transfer_count) || 0) >= 2) {
+      return { ok: false, message: 'Vé đã đổi chủ 2 lần (Transfer Cap), đã khóa đăng bán.' };
+    }
+
+    const updated: PurchasedTicket = {
+      ...ticket,
+      is_listed_for_sale: true,
+      listing_price_sol: listingPriceSol,
+    };
+
+    const updatedTickets = [...tickets];
+    updatedTickets[index] = updated;
+    localStorage.setItem(TICKETS_KEY, JSON.stringify(updatedTickets));
+
+    return {
+      ok: true,
+      message: 'Đã niêm yết vé lên Chợ Vé Thứ Cấp!',
+      ticket: updated,
+    };
+  } catch (err) {
+    console.error('[UniTicket Storage] Lỗi niêm yết vé:', err);
+    return { ok: false, message: 'Lỗi đăng bán vé.' };
+  }
+}
+
+/**
+ * Hủy đăng bán vé trên Chợ Thứ Cấp
+ */
+export function unlistStoredTicketForSale(
+  ticketId: string
+): { ok: boolean; message: string; ticket?: PurchasedTicket } {
+  try {
+    const tickets = getStoredPurchasedTickets();
+    const index = tickets.findIndex((t) => t.id === ticketId || t.ticketCode === ticketId);
+    if (index === -1) return { ok: false, message: 'Không tìm thấy vé trong bộ nhớ.' };
+
+    const ticket = tickets[index];
+    const updated: PurchasedTicket = {
+      ...ticket,
+      is_listed_for_sale: false,
+    };
+
+    const updatedTickets = [...tickets];
+    updatedTickets[index] = updated;
+    localStorage.setItem(TICKETS_KEY, JSON.stringify(updatedTickets));
+
+    return {
+      ok: true,
+      message: 'Đã hủy niêm yết vé khỏi Chợ Vé!',
+      ticket: updated,
+    };
+  } catch (err) {
+    console.error('[UniTicket Storage] Lỗi hủy niêm yết vé:', err);
+    return { ok: false, message: 'Lỗi hủy niêm yết vé.' };
   }
 }
 

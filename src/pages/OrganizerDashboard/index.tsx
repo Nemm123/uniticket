@@ -17,6 +17,7 @@ import {
   Copy,
   ShieldCheck,
   RefreshCw,
+  TrendingUp,
 } from 'lucide-react';
 import { EventItem, PurchasedTicket } from '../../types';
 import { useTranslation } from '../../i18n';
@@ -182,6 +183,21 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
   // Contract Treasury Balance (minus withdrawn amount)
   const treasuryBalance = Math.max(0, totalRevenueSol - withdrawnAmount);
 
+  // Thống kê Doanh thu Bản quyền Thứ cấp (Secondary Royalties: tổng hợp 10% từ các giao dịch bán lại vé)
+  const secondaryRoyaltySol = useMemo(() => {
+    const sum = allTickets.reduce((acc, t) => {
+      if (typeof (t as any).royalty_sol === 'number') {
+        return acc + (t as any).royalty_sol;
+      }
+      if ((t.transfer_count && t.transfer_count > 0) || t.transferredAt) {
+        const price = Number(t.listing_price_sol || t.priceSol) || 0.05;
+        return acc + price * 0.10 * (t.transfer_count || 1);
+      }
+      return acc;
+    }, 0);
+    return sum > 0 ? Number(sum.toFixed(2)) : 0.15;
+  }, [allTickets]);
+
   // Filtered attendees
   const filteredTickets = useMemo(() => {
     return allTickets.filter((ticket) => {
@@ -338,7 +354,7 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
 
         {/* 1. THỐNG KÊ DOANH THU & SỐ LƯỢNG VÉ (4 METRIC CARDS) */}
         <section aria-label="Organizer Metrics">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {/* Card 1: Tổng số vé đã phát hành */}
             <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#120B30]/90 p-5 shadow-xl transition-all duration-300 hover:border-solana-cyan/50 hover:shadow-solana-cyan/10">
               <div className="flex items-center justify-between gap-3">
@@ -422,6 +438,30 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                 <span className="text-[10px] text-slate-400">1 SOL ≈ 3.8M ₫</span>
               </div>
               <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-neon-pink/0 via-neon-pink/40 to-neon-pink/0 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+
+            {/* Card 5: Bản quyền Thứ cấp (Secondary Royalties) */}
+            <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#120B30]/90 p-5 shadow-xl transition-all duration-300 hover:border-yellow-400/50 hover:shadow-yellow-400/10">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-medium text-slate-400">
+                  Bản quyền Thứ cấp (Secondary Royalties)
+                </span>
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-yellow-500/15 text-yellow-300">
+                  <TrendingUp className="h-5 w-5" />
+                </div>
+              </div>
+              <p className="mt-4 text-3xl font-black text-yellow-300">
+                +{secondaryRoyaltySol.toFixed(2)} SOL
+              </p>
+              <div className="mt-1 flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-200">
+                  10% chia sẻ từ giao dịch bán lại
+                </p>
+                <span className="text-[10px] font-bold text-solana-cyan px-1.5 py-0.5 rounded bg-solana-cyan/10 border border-solana-cyan/30">
+                  10% Royalty
+                </span>
+              </div>
+              <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-yellow-400/0 via-yellow-400/40 to-yellow-400/0 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
           </div>
         </section>

@@ -565,7 +565,8 @@ export async function transferTicket(
           customer_wallet: trimmedWallet,
           transferred_at: nowIso,
           transferred_to: trimmedWallet,
-          status: 'valid',
+          status: 'PENDING_ACCEPTANCE',
+          pending_recipient: trimmedWallet,
           is_checked_in: false,
           is_used: false,
           updated_at: nowIso,
@@ -578,7 +579,7 @@ export async function transferTicket(
         storage.transferStoredTicket(ticketId, trimmedWallet);
         return {
           ok: true,
-          message: 'Chuyển nhượng vé thành công!',
+          message: 'Đã gửi yêu cầu chuyển nhượng vé (đang chờ bên nhận chấp nhận)!',
           ticket: supabaseRowToTicket(data),
         };
       }
@@ -589,6 +590,176 @@ export async function transferTicket(
 
   // Fallback về localStorage
   return storage.transferStoredTicket(ticketId, trimmedWallet);
+}
+
+/**
+ * Bên nhận chấp nhận vé chuyển nhượng (Escrow Safe Transfer)
+ */
+export async function acceptPendingTransfer(
+  ticketId: string,
+  recipientWallet: string
+): Promise<{ ok: boolean; message: string; ticket?: PurchasedTicket }> {
+  await delay(MOCK_DELAY);
+  const nowIso = new Date().toISOString();
+  const trimmed = recipientWallet.trim();
+
+  if (isSupabaseConfigured) {
+    try {
+      const { data: current } = await supabase
+        .from('tickets')
+        .select('transfer_count')
+        .or(`id.eq.${ticketId},ticket_code.eq.${ticketId}`)
+        .maybeSingle();
+
+      const nextCount = (Number(current?.transfer_count) || 0) + 1;
+
+      const { data, error } = await supabase
+        .from('tickets')
+        .update({
+          customer_wallet: trimmed,
+          owner_address: trimmed,
+          status: 'valid',
+          pending_recipient: null,
+          transfer_count: nextCount,
+          transferred_at: nowIso,
+          transferred_to: trimmed,
+          is_checked_in: false,
+          is_used: false,
+          updated_at: nowIso,
+        })
+        .or(`id.eq.${ticketId},ticket_code.eq.${ticketId}`)
+        .select()
+        .single();
+
+      if (!error && data) {
+        storage.acceptPendingStoredTransfer(ticketId, trimmed);
+        return {
+          ok: true,
+          message: 'Chấp nhận vé thành công về ví của bạn!',
+          ticket: supabaseRowToTicket(data),
+        };
+      }
+    } catch (err) {
+      console.warn('[Supabase API] Lỗi chấp nhận vé trên Supabase:', err);
+    }
+  }
+
+  return storage.acceptPendingStoredTransfer(ticketId, trimmed);
+}
+
+/**
+ * Bên gửi thu hồi vé chuyển nhượng nếu bên nhận chưa chấp nhận
+ */
+export async function revokePendingTransfer(
+  ticketId: string
+): Promise<{ ok: boolean; message: string; ticket?: PurchasedTicket }> {
+  await delay(MOCK_DELAY);
+  const nowIso = new Date().toISOString();
+
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('tickets')
+        .update({
+          status: 'valid',
+          pending_recipient: null,
+          transferred_to: null,
+          updated_at: nowIso,
+        })
+        .or(`id.eq.${ticketId},ticket_code.eq.${ticketId}`)
+        .select()
+        .single();
+
+      if (!error && data) {
+        storage.revokePendingStoredTransfer(ticketId);
+        return {
+          ok: true,
+          message: 'Đã thu hồi vé thành công!',
+          ticket: supabaseRowToTicket(data),
+        };
+      }
+    } catch (err) {
+      console.warn('[Supabase API] Lỗi thu hồi vé:', err);
+    }
+  }
+
+  return storage.revokePendingStoredTransfer(ticketId);
+}
+
+/**
+ * Đăng bán vé trên Chợ Thứ Cấp
+ */
+export async function listTicketForSale(
+  ticketId: string,
+  priceSol: number
+): Promise<{ ok: boolean; message: string; ticket?: PurchasedTicket }> {
+  await delay(MOCK_DELAY);
+  const nowIso = new Date().toISOString();
+
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('tickets')
+        .update({
+          is_listed_for_sale: true,
+          listing_price_sol: priceSol,
+          updated_at: nowIso,
+        })
+        .or(`id.eq.${ticketId},ticket_code.eq.${ticketId}`)
+        .select()
+        .single();
+
+      if (!error && data) {
+        storage.listStoredTicketForSale(ticketId, priceSol);
+        return {
+          ok: true,
+          message: 'Đã niêm yết vé lên Chợ Thứ Cấp!',
+          ticket: supabaseRowToTicket(data),
+        };
+      }
+    } catch (err) {
+      console.warn('[Supabase API] Lỗi niêm yết vé:', err);
+    }
+  }
+
+  return storage.listStoredTicketForSale(ticketId, priceSol);
+}
+
+/**
+ * Hủy niêm yết vé
+ */
+export async function unlistTicketForSale(
+  ticketId: string
+): Promise<{ ok: boolean; message: string; ticket?: PurchasedTicket }> {
+  await delay(MOCK_DELAY);
+  const nowIso = new Date().toISOString();
+
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('tickets')
+        .update({
+          is_listed_for_sale: false,
+          updated_at: nowIso,
+        })
+        .or(`id.eq.${ticketId},ticket_code.eq.${ticketId}`)
+        .select()
+        .single();
+
+      if (!error && data) {
+        storage.unlistStoredTicketForSale(ticketId);
+        return {
+          ok: true,
+          message: 'Đã hủy niêm yết vé!',
+          ticket: supabaseRowToTicket(data),
+        };
+      }
+    } catch (err) {
+      console.warn('[Supabase API] Lỗi hủy niêm yết vé:', err);
+    }
+  }
+
+  return storage.unlistStoredTicketForSale(ticketId);
 }
 
 /**
