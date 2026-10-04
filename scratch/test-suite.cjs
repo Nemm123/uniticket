@@ -658,7 +658,7 @@ assert(
   marketplaceCode.includes('Tiếp tục dạo Chợ vé') &&
   marketplaceCode.includes('ConfettiFireworks') &&
   marketplaceCode.includes('activeMarketplaceTickets') &&
-  marketplaceCode.includes('marketplace_tickets_realtime') &&
+  (marketplaceCode.includes('marketplace_tickets_realtime') || marketplaceCode.includes('marketplace-tickets-sync')) &&
   marketplaceCode.includes('cloudUnlistedKeys') &&
   marketplaceCode.includes("supabase.from('tickets').upsert") &&
   appMarketplaceCode.includes('onTicketsChanged'),

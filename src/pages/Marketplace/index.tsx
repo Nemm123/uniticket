@@ -375,40 +375,22 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
     void loadMarketplaceTickets();
   }, []);
 
-  // ĐỒNG BỘ THỜI GIAN THỰC QUA SUPABASE REALTIME (REALTIME SYNC TRÊN BẢNG TICKETS):
-  // Lắng nghe kênh marketplace_tickets_realtime trên bảng tickets.
-  // Khi một vé được mua (is_listed_for_sale: false) hoặc xóa/sử dụng ở thiết bị khác,
-  // lập tức lọc bỏ vé đó khỏi state trên mọi thiết bị mà không cần reload trang.
+  // 3. LẮNG NGHE SỰ KIỆN REALTIME (ĐỂ MÁY KHÁC TỰ ĐỘNG BIẾN MẤT VÉ MÀ KHÔNG CẦN F5):
+  // Thiết lập subscription lắng nghe thay đổi trên bảng tickets
   useEffect(() => {
     if (!isSupabaseConfigured) return;
 
     const channel = supabase
-      .channel('marketplace_tickets_realtime')
+      .channel('marketplace-tickets-sync')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tickets',
-        },
+        { event: '*', schema: 'public', table: 'tickets' },
         (payload) => {
-          const updated = (payload.new || payload.old) as any;
+          const updated = payload.new as any;
           if (!updated) return;
-
-          const isUnlisted =
-            updated.is_listed_for_sale === false ||
-            updated.status === 'USED' ||
-            Boolean(updated.checked_in_at || updated.is_checked_in);
-
-          if (isUnlisted) {
-            setListedTickets((prevTickets) =>
-              prevTickets.filter(
-                (item) =>
-                  item.id !== updated.id &&
-                  item.ticketCode !== updated.ticket_code &&
-                  item.id !== updated.ticket_code &&
-                  item.ticketCode !== updated.id
-              )
+          if (updated.is_listed_for_sale === false || updated.status === 'USED' || Boolean(updated.checked_in_at || updated.is_checked_in)) {
+            setListedTickets((prev) =>
+              prev.filter((t) => t.id !== updated.id && t.ticketCode !== updated.ticket_code && t.id !== updated.ticket_code && t.ticketCode !== updated.id)
             );
           } else if (updated.is_listed_for_sale === true) {
             void loadMarketplaceTickets();
@@ -418,7 +400,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
       .subscribe();
 
     return () => {
-      void supabase.removeChannel(channel);
+      supabase.removeChannel(channel);
     };
   }, []);
 
@@ -440,6 +422,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
     setConfirmingTicket(ticket);
   };
 
+  // 1. KHI MUA VÉ THÀNH CÔNG (handleConfirmPurchase / sau khi ký ví Solana):
   // Cập nhật trạng thái vé sau khi giao dịch on-chain thành công
   const handleUpdateTicketAfterPurchase = async (
     ticketId: string,
@@ -470,33 +453,15 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
       txSignature: txSig || targetTicket.txSignature,
     };
 
-    // 1. Cập nhật LocalStorage
+    // Cập nhật LocalStorage
     storage.savePurchasedTicket(updatedTicket);
 
-    // 2. GHI NHẬN TRẠNG THÁI MUA VÉ TRỰC TIẾP LÊN SUPABASE CLOUD
+    // Cập nhật trực tiếp lên bảng tickets của Supabase
     if (isSupabaseConfigured) {
       try {
-        const updatePayload = {
-          owner_address: buyerWalletStr,
-          customer_wallet: buyerWalletStr,
-          wallet_address: buyerWalletStr,
-          is_listed_for_sale: false,
-          listing_price_sol: null,
-          transfer_count: nextTransferCount,
-          royalty_sol: updatedTicket.royalty_sol,
-          updated_at: nowIso,
-        };
-
-        const { data: updatedRows, error: updateErr } = await supabase
-          .from('tickets')
-          .update(updatePayload)
-          .or(`id.eq.${targetTicket.id},ticket_code.eq.${targetTicket.ticketCode}`)
-          .select();
-
-        // Xử lý hạt giống (Seed tickets): nếu update không match bản ghi nào
-        if (updateErr || !updatedRows || updatedRows.length === 0) {
-          const ticketToUpsert = {
+        const { error } = await supabase.from('tickets').upsert({
             id: targetTicket.id,
+            ticket_code: targetTicket.ticketCode || (targetTicket as any).ticket_code,
             order_id: targetTicket.orderId || `ORD-${targetTicket.id}`,
             event_id: targetTicket.eventId || '',
             event_title: targetTicket.eventTitle || '',
@@ -509,23 +474,23 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
             tier_name: targetTicket.tierName || '',
             seat: targetTicket.seat || '',
             price_sol: Number(targetTicket.priceSol) || 0.05,
-            ticket_code: targetTicket.ticketCode || targetTicket.id,
             ticketCode: targetTicket.ticketCode || targetTicket.id,
+            is_listed_for_sale: false,
+            listing_price_sol: null,
             owner_address: buyerWalletStr,
             customer_wallet: buyerWalletStr,
             wallet_address: buyerWalletStr,
             buyer_name: buyerWalletStr.slice(0, 4) + '...' + buyerWalletStr.slice(-4),
             customer_name: buyerWalletStr.slice(0, 4) + '...' + buyerWalletStr.slice(-4),
-            is_listed_for_sale: false,
-            listing_price_sol: null,
-            transfer_count: nextTransferCount,
+            transfer_count: (Number(targetTicket.transfer_count) || 0) + 1,
             royalty_sol: updatedTicket.royalty_sol,
             status: targetTicket.status || 'valid',
             created_at: targetTicket.purchasedAt || targetTicket.purchaseDate || nowIso,
-            updated_at: nowIso,
-          };
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'id' });
 
-          await supabase.from('tickets').upsert([ticketToUpsert], { onConflict: 'id' });
+        if (error) {
+          console.warn('[Marketplace] Lỗi upsert Supabase sau khi mua:', error);
         }
       } catch (supaUpErr) {
         console.warn('[Marketplace] Lỗi cập nhật Supabase sau khi mua:', supaUpErr);
