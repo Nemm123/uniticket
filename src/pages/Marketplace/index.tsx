@@ -250,45 +250,57 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
       const localListed = stored.filter((t: PurchasedTicket) => t.is_listed_for_sale && !t.isCheckedIn && !t.isUsed && t.status !== 'USED');
 
       let cloudListed: PurchasedTicket[] = [];
+      const cloudUnlistedKeys = new Set<string>();
+
       if (isSupabaseConfigured) {
         try {
           const { data, error } = await supabase
             .from('tickets')
-            .select('*')
-            .eq('is_listed_for_sale', true)
-            .neq('status', 'USED')
-            .is('checked_in_at', null);
+            .select('*');
 
           if (!error && data) {
-            cloudListed = data.map((row: any) => ({
-              id: row.id,
-              orderId: row.order_id || `ORD-${row.id}`,
-              eventId: row.event_id,
-              eventTitle: row.event_title || 'Sự kiện Solana',
-              eventBanner: row.event_banner || '',
-              venue: row.venue || 'Việt Nam',
-              city: row.city || 'Việt Nam',
-              date: row.date || '2026-10-15',
-              time: row.time || '19:00',
-              tierId: row.tier_id || 'standard',
-              tierName: row.tier_name || 'Hạng Chuẩn',
-              seat: row.seat || 'GA',
-              priceSol: Number(row.price_sol) || 0.05,
-              listing_price_sol: Number(row.listing_price_sol) || Number(row.price_sol) || 0.05,
-              is_listed_for_sale: true,
-              transfer_count: Number(row.transfer_count) || 0,
-              ticketCode: row.ticket_code || row.id,
-              customerName: row.buyer_name || 'Người bán',
-              customerEmail: row.buyer_email || '',
-              customerWallet: row.owner_address || row.customer_wallet || '',
-              ownerAddress: row.owner_address || row.customer_wallet || '',
-              purchasedAt: row.created_at || new Date().toISOString(),
-              purchaseDate: row.created_at || new Date().toISOString(),
-              status: row.status || 'valid',
-              isCheckedIn: Boolean(row.checked_in_at || row.is_checked_in),
-              qrPayload: row.ticket_code || row.id,
-              organizer_address: row.organizer_address || SOLANA_TREASURY_WALLET_STR,
-            }));
+            data.forEach((row: any) => {
+              const isUnlisted =
+                row.is_listed_for_sale === false ||
+                row.status === 'USED' ||
+                Boolean(row.checked_in_at || row.is_checked_in);
+
+              if (isUnlisted) {
+                if (row.id) cloudUnlistedKeys.add(String(row.id));
+                if (row.ticket_code) cloudUnlistedKeys.add(String(row.ticket_code));
+                if (row.ticketCode) cloudUnlistedKeys.add(String(row.ticketCode));
+              } else if (row.is_listed_for_sale === true) {
+                cloudListed.push({
+                  id: row.id,
+                  orderId: row.order_id || `ORD-${row.id}`,
+                  eventId: row.event_id,
+                  eventTitle: row.event_title || 'Sự kiện Solana',
+                  eventBanner: row.event_banner || '',
+                  venue: row.venue || 'Việt Nam',
+                  city: row.city || 'Việt Nam',
+                  date: row.date || '2026-10-15',
+                  time: row.time || '19:00',
+                  tierId: row.tier_id || 'standard',
+                  tierName: row.tier_name || 'Hạng Chuẩn',
+                  seat: row.seat || 'GA',
+                  priceSol: Number(row.price_sol) || 0.05,
+                  listing_price_sol: Number(row.listing_price_sol) || Number(row.price_sol) || 0.05,
+                  is_listed_for_sale: true,
+                  transfer_count: Number(row.transfer_count) || 0,
+                  ticketCode: row.ticket_code || row.id,
+                  customerName: row.buyer_name || 'Người bán',
+                  customerEmail: row.buyer_email || '',
+                  customerWallet: row.owner_address || row.customer_wallet || '',
+                  ownerAddress: row.owner_address || row.customer_wallet || '',
+                  purchasedAt: row.created_at || new Date().toISOString(),
+                  purchaseDate: row.created_at || new Date().toISOString(),
+                  status: row.status || 'valid',
+                  isCheckedIn: Boolean(row.checked_in_at || row.is_checked_in),
+                  qrPayload: row.ticket_code || row.id,
+                  organizer_address: row.organizer_address || SOLANA_TREASURY_WALLET_STR,
+                });
+              }
+            });
           }
         } catch (supaErr) {
           console.warn('[Marketplace] Lỗi truy vấn Cloud Supabase:', supaErr);
@@ -305,9 +317,15 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
         if (item.ticketCode) storedById.set(item.ticketCode, item);
       });
 
-      // 1. Thêm vé mẫu: NẾU vé đã có trong LocalStorage thì BẮT BUỘC dùng trạng thái từ LocalStorage
-      // Nếu đã được mua hoặc đã hủy niêm yết (is_listed_for_sale !== true) thì TUYỆT ĐỐI không đưa lên Chợ
+      // 1. Thêm vé mẫu: NẾU vé đã bị bán hoặc unlisted trên Supabase Cloud thì TUYỆT ĐỐI không đưa lên Chợ
       SEED_MARKETPLACE_TICKETS.forEach((seed) => {
+        if (
+          cloudUnlistedKeys.has(seed.id) ||
+          (seed.ticketCode && cloudUnlistedKeys.has(seed.ticketCode))
+        ) {
+          return;
+        }
+
         const locallyUpdated = storedById.get(seed.id) || (seed.ticketCode ? storedById.get(seed.ticketCode) : undefined);
         if (locallyUpdated) {
           if (locallyUpdated.is_listed_for_sale === true && !locallyUpdated.isCheckedIn && !locallyUpdated.isUsed && locallyUpdated.status !== 'USED') {
@@ -320,7 +338,14 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
 
       // 2. Thêm các vé được đăng bán từ local
       localListed.forEach((t: PurchasedTicket) => {
-        if (t.is_listed_for_sale === true && !t.isCheckedIn && !t.isUsed && t.status !== 'USED') {
+        if (
+          !cloudUnlistedKeys.has(t.id) &&
+          (!t.ticketCode || !cloudUnlistedKeys.has(t.ticketCode)) &&
+          t.is_listed_for_sale === true &&
+          !t.isCheckedIn &&
+          !t.isUsed &&
+          t.status !== 'USED'
+        ) {
           map.set(t.id, t);
         }
       });
@@ -348,6 +373,53 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
 
   useEffect(() => {
     void loadMarketplaceTickets();
+  }, []);
+
+  // ĐỒNG BỘ THỜI GIAN THỰC QUA SUPABASE REALTIME (REALTIME SYNC TRÊN BẢNG TICKETS):
+  // Lắng nghe kênh marketplace_tickets_realtime trên bảng tickets.
+  // Khi một vé được mua (is_listed_for_sale: false) hoặc xóa/sử dụng ở thiết bị khác,
+  // lập tức lọc bỏ vé đó khỏi state trên mọi thiết bị mà không cần reload trang.
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    const channel = supabase
+      .channel('marketplace_tickets_realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tickets',
+        },
+        (payload) => {
+          const updated = (payload.new || payload.old) as any;
+          if (!updated) return;
+
+          const isUnlisted =
+            updated.is_listed_for_sale === false ||
+            updated.status === 'USED' ||
+            Boolean(updated.checked_in_at || updated.is_checked_in);
+
+          if (isUnlisted) {
+            setListedTickets((prevTickets) =>
+              prevTickets.filter(
+                (item) =>
+                  item.id !== updated.id &&
+                  item.ticketCode !== updated.ticket_code &&
+                  item.id !== updated.ticket_code &&
+                  item.ticketCode !== updated.id
+              )
+            );
+          } else if (updated.is_listed_for_sale === true) {
+            void loadMarketplaceTickets();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, []);
 
   // Mở modal xác nhận giao dịch mua vé thứ cấp
@@ -401,21 +473,60 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
     // 1. Cập nhật LocalStorage
     storage.savePurchasedTicket(updatedTicket);
 
-    // 2. Cập nhật Supabase Cloud
+    // 2. GHI NHẬN TRẠNG THÁI MUA VÉ TRỰC TIẾP LÊN SUPABASE CLOUD
     if (isSupabaseConfigured) {
       try {
-        await supabase
+        const updatePayload = {
+          owner_address: buyerWalletStr,
+          customer_wallet: buyerWalletStr,
+          wallet_address: buyerWalletStr,
+          is_listed_for_sale: false,
+          listing_price_sol: null,
+          transfer_count: nextTransferCount,
+          royalty_sol: updatedTicket.royalty_sol,
+          updated_at: nowIso,
+        };
+
+        const { data: updatedRows, error: updateErr } = await supabase
           .from('tickets')
-          .update({
+          .update(updatePayload)
+          .or(`id.eq.${targetTicket.id},ticket_code.eq.${targetTicket.ticketCode}`)
+          .select();
+
+        // Xử lý hạt giống (Seed tickets): nếu update không match bản ghi nào
+        if (updateErr || !updatedRows || updatedRows.length === 0) {
+          const ticketToUpsert = {
+            id: targetTicket.id,
+            order_id: targetTicket.orderId || `ORD-${targetTicket.id}`,
+            event_id: targetTicket.eventId || '',
+            event_title: targetTicket.eventTitle || '',
+            event_banner: targetTicket.eventBanner || '',
+            venue: targetTicket.venue || '',
+            city: targetTicket.city || '',
+            date: targetTicket.date || '',
+            time: targetTicket.time || '',
+            tier_id: targetTicket.tierId || '',
+            tier_name: targetTicket.tierName || '',
+            seat: targetTicket.seat || '',
+            price_sol: Number(targetTicket.priceSol) || 0.05,
+            ticket_code: targetTicket.ticketCode || targetTicket.id,
+            ticketCode: targetTicket.ticketCode || targetTicket.id,
             owner_address: buyerWalletStr,
             customer_wallet: buyerWalletStr,
+            wallet_address: buyerWalletStr,
+            buyer_name: buyerWalletStr.slice(0, 4) + '...' + buyerWalletStr.slice(-4),
+            customer_name: buyerWalletStr.slice(0, 4) + '...' + buyerWalletStr.slice(-4),
             is_listed_for_sale: false,
             listing_price_sol: null,
             transfer_count: nextTransferCount,
             royalty_sol: updatedTicket.royalty_sol,
+            status: targetTicket.status || 'valid',
+            created_at: targetTicket.purchasedAt || targetTicket.purchaseDate || nowIso,
             updated_at: nowIso,
-          })
-          .or(`id.eq.${targetTicket.id},ticket_code.eq.${targetTicket.ticketCode}`);
+          };
+
+          await supabase.from('tickets').upsert([ticketToUpsert], { onConflict: 'id' });
+        }
       } catch (supaUpErr) {
         console.warn('[Marketplace] Lỗi cập nhật Supabase sau khi mua:', supaUpErr);
       }

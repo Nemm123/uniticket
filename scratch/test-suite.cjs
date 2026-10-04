@@ -658,8 +658,11 @@ assert(
   marketplaceCode.includes('Tiếp tục dạo Chợ vé') &&
   marketplaceCode.includes('ConfettiFireworks') &&
   marketplaceCode.includes('activeMarketplaceTickets') &&
+  marketplaceCode.includes('marketplace_tickets_realtime') &&
+  marketplaceCode.includes('cloudUnlistedKeys') &&
+  marketplaceCode.includes("supabase.from('tickets').upsert") &&
   appMarketplaceCode.includes('onTicketsChanged'),
-  'TEST 37 — Secondary Marketplace (Navbar Link, 85/10/5 Revenue Split, Transfer Cap, Buy Confirmation Modal, Celebration Success Modal, activeMarketplaceTickets & Phantom Signing)'
+  'TEST 37 — Secondary Marketplace (Navbar Link, 85/10/5 Revenue Split, Transfer Cap, Buy Confirmation Modal, Celebration Success Modal, activeMarketplaceTickets, Cloud Sync & Supabase Realtime)'
 );
 
 // -------------------------------------------------------------
