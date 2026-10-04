@@ -17,6 +17,9 @@ import {
   Calendar,
   Lock,
   Search,
+  X,
+  AlertTriangle,
+  Wallet,
 } from 'lucide-react';
 import { PurchasedTicket } from '../../types';
 import { useTranslation } from '../../i18n';
@@ -137,6 +140,8 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
   const [listedTickets, setListedTickets] = useState<PurchasedTicket[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [buyingTicketId, setBuyingTicketId] = useState<string | null>(null);
+  const [confirmingTicket, setConfirmingTicket] = useState<PurchasedTicket | null>(null);
+  const [isSigning, setIsSigning] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Tải danh sách vé niêm yết từ Supabase và LocalStorage
@@ -212,11 +217,29 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
     void loadMarketplaceTickets();
   }, []);
 
-  // Xử lý mua vé thứ cấp trên Solana qua Phantom
-  const handleBuyTicket = async (ticket: PurchasedTicket) => {
+  // Mở modal xác nhận giao dịch mua vé thứ cấp
+  const handleOpenConfirmModal = (ticket: PurchasedTicket) => {
     const effectiveWallet = walletAddress || publicKey?.toBase58();
 
-    if (!effectiveWallet) {
+    const sellerWallet = ticket.ownerAddress || ticket.customerWallet || ticket.owner_address || '';
+    if (effectiveWallet && sellerWallet && sellerWallet.toLowerCase() === effectiveWallet.toLowerCase()) {
+      if (onShowToast) onShowToast('error', 'Bạn đang sở hữu vé này, không thể tự mua vé của chính mình.');
+      return;
+    }
+
+    if ((Number(ticket.transfer_count) || 0) >= 2) {
+      if (onShowToast) onShowToast('error', 'Vé này đã đạt giới hạn chuyển nhượng tối đa 2 lần.');
+      return;
+    }
+
+    setConfirmingTicket(ticket);
+  };
+
+  // Xử lý xác nhận và ký ví Phantom trên Solana Devnet
+  const handleConfirmAndSign = async (ticket: PurchasedTicket) => {
+    const effectiveWallet = walletAddress || publicKey?.toBase58();
+
+    if (!effectiveWallet || !publicKey) {
       if (onShowToast) onShowToast('info', 'Vui lòng kết nối ví Phantom trước khi mua vé.');
       onOpenWalletModal?.();
       return;
@@ -228,6 +251,12 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
       return;
     }
 
+    if ((Number(ticket.transfer_count) || 0) >= 2) {
+      if (onShowToast) onShowToast('error', 'Vé này đã đạt giới hạn chuyển nhượng tối đa 2 lần.');
+      return;
+    }
+
+    setIsSigning(true);
     setBuyingTicketId(ticket.id);
     const listingPrice = Number(ticket.listing_price_sol || ticket.priceSol) || 0.05;
 
@@ -244,75 +273,96 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
 
       let txSignature = '';
 
-      // Nếu ví Phantom kết nối thực tế
-      if (connected && publicKey) {
+      const isMobile = typeof navigator !== 'undefined' && /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+      const phantomSolana = (window as any).phantom?.solana;
+      const phantomProvider = phantomSolana || (window as any).solana;
+
+      const connection = getDevnetConnection();
+      const transaction = new Transaction();
+
+      // 85% người bán
+      if (sellerWallet && sellerShare > 0) {
         try {
-          const connection = getDevnetConnection();
-          const transaction = new Transaction();
+          const sellerPubKey = new PublicKey(sellerWallet.trim());
+          transaction.add(
+            SystemProgram.transfer({
+              fromPubkey: publicKey,
+              toPubkey: sellerPubKey,
+              lamports: Math.max(5000, Math.round(sellerShare * LAMPORTS_PER_SOL)),
+            })
+          );
+        } catch {
+          console.warn('[Marketplace] Địa chỉ ví người bán không hợp lệ on-chain, fallback treasury');
+        }
+      }
 
-          // 85% người bán
-          if (sellerWallet && sellerShare > 0) {
-            try {
-              const sellerPubKey = new PublicKey(sellerWallet.trim());
-              transaction.add(
-                SystemProgram.transfer({
-                  fromPubkey: publicKey,
-                  toPubkey: sellerPubKey,
-                  lamports: Math.max(5000, Math.round(sellerShare * LAMPORTS_PER_SOL)),
-                })
-              );
-            } catch {
-              console.warn('[Marketplace] Địa chỉ ví người bán không hợp lệ on-chain, fallback treasury');
-            }
-          }
+      // 10% Ban tổ chức
+      const organizerWallet = ticket.organizer_address || SOLANA_TREASURY_WALLET_STR;
+      if (royaltyShare > 0) {
+        try {
+          const orgPubKey = new PublicKey(organizerWallet.trim());
+          transaction.add(
+            SystemProgram.transfer({
+              fromPubkey: publicKey,
+              toPubkey: orgPubKey,
+              lamports: Math.max(5000, Math.round(royaltyShare * LAMPORTS_PER_SOL)),
+            })
+          );
+        } catch {
+          console.warn('[Marketplace] Lỗi ví BTC, dùng treasury fallback');
+        }
+      }
 
-          // 10% Ban tổ chức
-          const organizerWallet = ticket.organizer_address || SOLANA_TREASURY_WALLET_STR;
-          if (royaltyShare > 0) {
-            try {
-              const orgPubKey = new PublicKey(organizerWallet.trim());
-              transaction.add(
-                SystemProgram.transfer({
-                  fromPubkey: publicKey,
-                  toPubkey: orgPubKey,
-                  lamports: Math.max(5000, Math.round(royaltyShare * LAMPORTS_PER_SOL)),
-                })
-              );
-            } catch {
-              console.warn('[Marketplace] Lỗi ví BTC, dùng treasury fallback');
-            }
-          }
+      // 5% Phí sàn
+      if (platformShare > 0) {
+        const treasuryPubKey = new PublicKey(SOLANA_TREASURY_WALLET_STR);
+        transaction.add(
+          SystemProgram.transfer({
+            fromPubkey: publicKey,
+            toPubkey: treasuryPubKey,
+            lamports: Math.max(5000, Math.round(platformShare * LAMPORTS_PER_SOL)),
+          })
+        );
+      }
 
-          // 5% Phí sàn
-          if (platformShare > 0) {
-            const treasuryPubKey = new PublicKey(SOLANA_TREASURY_WALLET_STR);
-            transaction.add(
-              SystemProgram.transfer({
-                fromPubkey: publicKey,
-                toPubkey: treasuryPubKey,
-                lamports: Math.max(5000, Math.round(platformShare * LAMPORTS_PER_SOL)),
-              })
-            );
-          }
+      const { blockhash } = await getLatestBlockhashWithRetry(connection);
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = publicKey;
 
-          const { blockhash } = await getLatestBlockhashWithRetry(connection);
-          transaction.recentBlockhash = blockhash;
-          transaction.feePayer = publicKey;
-
-          const phantomSolana = (window as any).phantom?.solana;
-          if (phantomSolana?.signAndSendTransaction) {
-            const res = await phantomSolana.signAndSendTransaction(transaction);
-            txSignature = typeof res === 'string' ? res : res.signature;
-          } else if (typeof sendTransaction === 'function') {
-            txSignature = await sendTransaction(transaction, connection);
-          }
-        } catch (chainErr: any) {
-          console.warn('[Marketplace] Giao dịch ví on-chain:', chainErr);
-          // Cho phép mô phỏng mượt mà trên môi trường demo
+      try {
+        if ((isMobile || phantomSolana?.isPhantom) && phantomSolana && typeof phantomSolana.signAndSendTransaction === 'function') {
+          const res = await phantomSolana.signAndSendTransaction(transaction);
+          txSignature = typeof res === 'string' ? res : res.signature;
+        } else if (connected && typeof sendTransaction === 'function') {
+          txSignature = await sendTransaction(transaction, connection);
+        } else if (phantomProvider && typeof phantomProvider.signAndSendTransaction === 'function') {
+          const res = await phantomProvider.signAndSendTransaction(transaction);
+          txSignature = typeof res === 'string' ? res : res.signature;
+        } else {
           txSignature = `demo-mkt-${Date.now().toString(16)}`;
         }
-      } else {
-        txSignature = `sim-mkt-${Date.now().toString(16)}`;
+      } catch (chainErr: any) {
+        const errMsg = String(chainErr?.message || chainErr || '').toLowerCase();
+        const isRejected =
+          chainErr?.code === 4001 ||
+          errMsg.includes('reject') ||
+          errMsg.includes('cancel') ||
+          errMsg.includes('denied') ||
+          chainErr?.name === 'WalletSignTransactionError' ||
+          chainErr?.name === 'WalletSendTransactionError';
+
+        if (isRejected) {
+          if (onShowToast) {
+            onShowToast('info', 'Bạn đã hủy bỏ ký giao dịch trên ví Phantom.');
+          }
+          setIsSigning(false);
+          setBuyingTicketId(null);
+          return;
+        }
+
+        console.warn('[Marketplace] Giao dịch ví on-chain:', chainErr);
+        // Fallback simulation nếu devnet timeout hoặc local sandbox
+        txSignature = `demo-mkt-${Date.now().toString(16)}`;
       }
 
       // 2. Cập nhật chủ sở hữu mới và tăng transfer_count lên 1
@@ -357,12 +407,10 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
 
       // Cập nhật lại UI Chợ Vé
       setListedTickets((prev) => prev.filter((t) => t.id !== ticket.id));
+      setConfirmingTicket(null);
 
       if (onShowToast) {
-        onShowToast(
-          'success',
-          `Mua vé thành công! 85% (${sellerShare} SOL) về người bán, 10% (${royaltyShare} SOL) bản quyền về BTC, 5% (${platformShare} SOL) phí sàn.`
-        );
+        onShowToast('success', "Mua vé thành công! Vé đã được chuyển về 'Vé của tôi'");
       }
     } catch (err: any) {
       console.error('[Marketplace] Lỗi mua vé:', err);
@@ -370,6 +418,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
         onShowToast('error', err?.message || 'Giao dịch mua vé thất bại. Vui lòng thử lại.');
       }
     } finally {
+      setIsSigning(false);
       setBuyingTicketId(null);
     }
   };
@@ -627,7 +676,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
                     ) : (
                       <button
                         type="button"
-                        onClick={() => handleBuyTicket(t)}
+                        onClick={() => handleOpenConfirmModal(t)}
                         disabled={buyingTicketId === t.id}
                         className="w-full min-h-11 rounded-xl bg-gradient-to-r from-solana-purple via-[#8338EC] to-neon-pink text-white font-bold text-xs shadow-lg shadow-purple-950/60 hover:opacity-95 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                       >
@@ -651,6 +700,165 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
           </div>
         )}
       </div>
+
+      {/* Modal Xác nhận Mua vé Thứ cấp */}
+      {confirmingTicket && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
+          onClick={() => !isSigning && setConfirmingTicket(null)}
+        >
+          <div
+            className="relative w-full max-w-lg rounded-2xl border border-solana-purple/50 bg-[#120B30] p-6 shadow-2xl shadow-purple-950/60 text-left space-y-5 animate-scaleUp"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-solana-purple/20 border border-solana-purple/40 text-solana-cyan">
+                  <ShoppingBag className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Chi tiết Giao dịch Thứ cấp</h3>
+                  <p className="text-xs text-slate-400">Xác nhận điều khoản thanh toán & chuyển nhượng NFT</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !isSigning && setConfirmingTicket(null)}
+                disabled={isSigning}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Ticket Details */}
+            {(() => {
+              const sellerWallet = confirmingTicket.ownerAddress || confirmingTicket.customerWallet || confirmingTicket.owner_address || '';
+              const listPrice = Number(confirmingTicket.listing_price_sol || confirmingTicket.priceSol) || 0.05;
+              const sellerShare = (listPrice * 0.85).toFixed(3);
+              const royaltyShare = (listPrice * 0.10).toFixed(3);
+              const platformShare = (listPrice * 0.05).toFixed(3);
+
+              return (
+                <>
+                  <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-2.5">
+                    <div>
+                      <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Tên sự kiện</span>
+                      <p className="text-sm font-bold text-white line-clamp-1">{confirmingTicket.eventTitle}</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <span className="text-[11px] text-slate-400">Hạng vé:</span>
+                        <p className="text-xs font-semibold text-solana-cyan">{confirmingTicket.tierName}</p>
+                      </div>
+                      <div>
+                        <span className="text-[11px] text-slate-400">Mã vé:</span>
+                        <p className="text-xs font-mono font-bold text-white">{confirmingTicket.ticketCode || confirmingTicket.id}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 pt-1 border-t border-white/5">
+                      <div>
+                        <span className="text-[11px] text-slate-400">Chỗ ngồi:</span>
+                        <p className="text-xs text-slate-300">{confirmingTicket.seat || 'Khu vực tự do'}</p>
+                      </div>
+                      <div>
+                        <span className="text-[11px] text-slate-400">Tên chủ sở hữu hiện tại:</span>
+                        <p className="text-xs font-medium text-slate-200 truncate">
+                          {confirmingTicket.customerName || 'Chủ sở hữu'}
+                          {sellerWallet && (
+                            <span className="block text-[10px] font-mono text-slate-400 truncate">
+                              ({sellerWallet.slice(0, 4)}...{sellerWallet.slice(-4)})
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Pricing and Revenue Distribution */}
+                  <div className="space-y-3">
+                    <div className="p-3.5 rounded-xl bg-solana-purple/10 border border-solana-purple/30 flex items-center justify-between">
+                      <div>
+                        <span className="text-xs text-slate-300 font-medium">Tổng giá thanh toán:</span>
+                        <p className="text-[11px] text-slate-400">Bao gồm thuế phí on-chain</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-2xl font-black text-solana-green font-mono">{listPrice.toFixed(2)} SOL</span>
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-black/30 border border-white/10 space-y-2 text-xs">
+                      <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">Minh bạch dòng tiền phân bổ:</span>
+                      <div className="flex justify-between items-center text-slate-300">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-solana-green" />
+                          Người bán nhận (85%):
+                        </span>
+                        <span className="font-mono font-bold text-white">{sellerShare} SOL</span>
+                      </div>
+                      <div className="flex justify-between items-center text-slate-300">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-neon-pink" />
+                          Phí bản quyền Ban tổ chức (10%):
+                        </span>
+                        <span className="font-mono font-bold text-neon-pink">{royaltyShare} SOL</span>
+                      </div>
+                      <div className="flex justify-between items-center text-slate-300">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-solana-cyan" />
+                          Phí nền tảng UniTicket (5%):
+                        </span>
+                        <span className="font-mono font-bold text-solana-cyan">{platformShare} SOL</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Warning Notice */}
+                  <div className="p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30 flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
+                    <p className="text-xs text-yellow-200/90 leading-relaxed">
+                      Sau khi mua, vé này sẽ ghi nhận +1 lượt chuyển nhượng (Tối đa 2 lần).
+                    </p>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingTicket(null)}
+                      disabled={isSigning}
+                      className="flex-1 py-2.5 px-4 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-slate-300 font-semibold text-xs transition-colors disabled:opacity-50"
+                    >
+                      Hủy bỏ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmAndSign(confirmingTicket)}
+                      disabled={isSigning}
+                      className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-solana-purple via-[#8338EC] to-neon-pink hover:opacity-95 text-white font-bold text-xs shadow-lg shadow-purple-950/60 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70"
+                    >
+                      {isSigning ? (
+                        <>
+                          <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Đang ký ví Phantom...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Wallet className="w-4 h-4" />
+                          <span>Xác nhận & Ký ví Phantom</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
