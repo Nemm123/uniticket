@@ -651,8 +651,13 @@ assert(
   marketplaceCode.includes("Mua vé thành công! Vé đã được chuyển về 'Vé của tôi'") &&
   marketplaceCode.includes('Sau khi mua, vé này sẽ ghi nhận +1 lượt chuyển nhượng (Tối đa 2 lần).') &&
   marketplaceCode.includes('useConnection') &&
-  marketplaceCode.includes('handleUpdateTicketAfterPurchase'),
-  'TEST 37 — Secondary Marketplace (Navbar Link, 85/10/5 Revenue Split, Transfer Cap, Buy Confirmation Modal, useConnection & Phantom Signing)'
+  marketplaceCode.includes('handleUpdateTicketAfterPurchase') &&
+  marketplaceCode.includes('isSuccessModalOpen') &&
+  marketplaceCode.includes('🎉 CHÚC MỪNG BẠN ĐÃ SỞ HỮU VÉ THÀNH CÔNG!') &&
+  marketplaceCode.includes('Xem Vé Của Tôi Ngay 🎟️') &&
+  marketplaceCode.includes('Tiếp tục dạo Chợ vé') &&
+  marketplaceCode.includes('ConfettiFireworks'),
+  'TEST 37 — Secondary Marketplace (Navbar Link, 85/10/5 Revenue Split, Transfer Cap, Buy Confirmation Modal, Celebration Success Modal & Phantom Signing)'
 );
 
 // -------------------------------------------------------------

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import {
   PublicKey,
@@ -20,6 +20,9 @@ import {
   X,
   AlertTriangle,
   Wallet,
+  Trophy,
+  ExternalLink,
+  Ticket,
 } from 'lucide-react';
 import { PurchasedTicket } from '../../types';
 import { useTranslation } from '../../i18n';
@@ -38,6 +41,93 @@ interface MarketplacePageProps {
   onCloseWalletModal?: () => void;
   onShowToast?: (type: 'success' | 'error' | 'info', message: string, url?: string, label?: string) => void;
 }
+
+// Hiệu ứng pháo hoa Confetti Canvas mượt mà dành cho Celebration Modal
+const ConfettiFireworks: React.FC = () => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animationFrameId: number;
+    canvas.width = canvas.parentElement?.clientWidth || window.innerWidth;
+    canvas.height = canvas.parentElement?.clientHeight || window.innerHeight;
+
+    const colors = ['#9945FF', '#14F195', '#F72585', '#4CC9F0', '#FFD166', '#FFFFFF'];
+    const particles: Array<{
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      size: number;
+      color: string;
+      alpha: number;
+      decay: number;
+      rotation: number;
+      vRot: number;
+    }> = [];
+
+    // Tạo 85 hạt pháo hoa confetti rực rỡ
+    for (let i = 0; i < 85; i++) {
+      particles.push({
+        x: canvas.width * 0.5 + (Math.random() - 0.5) * 140,
+        y: canvas.height * 0.32 + (Math.random() - 0.5) * 60,
+        vx: (Math.random() - 0.5) * 11,
+        vy: (Math.random() - 1) * 10 - 2,
+        size: Math.random() * 8 + 4,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        alpha: 1,
+        decay: Math.random() * 0.008 + 0.006,
+        rotation: Math.random() * 360,
+        vRot: (Math.random() - 0.5) * 12,
+      });
+    }
+
+    const render = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      let alive = false;
+
+      particles.forEach((p) => {
+        if (p.alpha <= 0) return;
+        alive = true;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.24; // gravity
+        p.vx *= 0.98; // air resistance
+        p.alpha -= p.decay;
+        p.rotation += p.vRot;
+
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, p.alpha);
+        ctx.translate(p.x, p.y);
+        ctx.rotate((p.rotation * Math.PI) / 180);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+        ctx.restore();
+      });
+
+      if (alive) {
+        animationFrameId = requestAnimationFrame(render);
+      }
+    };
+
+    animationFrameId = requestAnimationFrame(render);
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="pointer-events-none absolute inset-0 z-30 w-full h-full"
+    />
+  );
+};
 
 // Danh sách vé mẫu mặc định sẵn sàng giao dịch trên Chợ Thứ Cấp
 const SEED_MARKETPLACE_TICKETS: PurchasedTicket[] = [
@@ -145,6 +235,9 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
   const [buyingTicketId, setBuyingTicketId] = useState<string | null>(null);
   const [confirmingTicket, setConfirmingTicket] = useState<PurchasedTicket | null>(null);
   const [isSigning, setIsSigning] = useState<boolean>(false);
+  const [isSuccessModalOpen, setIsSuccessModalOpen] = useState<boolean>(false);
+  const [purchasedSuccessTicket, setPurchasedSuccessTicket] = useState<PurchasedTicket | null>(null);
+  const [successTxSignature, setSuccessTxSignature] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Tải danh sách vé niêm yết từ Supabase và LocalStorage
@@ -292,6 +385,11 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
     // 3. Cập nhật lại UI Chợ Vé
     setListedTickets((prev) => prev.filter((t) => t.id !== targetTicket.id));
     setConfirmingTicket(null);
+
+    // Kích hoạt state mở isSuccessModalOpen = true và lưu thông tin vé vừa mua
+    setPurchasedSuccessTicket(updatedTicket);
+    setSuccessTxSignature(txSig || updatedTicket.txSignature || '');
+    setIsSuccessModalOpen(true);
 
     if (onShowToast) {
       onShowToast('success', "Mua vé thành công! Vé đã được chuyển về 'Vé của tôi'");
@@ -899,6 +997,144 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
                 </>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Chúc Mừng Mua Vé Thành Công (Celebration Success Modal) */}
+      {isSuccessModalOpen && purchasedSuccessTicket && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn"
+          onClick={() => {
+            setIsSuccessModalOpen(false);
+            setPurchasedSuccessTicket(null);
+          }}
+        >
+          <div
+            className="relative w-full max-w-lg rounded-3xl border border-solana-cyan/50 bg-[#0F0826] p-6 sm:p-8 shadow-2xl shadow-purple-950/90 text-center space-y-5 animate-scaleUp overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Hiệu ứng pháo hoa confetti */}
+            <ConfettiFireworks />
+
+            {/* Glowing neon background orbs */}
+            <div className="pointer-events-none absolute -top-20 -left-20 h-48 w-48 rounded-full bg-solana-purple/30 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-20 -right-20 h-48 w-48 rounded-full bg-solana-cyan/25 blur-3xl" />
+
+            {/* Nút đóng modal */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsSuccessModalOpen(false);
+                setPurchasedSuccessTicket(null);
+              }}
+              className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors z-40"
+              aria-label="Đóng"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Icon chúc mừng với hiệu ứng neon */}
+            <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-tr from-solana-purple/30 via-neon-pink/20 to-solana-cyan/30 border-2 border-solana-cyan/50 shadow-2xl shadow-solana-cyan/30">
+              <Trophy className="h-10 w-10 text-yellow-300 drop-shadow-[0_0_12px_rgba(253,224,71,0.8)]" />
+              <span className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-solana-green text-[12px] shadow-lg animate-pulse">
+                ✨
+              </span>
+            </div>
+
+            {/* Tiêu đề & Thông điệp */}
+            <div className="space-y-2 relative z-10">
+              <h3 className="text-xl sm:text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-white to-solana-cyan tracking-tight">
+                🎉 CHÚC MỪNG BẠN ĐÃ SỞ HỮU VÉ THÀNH CÔNG!
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-md mx-auto">
+                Giao dịch đã được ghi nhận trên Solana Devnet. Chiếc vé NFT chính thức thuộc về ví của bạn với mã check-in Dynamic QR an toàn.
+              </p>
+            </div>
+
+            {/* Thẻ tóm tắt nhanh */}
+            <div className="rounded-2xl border border-white/10 bg-black/40 p-4 space-y-3 text-left relative z-10">
+              {/* Tên sự kiện & Hạng vé */}
+              <div className="flex items-start justify-between gap-3 pb-3 border-b border-white/10">
+                <div>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Sự kiện &amp; Hạng vé</span>
+                  <h4 className="text-sm sm:text-base font-bold text-white line-clamp-1 mt-0.5">
+                    {purchasedSuccessTicket.eventTitle}
+                  </h4>
+                  <span className="inline-flex items-center gap-1.5 mt-1 px-2.5 py-0.5 rounded-md bg-solana-purple/20 border border-solana-purple/40 text-xs font-semibold text-solana-cyan">
+                    <Ticket className="w-3.5 h-3.5" />
+                    {purchasedSuccessTicket.tierName} {purchasedSuccessTicket.seat ? `• ${purchasedSuccessTicket.seat}` : ''}
+                  </span>
+                </div>
+                <span className="shrink-0 font-mono text-sm font-extrabold text-solana-green bg-solana-green/10 border border-solana-green/30 px-2.5 py-1 rounded-lg">
+                  {Number(purchasedSuccessTicket.listing_price_sol || purchasedSuccessTicket.priceSol || 0).toFixed(2)} SOL
+                </span>
+              </div>
+
+              {/* Mã vé */}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">Mã vé (Ticket Code):</span>
+                <span className="font-mono font-bold text-white bg-white/5 border border-white/10 px-2 py-0.5 rounded">
+                  {purchasedSuccessTicket.ticketCode || purchasedSuccessTicket.id}
+                </span>
+              </div>
+
+              {/* Lượt chuyển nhượng hiện tại */}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">Lượt chuyển nhượng hiện tại:</span>
+                {(() => {
+                  const count = Number(purchasedSuccessTicket.transfer_count) || 1;
+                  const remaining = Math.max(0, 2 - count);
+                  return (
+                    <span className="font-semibold text-yellow-300 bg-yellow-400/10 border border-yellow-400/30 px-2 py-0.5 rounded">
+                      {count}/2 (Còn {remaining} lượt chuyển nhượng)
+                    </span>
+                  );
+                })()}
+              </div>
+
+              {/* Hash giao dịch (Transaction Signature) kèm link xem trên Solana Explorer Devnet */}
+              {successTxSignature && (
+                <div className="flex items-center justify-between text-xs pt-2 border-t border-white/5">
+                  <span className="text-slate-400">Hash giao dịch:</span>
+                  <a
+                    href={`https://explorer.solana.com/tx/${successTxSignature}?cluster=devnet`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 font-mono text-solana-cyan hover:text-white underline decoration-solana-cyan/50 hover:decoration-white transition-colors"
+                    title="Xem trên Solana Explorer"
+                  >
+                    <span>{successTxSignature.length > 12 ? `${successTxSignature.slice(0, 4)}...${successTxSignature.slice(-4)}` : successTxSignature}</span>
+                    <ExternalLink className="w-3 h-3 shrink-0" />
+                  </a>
+                </div>
+              )}
+            </div>
+
+            {/* 2 Nút hành động CTA */}
+            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2 relative z-10">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSuccessModalOpen(false);
+                  setPurchasedSuccessTicket(null);
+                  onNavigate('my-tickets');
+                }}
+                className="w-full sm:flex-1 py-3 px-5 rounded-xl bg-gradient-to-r from-solana-purple via-[#8338EC] to-neon-pink hover:opacity-95 active:scale-[0.98] text-white font-extrabold text-xs sm:text-sm shadow-xl shadow-purple-950/80 transition-all flex items-center justify-center gap-2"
+              >
+                <span>Xem Vé Của Tôi Ngay 🎟️</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSuccessModalOpen(false);
+                  setPurchasedSuccessTicket(null);
+                }}
+                className="w-full sm:w-auto py-3 px-5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-slate-300 font-semibold text-xs sm:text-sm transition-colors"
+              >
+                <span>Tiếp tục dạo Chợ vé</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
