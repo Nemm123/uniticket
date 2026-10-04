@@ -453,13 +453,18 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
               <p className="mt-4 text-3xl font-black text-yellow-300">
                 +{secondaryRoyaltySol.toFixed(2)} SOL
               </p>
-              <div className="mt-1 flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-200">
-                  10% chia sẻ từ giao dịch bán lại
+              <div className="mt-1 flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-200">
+                    10% chia sẻ từ giao dịch bán lại
+                  </p>
+                  <span className="text-[10px] font-bold text-solana-cyan px-1.5 py-0.5 rounded bg-solana-cyan/10 border border-solana-cyan/30">
+                    10% Royalty
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Dòng tiền thụ động 10% trích tự động về ví BTC qua Smart Contract
                 </p>
-                <span className="text-[10px] font-bold text-solana-cyan px-1.5 py-0.5 rounded bg-solana-cyan/10 border border-solana-cyan/30">
-                  10% Royalty
-                </span>
               </div>
               <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-yellow-400/0 via-yellow-400/40 to-yellow-400/0 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>

@@ -30,13 +30,13 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onClick, onNavigate
       const diffHours = Math.floor(diff / (1000 * 60 * 60));
       const diffDays = Math.floor(diffHours / 24);
       if (diffDays > 0) {
-        return `Còn ${diffDays} ngày`;
+        return `⏳ Còn ${diffDays} ngày`;
       }
       if (diffHours > 0) {
-        return `Bắt đầu sau ${diffHours} giờ`;
+        return `⏳ Bắt đầu sau ${diffHours} giờ`;
       }
       const diffMins = Math.floor(diff / (1000 * 60));
-      return `Bắt đầu sau ${Math.max(1, diffMins)} phút`;
+      return `⏳ Bắt đầu sau ${Math.max(1, diffMins)} phút`;
     } catch {
       return null;
     }
@@ -78,7 +78,9 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onClick, onNavigate
             src={event.thumbnailImage || event.bannerImage}
             alt={event.title}
             loading="lazy"
-            className="h-full w-full object-cover transition-transform duration-500 will-change-transform group-hover:scale-105"
+            className={`h-full w-full object-cover transition-transform duration-500 will-change-transform group-hover:scale-105 ${
+              isSoldOut ? 'opacity-65 grayscale-[25%]' : ''
+            }`}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-[#110A2B] via-transparent to-black/30" />
 
@@ -94,6 +96,13 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onClick, onNavigate
               <span className="inline-flex items-center gap-1 rounded-full bg-red-600/90 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-md shadow-sm">
                 <Flame className="h-3 w-3 text-yellow-300" />
                 <span>{t('common.featured')}</span>
+              </span>
+            )}
+
+            {/* SOLD OUT badge nổi bật */}
+            {isSoldOut && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-600/90 px-2.5 py-0.5 text-[10px] font-extrabold text-white backdrop-blur-md border border-red-400/50 shadow-lg shadow-red-950/60 animate-pulse">
+                <span>🔥 SOLD OUT</span>
               </span>
             )}
 
@@ -179,7 +188,7 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onClick, onNavigate
               }}
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gradient-to-r from-solana-purple to-neon-pink text-white text-xs font-bold shadow-md shadow-pink-950/50 hover:opacity-90 active:scale-95 transition-all"
             >
-              <span>Săn vé trên Chợ Vé →</span>
+              <span>Xem Chợ Vé Thứ Cấp (Săn vé trên Chợ Vé →)</span>
             </button>
           </div>
         ) : (

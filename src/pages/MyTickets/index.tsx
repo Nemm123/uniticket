@@ -412,7 +412,7 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                   disabled={isProcessingAction}
                   className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-solana-green to-emerald-500 text-slate-950 text-xs font-bold shrink-0 hover:opacity-95 shadow-md transition-all active:scale-95"
                 >
-                  Chấp nhận vé
+                  Chấp nhận vé (Accept)
                 </button>
               </div>
             ))}
@@ -525,13 +525,13 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                         {!isUsedTicket && (
                           <>
                             {isTransferLocked ? (
-                              <span className="px-2.5 py-1 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-[11px] font-bold">
-                                Đã khóa chuyển nhượng (Transfer Locked)
+                              <span className="px-2.5 py-1 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-[11px] font-bold flex items-center gap-1">
+                                <span>🔒 Đã khóa chuyển nhượng (Transfer Locked)</span>
                               </span>
                             ) : isPendingAcceptance ? (
                               <div className="flex items-center gap-2">
                                 <span className="text-[11px] text-yellow-300 bg-yellow-950/60 border border-yellow-500/40 px-2.5 py-1 rounded-xl">
-                                  Chờ ví {ticket.pending_recipient?.slice(0, 4)}...
+                                  Đang chờ ví {ticket.pending_recipient ? `${ticket.pending_recipient.slice(0, 4)}...${ticket.pending_recipient.slice(-4)}` : 'người nhận'} chấp nhận
                                 </span>
                                 <button
                                   type="button"
