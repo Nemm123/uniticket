@@ -894,6 +894,7 @@ export function App() {
             onSelectTransferTicket={setTransferTicketTarget}
             walletAddress={walletAddress}
             onShowToast={showToast}
+            onTicketsChanged={() => setPurchasedTickets(getStoredPurchasedTickets())}
           />
         )}
 

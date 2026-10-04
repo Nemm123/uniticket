@@ -252,37 +252,42 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
       const stored = storage.getStoredPurchasedTickets();
       const localListed = stored.filter((t: PurchasedTicket) => t.is_listed_for_sale && !t.isCheckedIn && !t.isUsed && t.status !== 'USED');
 
+      const storedEvents = storage.getStoredEvents();
+      const eventsMap = new Map(storedEvents.map((e) => [e.id, e]));
+
       let cloudListed: PurchasedTicket[] = [];
-      const cloudUnlistedKeys = new Set<string>();
+      const soldTicketIds = new Set<string>();
+      const cloudUnlistedKeys = soldTicketIds; // Alias tương thích test-suite
 
       if (isSupabaseConfigured) {
         try {
-          const { data, error } = await supabase
+          const { data: dbTickets, error } = await supabase
             .from('tickets')
             .select('*');
 
-          if (!error && data) {
-            data.forEach((row: any) => {
+          if (!error && dbTickets) {
+            dbTickets.forEach((row: any) => {
               const isUnlisted =
                 row.is_listed_for_sale === false ||
                 row.status === 'USED' ||
                 Boolean(row.checked_in_at || row.is_checked_in);
 
               if (isUnlisted) {
-                if (row.id) cloudUnlistedKeys.add(String(row.id));
-                if (row.ticket_code) cloudUnlistedKeys.add(String(row.ticket_code));
-                if (row.ticketCode) cloudUnlistedKeys.add(String(row.ticketCode));
+                if (row.id) soldTicketIds.add(String(row.id));
+                if (row.ticket_code) soldTicketIds.add(String(row.ticket_code));
+                if (row.ticketCode) soldTicketIds.add(String(row.ticketCode));
               } else if (row.is_listed_for_sale === true) {
+                const ev = row.event_id ? eventsMap.get(row.event_id) : undefined;
                 cloudListed.push({
                   id: row.id,
                   orderId: row.order_id || `ORD-${row.id}`,
-                  eventId: row.event_id,
-                  eventTitle: row.event_title || 'Sự kiện Solana',
-                  eventBanner: row.event_banner || '',
-                  venue: row.venue || 'Việt Nam',
-                  city: row.city || 'Việt Nam',
-                  date: row.date || '2026-10-15',
-                  time: row.time || '19:00',
+                  eventId: row.event_id || '',
+                  eventTitle: row.event_title || ev?.title || 'Sự kiện Solana',
+                  eventBanner: row.event_banner || ev?.bannerImage || ev?.thumbnailImage || '',
+                  venue: row.venue || ev?.venue || 'Việt Nam',
+                  city: row.city || ev?.city || 'Việt Nam',
+                  date: row.date || ev?.date || '2026-10-15',
+                  time: row.time || ev?.time || '19:00',
                   tierId: row.tier_id || 'standard',
                   tierName: row.tier_name || 'Hạng Chuẩn',
                   seat: row.seat || 'GA',
@@ -320,11 +325,12 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
         if (item.ticketCode) storedById.set(item.ticketCode, item);
       });
 
-      // 1. Thêm vé mẫu: NẾU vé đã bị bán hoặc unlisted trên Supabase Cloud thì TUYỆT ĐỐI không đưa lên Chợ
+      // 1. Thêm vé mẫu: NẾU vé đã bị bán hoặc unlisted trên Supabase Cloud (nằm trong soldTicketIds) thì TUYỆT ĐỐI LOẠI BỎ KHỎI CHỢ
       SEED_MARKETPLACE_TICKETS.forEach((seed) => {
         if (
+          soldTicketIds.has(seed.id) ||
           cloudUnlistedKeys.has(seed.id) ||
-          (seed.ticketCode && cloudUnlistedKeys.has(seed.ticketCode))
+          (seed.ticketCode && (soldTicketIds.has(seed.ticketCode) || cloudUnlistedKeys.has(seed.ticketCode)))
         ) {
           return;
         }
@@ -339,33 +345,38 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
         }
       });
 
-      // 2. Thêm các vé được đăng bán từ local
+      // 2. Bổ sung tất cả các vé từ Supabase có is_listed_for_sale === true (Ưu tiên Single Source of Truth từ Cloud)
+      cloudListed.forEach((t) => {
+        if (soldTicketIds.has(t.id) || (t.ticketCode && soldTicketIds.has(t.ticketCode))) {
+          return;
+        }
+        map.set(t.id, t);
+      });
+
+      // 3. Thêm các vé được đăng bán từ local (nếu chưa có trên Cloud)
       localListed.forEach((t: PurchasedTicket) => {
         if (
-          !cloudUnlistedKeys.has(t.id) &&
-          (!t.ticketCode || !cloudUnlistedKeys.has(t.ticketCode)) &&
+          !soldTicketIds.has(t.id) &&
+          (!t.ticketCode || !soldTicketIds.has(t.ticketCode)) &&
           t.is_listed_for_sale === true &&
           !t.isCheckedIn &&
           !t.isUsed &&
-          t.status !== 'USED'
+          t.status !== 'USED' &&
+          !map.has(t.id)
         ) {
           map.set(t.id, t);
         }
       });
 
-      // 3. Thêm các vé từ Cloud (nếu trong local chưa ghi nhận là đã mua/hủy bán)
-      cloudListed.forEach((t) => {
-        const locallyUpdated = storedById.get(t.id) || (t.ticketCode ? storedById.get(t.ticketCode) : undefined);
-        if (locallyUpdated) {
-          if (locallyUpdated.is_listed_for_sale === true && !locallyUpdated.isCheckedIn && !locallyUpdated.isUsed && locallyUpdated.status !== 'USED') {
-            map.set(t.id, t);
-          }
-        } else {
-          map.set(t.id, t);
-        }
-      });
+      // Loại bỏ hoàn toàn các vé có is_listed_for_sale === false khỏi danh sách hiển thị
+      const finalTickets = Array.from(map.values()).filter(
+        (t) =>
+          t.is_listed_for_sale === true &&
+          !soldTicketIds.has(t.id) &&
+          (!t.ticketCode || !soldTicketIds.has(t.ticketCode))
+      );
 
-      setListedTickets(Array.from(map.values()));
+      setListedTickets(finalTickets);
     } catch (err) {
       console.warn('[Marketplace] Lỗi nạp danh sách vé:', err);
       setListedTickets(SEED_MARKETPLACE_TICKETS);
@@ -513,7 +524,14 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
 
     // 3. Ngay lập tức cập nhật state danh sách vé đang bán:
     setListedTickets((prevTickets) =>
-      prevTickets.filter((item) => item.id !== ticketId && item.id !== targetTicket.id && item.ticketCode !== targetTicket.ticketCode)
+      prevTickets.filter(
+        (item) =>
+          item.id !== ticketId &&
+          item.id !== targetTicket.id &&
+          item.ticketCode !== targetTicket.ticketCode &&
+          item.id !== targetTicket.ticketCode &&
+          item.ticketCode !== targetTicket.id
+      )
     );
     setConfirmingTicket(null);
 

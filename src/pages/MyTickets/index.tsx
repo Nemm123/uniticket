@@ -15,6 +15,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { PurchasedTicket } from '../../types';
+import * as storage from '../../utils/storage';
 import { getStoredPurchasedTickets } from '../../utils/storage';
 import { supabase, isSupabaseConfigured } from '../../services/supabase';
 import { 
@@ -35,6 +36,7 @@ export interface MyTicketsProps {
   onSelectTransferTicket?: (ticket: PurchasedTicket) => void;
   walletAddress?: string | null;
   onShowToast?: (type: 'success' | 'error' | 'info', message: string) => void;
+  onTicketsChanged?: () => void;
 }
 
 export const MyTicketsPage: React.FC<MyTicketsProps> = ({
@@ -44,6 +46,7 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
   onSelectTransferTicket,
   walletAddress: propWalletAddress,
   onShowToast,
+  onTicketsChanged,
 }) => {
   const { t, formatDate } = useTranslation();
   // 1. ĐỒNG BỘ NGUỒN LẤY ĐỊA CHỈ VÍ:
@@ -204,14 +207,56 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
 
     setIsProcessingAction(true);
     try {
-      const res = await listTicketForSale(listingModalTicket.id, price);
-      if (res.ok) {
-        onShowToast?.('success', `Đã niêm yết vé với giá ${price} SOL lên Chợ Vé Thứ Cấp!`);
-        setListingModalTicket(null);
-        await fetchTickets();
-      } else {
-        onShowToast?.('error', res.message || 'Lỗi niêm yết vé.');
+      const ticket = listingModalTicket;
+      const currentWalletAddress = effectiveWalletAddress;
+      const listingPriceSol = price;
+
+      // 1. XỬ LÝ KHI NGƯỜI DÙNG ĐĂNG BÁN VÉ:
+      // BẮT BUỘC gọi trực tiếp Supabase để cập nhật bản ghi vé:
+      if (isSupabaseConfigured) {
+        try {
+          const { error } = await supabase
+            .from('tickets')
+            .upsert({
+              id: ticket.id,
+              ticket_code: ticket.ticketCode || (ticket as any).ticket_code || ticket.id,
+              event_id: ticket.eventId || (ticket as any).event_id || '',
+              event_title: ticket.eventTitle || (ticket as any).event_title || '',
+              event_banner: ticket.eventBanner || (ticket as any).event_banner || '',
+              venue: ticket.venue || '',
+              city: ticket.city || '',
+              date: ticket.date || '',
+              time: ticket.time || '',
+              tier_name: ticket.tierName || (ticket as any).tier_name || '',
+              seat: ticket.seat || '',
+              is_listed_for_sale: true,
+              listing_price_sol: Number(listingPriceSol),
+              price_sol: Number(ticket.priceSol) || 0.05,
+              ticketCode: ticket.ticketCode || ticket.id,
+              owner_address: currentWalletAddress,
+              customer_wallet: currentWalletAddress,
+              wallet_address: currentWalletAddress,
+              transfer_count: Number(ticket.transfer_count || (ticket as any).transferCount || 0),
+              status: ticket.status || 'valid',
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'id' });
+
+          if (error) {
+            console.warn('[MyTickets] Supabase upsert listing error:', error);
+          }
+        } catch (supaErr) {
+          console.warn('[MyTickets] Supabase listing exception:', supaErr);
+        }
       }
+
+      // 2. Cập nhật LocalStorage và API
+      await listTicketForSale(ticket.id, price);
+      storage.listStoredTicketForSale(ticket.id, price);
+
+      onShowToast?.('success', `Đã niêm yết vé với giá ${price} SOL lên Chợ Vé Thứ Cấp!`);
+      setListingModalTicket(null);
+      await fetchTickets();
+      onTicketsChanged?.();
     } catch (err: any) {
       onShowToast?.('error', err?.message || 'Không thể đăng bán vé.');
     } finally {
@@ -223,13 +268,26 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
   const handleUnlistTicket = async (ticket: PurchasedTicket) => {
     setIsProcessingAction(true);
     try {
-      const res = await unlistTicketForSale(ticket.id);
-      if (res.ok) {
-        onShowToast?.('info', 'Đã hủy niêm yết vé khỏi Chợ Vé Thứ Cấp.');
-        await fetchTickets();
-      } else {
-        onShowToast?.('error', res.message || 'Lỗi hủy niêm yết.');
+      if (isSupabaseConfigured) {
+        try {
+          await supabase
+            .from('tickets')
+            .update({
+              is_listed_for_sale: false,
+              listing_price_sol: null,
+              updated_at: new Date().toISOString(),
+            })
+            .or(`id.eq.${ticket.id},ticket_code.eq.${ticket.ticketCode || ticket.id}`);
+        } catch (supaErr) {
+          console.warn('[MyTickets] Lỗi hủy niêm yết Supabase:', supaErr);
+        }
       }
+
+      await unlistTicketForSale(ticket.id);
+      storage.unlistStoredTicketForSale(ticket.id);
+      onShowToast?.('info', 'Đã hủy niêm yết vé khỏi Chợ Vé Thứ Cấp.');
+      await fetchTickets();
+      onTicketsChanged?.();
     } catch (err: any) {
       onShowToast?.('error', err?.message || 'Không thể hủy niêm yết.');
     } finally {
