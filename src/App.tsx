@@ -879,6 +879,7 @@ export function App() {
             onNavigate={handleNavigate}
             walletAddress={walletAddress}
             onOpenWalletModal={() => setIsWalletModalOpen(true)}
+            onCloseWalletModal={() => setIsWalletModalOpen(false)}
             onShowToast={showToast}
           />
         )}

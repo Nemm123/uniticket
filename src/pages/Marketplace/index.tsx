@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useWallet } from '@solana/wallet-adapter-react';
+import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import {
   PublicKey,
   LAMPORTS_PER_SOL,
@@ -35,6 +35,7 @@ interface MarketplacePageProps {
   onNavigate: (page: string, eventId?: string) => void;
   walletAddress: string | null;
   onOpenWalletModal?: () => void;
+  onCloseWalletModal?: () => void;
   onShowToast?: (type: 'success' | 'error' | 'info', message: string, url?: string, label?: string) => void;
 }
 
@@ -133,10 +134,12 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
   onNavigate,
   walletAddress,
   onOpenWalletModal,
+  onCloseWalletModal,
   onShowToast,
 }) => {
   const { formatDate } = useTranslation();
-  const { publicKey, sendTransaction, connected } = useWallet();
+  const { publicKey, connected, sendTransaction } = useWallet();
+  const { connection } = useConnection();
   const [listedTickets, setListedTickets] = useState<PurchasedTicket[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [buyingTicketId, setBuyingTicketId] = useState<string | null>(null);
@@ -221,7 +224,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
   const handleOpenConfirmModal = (ticket: PurchasedTicket) => {
     const effectiveWallet = walletAddress || publicKey?.toBase58();
 
-    const sellerWallet = ticket.ownerAddress || ticket.customerWallet || ticket.owner_address || '';
+    const sellerWallet = ticket.owner_address || (ticket as any).seller_address || ticket.ownerAddress || ticket.customerWallet || '';
     if (effectiveWallet && sellerWallet && sellerWallet.toLowerCase() === effectiveWallet.toLowerCase()) {
       if (onShowToast) onShowToast('error', 'Bạn đang sở hữu vé này, không thể tự mua vé của chính mình.');
       return;
@@ -235,18 +238,99 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
     setConfirmingTicket(ticket);
   };
 
+  // Cập nhật trạng thái vé sau khi giao dịch on-chain thành công
+  const handleUpdateTicketAfterPurchase = async (
+    ticketId: string,
+    buyerWalletStr: string,
+    txSig?: string
+  ) => {
+    const targetTicket = listedTickets.find((t) => t.id === ticketId) || confirmingTicket;
+    if (!targetTicket) return;
+
+    const listingPrice = Number(targetTicket.listing_price_sol || targetTicket.priceSol) || 0.05;
+    const royaltyShare = Number((listingPrice * 0.10).toFixed(4));
+    const nowIso = new Date().toISOString();
+    const nextTransferCount = (Number(targetTicket.transfer_count) || 0) + 1;
+    const prevOwner = targetTicket.owner_address || (targetTicket as any).seller_address || targetTicket.ownerAddress || targetTicket.customerWallet || '';
+
+    const updatedTicket: PurchasedTicket = {
+      ...targetTicket,
+      customerWallet: buyerWalletStr,
+      ownerAddress: buyerWalletStr,
+      owner_address: buyerWalletStr,
+      is_listed_for_sale: false,
+      transfer_count: nextTransferCount,
+      royalty_sol: (Number(targetTicket.royalty_sol) || 0) + royaltyShare,
+      transferredAt: nowIso,
+      transferredFrom: prevOwner,
+      transferredTo: buyerWalletStr,
+      txSignature: txSig || targetTicket.txSignature,
+    };
+
+    // 1. Cập nhật LocalStorage
+    storage.savePurchasedTicket(updatedTicket);
+
+    // 2. Cập nhật Supabase Cloud
+    if (isSupabaseConfigured) {
+      try {
+        await supabase
+          .from('tickets')
+          .update({
+            owner_address: buyerWalletStr,
+            customer_wallet: buyerWalletStr,
+            is_listed_for_sale: false,
+            transfer_count: nextTransferCount,
+            royalty_sol: updatedTicket.royalty_sol,
+            updated_at: nowIso,
+          })
+          .or(`id.eq.${targetTicket.id},ticket_code.eq.${targetTicket.ticketCode}`);
+      } catch (supaUpErr) {
+        console.warn('[Marketplace] Lỗi cập nhật Supabase sau khi mua:', supaUpErr);
+      }
+    }
+
+    // 3. Cập nhật lại UI Chợ Vé
+    setListedTickets((prev) => prev.filter((t) => t.id !== targetTicket.id));
+    setConfirmingTicket(null);
+
+    if (onShowToast) {
+      onShowToast('success', "Mua vé thành công! Vé đã được chuyển về 'Vé của tôi'");
+    }
+  };
+
   // Xử lý xác nhận và ký ví Phantom trên Solana Devnet
   const handleConfirmAndSign = async (ticket: PurchasedTicket) => {
-    const effectiveWallet = walletAddress || publicKey?.toBase58();
+    // 1. KIỂM TRA ĐIỀU KIỆN KẾT NỐI VÍ:
+    const phantomProvider = typeof window !== 'undefined' ? ((window as any).phantom?.solana || (window as any).solana) : null;
+    const isPhantomDirectConnected = Boolean(phantomProvider?.isConnected && phantomProvider?.publicKey);
 
-    if (!effectiveWallet || !publicKey) {
+    // Xác định public key người mua an toàn:
+    let buyerPubKey: PublicKey | null = publicKey || null;
+    if (!buyerPubKey && isPhantomDirectConnected) {
+      buyerPubKey = phantomProvider.publicKey;
+    } else if (!buyerPubKey && walletAddress) {
+      try {
+        buyerPubKey = new PublicKey(walletAddress);
+      } catch {
+        buyerPubKey = null;
+      }
+    }
+
+    const isWalletConnected = Boolean((connected && publicKey) || isPhantomDirectConnected || (walletAddress && buyerPubKey));
+
+    // NẾU CHƯA KẾT NỐI (!connected hoặc !publicKey): Lúc này mới mở modal kết nối ví
+    if (!isWalletConnected || !buyerPubKey) {
       if (onShowToast) onShowToast('info', 'Vui lòng kết nối ví Phantom trước khi mua vé.');
       onOpenWalletModal?.();
       return;
     }
 
-    const sellerWallet = ticket.ownerAddress || ticket.customerWallet || ticket.owner_address || '';
-    if (sellerWallet && sellerWallet.toLowerCase() === effectiveWallet.toLowerCase()) {
+    // NẾU ĐÃ KẾT NỐI (connected && publicKey): TUYỆT ĐỐI KHÔNG mở modal kết nối ví
+    onCloseWalletModal?.();
+
+    const buyerWalletStr = buyerPubKey.toBase58();
+    const sellerWallet = ticket.owner_address || (ticket as any).seller_address || ticket.ownerAddress || ticket.customerWallet || '';
+    if (sellerWallet && sellerWallet.toLowerCase() === buyerWalletStr.toLowerCase()) {
       if (onShowToast) onShowToast('error', 'Bạn đang sở hữu vé này, không thể tự mua vé của chính mình.');
       return;
     }
@@ -258,164 +342,123 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
 
     setIsSigning(true);
     setBuyingTicketId(ticket.id);
-    const listingPrice = Number(ticket.listing_price_sol || ticket.priceSol) || 0.05;
 
+    // 2. LUỒNG THANH TOÁN KÝ GỬI THẬT TRÊN SOLANA DEVNET
     try {
-      if (onShowToast) onShowToast('info', `Đang khởi tạo giao dịch mua vé (${listingPrice} SOL)...`);
+      if (onShowToast) onShowToast('info', 'Vui lòng ký xác nhận giao dịch trên ví Phantom...');
 
-      // 1. Phân bổ dòng tiền theo quy định:
-      // 85% về ví người bán
-      // 10% phí bản quyền (Royalty) về ví BTC
-      // 5% phí nền tảng về Treasury
-      const sellerShare = Number((listingPrice * 0.85).toFixed(4));
-      const royaltyShare = Number((listingPrice * 0.10).toFixed(4));
-      const platformShare = Number((listingPrice * 0.05).toFixed(4));
+      let sellerPubkey: PublicKey;
+      try {
+        sellerPubkey = new PublicKey(ticket.owner_address || (ticket as any).seller_address || ticket.ownerAddress || ticket.customerWallet || SOLANA_TREASURY_WALLET_STR);
+      } catch {
+        sellerPubkey = new PublicKey(SOLANA_TREASURY_WALLET_STR);
+      }
 
-      let txSignature = '';
+      let organizerPubkey: PublicKey;
+      try {
+        organizerPubkey = new PublicKey(ticket.organizer_address || SOLANA_TREASURY_WALLET_STR);
+      } catch {
+        organizerPubkey = new PublicKey(SOLANA_TREASURY_WALLET_STR);
+      }
 
-      const isMobile = typeof navigator !== 'undefined' && /android|iphone|ipad|ipod/i.test(navigator.userAgent);
-      const phantomSolana = (window as any).phantom?.solana;
-      const phantomProvider = phantomSolana || (window as any).solana;
+      const listingPrice = Number(ticket.listing_price_sol || ticket.priceSol) || 0.05;
+      const lamports = Math.round(listingPrice * LAMPORTS_PER_SOL);
 
-      const connection = getDevnetConnection();
+      // Chia dòng tiền: 85% người bán, 10% BTC, 5% phí sàn
+      const sellerAmount = Math.floor(lamports * 0.85);
+      const royaltyAmount = Math.floor(lamports * 0.10);
+      const platformAmount = Math.floor(lamports * 0.05);
+
       const transaction = new Transaction();
 
-      // 85% người bán
-      if (sellerWallet && sellerShare > 0) {
-        try {
-          const sellerPubKey = new PublicKey(sellerWallet.trim());
-          transaction.add(
-            SystemProgram.transfer({
-              fromPubkey: publicKey,
-              toPubkey: sellerPubKey,
-              lamports: Math.max(5000, Math.round(sellerShare * LAMPORTS_PER_SOL)),
-            })
-          );
-        } catch {
-          console.warn('[Marketplace] Địa chỉ ví người bán không hợp lệ on-chain, fallback treasury');
-        }
-      }
-
-      // 10% Ban tổ chức
-      const organizerWallet = ticket.organizer_address || SOLANA_TREASURY_WALLET_STR;
-      if (royaltyShare > 0) {
-        try {
-          const orgPubKey = new PublicKey(organizerWallet.trim());
-          transaction.add(
-            SystemProgram.transfer({
-              fromPubkey: publicKey,
-              toPubkey: orgPubKey,
-              lamports: Math.max(5000, Math.round(royaltyShare * LAMPORTS_PER_SOL)),
-            })
-          );
-        } catch {
-          console.warn('[Marketplace] Lỗi ví BTC, dùng treasury fallback');
-        }
-      }
-
-      // 5% Phí sàn
-      if (platformShare > 0) {
-        const treasuryPubKey = new PublicKey(SOLANA_TREASURY_WALLET_STR);
+      // Chuyển cho người bán
+      if (sellerAmount > 0) {
         transaction.add(
           SystemProgram.transfer({
-            fromPubkey: publicKey,
-            toPubkey: treasuryPubKey,
-            lamports: Math.max(5000, Math.round(platformShare * LAMPORTS_PER_SOL)),
+            fromPubkey: buyerPubKey,
+            toPubkey: sellerPubkey,
+            lamports: Math.max(5000, sellerAmount),
           })
         );
       }
 
-      const { blockhash } = await getLatestBlockhashWithRetry(connection);
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = publicKey;
+      // Chuyển phí bản quyền cho BTC
+      if (royaltyAmount > 0) {
+        transaction.add(
+          SystemProgram.transfer({
+            fromPubkey: buyerPubKey,
+            toPubkey: organizerPubkey,
+            lamports: Math.max(5000, royaltyAmount),
+          })
+        );
+      }
+
+      // Chuyển phí nền tảng cho UniTicket
+      if (platformAmount > 0) {
+        transaction.add(
+          SystemProgram.transfer({
+            fromPubkey: buyerPubKey,
+            toPubkey: new PublicKey(SOLANA_TREASURY_WALLET_STR),
+            lamports: Math.max(5000, platformAmount),
+          })
+        );
+      }
+
+      const activeConnection = connection || getDevnetConnection();
+      try {
+        const { blockhash } = await getLatestBlockhashWithRetry(activeConnection);
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = buyerPubKey;
+      } catch (bhErr) {
+        console.warn('[Marketplace] Lỗi lấy recentBlockhash:', bhErr);
+      }
+
+      // Kích hoạt popup ví Phantom để người dùng bấm Phê duyệt (Approve)
+      let signature = '';
+      const isMobile = typeof navigator !== 'undefined' && /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+
+      if ((isMobile || phantomProvider?.isPhantom) && phantomProvider && typeof phantomProvider.signAndSendTransaction === 'function') {
+        const res = await phantomProvider.signAndSendTransaction(transaction);
+        signature = typeof res === 'string' ? res : res.signature;
+      } else if (connected && typeof sendTransaction === 'function') {
+        signature = await sendTransaction(transaction, activeConnection);
+      } else if (phantomProvider && typeof phantomProvider.signAndSendTransaction === 'function') {
+        const res = await phantomProvider.signAndSendTransaction(transaction);
+        signature = typeof res === 'string' ? res : res.signature;
+      } else if (typeof sendTransaction === 'function') {
+        signature = await sendTransaction(transaction, activeConnection);
+      } else {
+        signature = `demo-mkt-${Date.now().toString(16)}`;
+      }
 
       try {
-        if ((isMobile || phantomSolana?.isPhantom) && phantomSolana && typeof phantomSolana.signAndSendTransaction === 'function') {
-          const res = await phantomSolana.signAndSendTransaction(transaction);
-          txSignature = typeof res === 'string' ? res : res.signature;
-        } else if (connected && typeof sendTransaction === 'function') {
-          txSignature = await sendTransaction(transaction, connection);
-        } else if (phantomProvider && typeof phantomProvider.signAndSendTransaction === 'function') {
-          const res = await phantomProvider.signAndSendTransaction(transaction);
-          txSignature = typeof res === 'string' ? res : res.signature;
-        } else {
-          txSignature = `demo-mkt-${Date.now().toString(16)}`;
-        }
-      } catch (chainErr: any) {
-        const errMsg = String(chainErr?.message || chainErr || '').toLowerCase();
-        const isRejected =
-          chainErr?.code === 4001 ||
-          errMsg.includes('reject') ||
-          errMsg.includes('cancel') ||
-          errMsg.includes('denied') ||
-          chainErr?.name === 'WalletSignTransactionError' ||
-          chainErr?.name === 'WalletSendTransactionError';
-
-        if (isRejected) {
-          if (onShowToast) {
-            onShowToast('info', 'Bạn đã hủy bỏ ký giao dịch trên ví Phantom.');
-          }
-          setIsSigning(false);
-          setBuyingTicketId(null);
-          return;
-        }
-
-        console.warn('[Marketplace] Giao dịch ví on-chain:', chainErr);
-        // Fallback simulation nếu devnet timeout hoặc local sandbox
-        txSignature = `demo-mkt-${Date.now().toString(16)}`;
+        await activeConnection.confirmTransaction(signature, 'processed');
+      } catch (confErr) {
+        console.warn('[Marketplace] confirmTransaction notice:', confErr);
       }
 
-      // 2. Cập nhật chủ sở hữu mới và tăng transfer_count lên 1
-      const nowIso = new Date().toISOString();
-      const nextTransferCount = (Number(ticket.transfer_count) || 0) + 1;
+      // Cập nhật trạng thái vé mới
+      await handleUpdateTicketAfterPurchase(ticket.id, buyerWalletStr, signature);
 
-      const updatedTicket: PurchasedTicket = {
-        ...ticket,
-        customerWallet: effectiveWallet,
-        ownerAddress: effectiveWallet,
-        owner_address: effectiveWallet,
-        is_listed_for_sale: false,
-        transfer_count: nextTransferCount,
-        royalty_sol: (Number(ticket.royalty_sol) || 0) + royaltyShare,
-        transferredAt: nowIso,
-        transferredFrom: sellerWallet,
-        transferredTo: effectiveWallet,
-        txSignature: txSignature || ticket.txSignature,
-      };
-
-      // Cập nhật LocalStorage
-      storage.savePurchasedTicket(updatedTicket);
-
-      // Cập nhật Supabase Cloud
-      if (isSupabaseConfigured) {
-        try {
-          await supabase
-            .from('tickets')
-            .update({
-              owner_address: effectiveWallet,
-              customer_wallet: effectiveWallet,
-              is_listed_for_sale: false,
-              transfer_count: nextTransferCount,
-              royalty_sol: updatedTicket.royalty_sol,
-              updated_at: nowIso,
-            })
-            .or(`id.eq.${ticket.id},ticket_code.eq.${ticket.ticketCode}`);
-        } catch (supaUpErr) {
-          console.warn('[Marketplace] Lỗi cập nhật Supabase sau khi mua:', supaUpErr);
-        }
-      }
-
-      // Cập nhật lại UI Chợ Vé
-      setListedTickets((prev) => prev.filter((t) => t.id !== ticket.id));
-      setConfirmingTicket(null);
-
-      if (onShowToast) {
-        onShowToast('success', "Mua vé thành công! Vé đã được chuyển về 'Vé của tôi'");
-      }
     } catch (err: any) {
-      console.error('[Marketplace] Lỗi mua vé:', err);
-      if (onShowToast) {
-        onShowToast('error', err?.message || 'Giao dịch mua vé thất bại. Vui lòng thử lại.');
+      console.error("Lỗi giao dịch:", err);
+      const errMsg = String(err?.message || err || '').toLowerCase();
+      const isRejected =
+        err?.code === 4001 ||
+        errMsg.includes('reject') ||
+        errMsg.includes('cancel') ||
+        errMsg.includes('denied') ||
+        err?.name === 'WalletSignTransactionError' ||
+        err?.name === 'WalletSendTransactionError';
+
+      if (isRejected) {
+        if (onShowToast) {
+          onShowToast('info', 'Bạn đã hủy bỏ ký giao dịch trên ví Phantom.');
+        }
+      } else {
+        if (onShowToast) {
+          onShowToast('error', err?.message || 'Giao dịch mua vé thất bại. Vui lòng thử lại.');
+        }
       }
     } finally {
       setIsSigning(false);

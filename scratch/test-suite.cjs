@@ -649,8 +649,10 @@ assert(
   marketplaceCode.includes('Chi tiết Giao dịch Thứ cấp') &&
   marketplaceCode.includes('Xác nhận & Ký ví Phantom') &&
   marketplaceCode.includes("Mua vé thành công! Vé đã được chuyển về 'Vé của tôi'") &&
-  marketplaceCode.includes('Sau khi mua, vé này sẽ ghi nhận +1 lượt chuyển nhượng (Tối đa 2 lần).'),
-  'TEST 37 — Secondary Marketplace (Navbar Link, 85/10/5 Revenue Split, Transfer Cap, Buy Confirmation Modal & Phantom Signing)'
+  marketplaceCode.includes('Sau khi mua, vé này sẽ ghi nhận +1 lượt chuyển nhượng (Tối đa 2 lần).') &&
+  marketplaceCode.includes('useConnection') &&
+  marketplaceCode.includes('handleUpdateTicketAfterPurchase'),
+  'TEST 37 — Secondary Marketplace (Navbar Link, 85/10/5 Revenue Split, Transfer Cap, Buy Confirmation Modal, useConnection & Phantom Signing)'
 );
 
 // -------------------------------------------------------------
