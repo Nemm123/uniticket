@@ -68,7 +68,7 @@ export const EventSectionGroup: React.FC<EventSectionGroupProps> = ({
         </div>
 
         {/* Event Cards Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 items-stretch">
           {events.slice(0, 8).map((event) => (
             <EventCard
               key={event.id}
