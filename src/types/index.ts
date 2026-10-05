@@ -137,6 +137,7 @@ export interface PurchasedTicket {
   pending_recipient?: string;
   royalty_sol?: number;
   organizer_address?: string;
+  seller_wallet?: string;
 }
 
 export interface CheckInRecord {

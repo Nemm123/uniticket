@@ -33,6 +33,7 @@ import {
 } from '../../services/solanaClient';
 import { supabase, isSupabaseConfigured } from '../../services/supabase';
 import * as storage from '../../utils/storage';
+import { unlistTicketForSale } from '../../services/api';
 
 interface MarketplacePageProps {
   onNavigate: (page: string, eventId?: string) => void;
@@ -372,8 +373,9 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
                   ticketCode: row.ticket_code || row.id,
                   customerName: row.buyer_name || 'Người bán',
                   customerEmail: row.buyer_email || '',
-                  customerWallet: row.owner_address || row.customer_wallet || '',
-                  ownerAddress: row.owner_address || row.customer_wallet || '',
+                  customerWallet: row.seller_wallet || row.owner_address || row.customer_wallet || '',
+                  ownerAddress: row.seller_wallet || row.owner_address || row.customer_wallet || '',
+                  seller_wallet: row.seller_wallet || row.owner_address || row.customer_wallet || '',
                   purchasedAt: row.created_at || new Date().toISOString(),
                   purchaseDate: row.created_at || new Date().toISOString(),
                   status: row.status || 'valid',
@@ -813,22 +815,13 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
 
   const currentWalletAddress = (publicKey?.toBase58() || walletAddress || '').toLowerCase().trim();
 
-  // Danh sách vé hiển thị trên Marketplace BẮT BUỘC thỏa mãn:
-  // t.is_listed_for_sale === true && t.owner_address !== currentWalletAddress
+  // Danh sách vé hiển thị trên Marketplace:
+  // t.is_listed_for_sale === true.
+  // Không lọc bỏ vé của chính mình mà giữ lại để người bán có thể thấy vé và hủy bán nếu muốn.
   const activeMarketplaceTickets = useMemo(() => {
     return listedTickets.filter((t) => {
       if (t.is_listed_for_sale !== true) return false;
-      const ticketOwner = (
-        t.owner_address ||
-        (t as any).seller_address ||
-        t.ownerAddress ||
-        t.customerWallet ||
-        ''
-      ).toLowerCase().trim();
-      if (currentWalletAddress && ticketOwner === currentWalletAddress) {
-        return false;
-      }
-      return true;
+      return Boolean(t.is_listed_for_sale || currentWalletAddress);
     });
   }, [listedTickets, currentWalletAddress]);
 
@@ -844,6 +837,46 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
         t.ticketCode.toLowerCase().includes(q)
     );
   }, [activeMarketplaceTickets, searchQuery]);
+
+  const [unlistingTicketId, setUnlistingTicketId] = useState<string | null>(null);
+
+  // Hủy niêm yết vé trực tiếp trên Chợ
+  const handleUnlistTicket = async (ticket: PurchasedTicket) => {
+    setUnlistingTicketId(ticket.id);
+    try {
+      if (isSupabaseConfigured) {
+        try {
+          await supabase
+            .from('tickets')
+            .update({
+              is_listed_for_sale: false,
+              listing_price_sol: null,
+              updated_at: new Date().toISOString(),
+            })
+            .or(`id.eq.${ticket.id},ticket_code.eq.${ticket.ticketCode || ticket.id}`);
+        } catch (supaErr) {
+          console.warn('[Marketplace] Lỗi hủy niêm yết Supabase:', supaErr);
+        }
+      }
+
+      await unlistTicketForSale(ticket.id);
+      storage.unlistStoredTicketForSale(ticket.id);
+
+      setListedTickets((prev) => prev.filter((t) => t.id !== ticket.id && t.ticketCode !== ticket.ticketCode));
+
+      if (onShowToast) {
+        onShowToast('info', 'Đã hủy niêm yết vé khỏi Chợ Vé Thứ Cấp.');
+      }
+      onTicketsChanged?.();
+      void loadMarketplaceTickets();
+    } catch (err: any) {
+      if (onShowToast) {
+        onShowToast('error', err?.message || 'Không thể hủy niêm yết.');
+      }
+    } finally {
+      setUnlistingTicketId(null);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#070412] text-slate-100 py-8 px-4 sm:px-6 lg:px-8 cyber-grid-bg text-left">
@@ -966,8 +999,9 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
               const diffPercent = origPrice > 0 ? Math.round(((listPrice - origPrice) / origPrice) * 100) : 0;
               const transferCount = Number(t.transfer_count) || 0;
               const isLocked = transferCount >= 2;
-              const sellerWallet = t.ownerAddress || t.customerWallet || '';
-              const isCurrentBuyerSeller = Boolean(walletAddress && sellerWallet && walletAddress.toLowerCase() === sellerWallet.toLowerCase());
+              const sellerWallet = (t as any).seller_wallet || t.owner_address || (t as any).seller_address || t.ownerAddress || t.customerWallet || '';
+              const effectiveUserWallet = (publicKey?.toBase58() || walletAddress || '').toLowerCase().trim();
+              const isCurrentBuyerSeller = Boolean(effectiveUserWallet && sellerWallet && effectiveUserWallet === sellerWallet.toLowerCase().trim());
 
               return (
                 <div
@@ -992,6 +1026,12 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
                         <span className="px-2 py-0.5 rounded-full bg-solana-purple/90 border border-solana-cyan/30 text-xs font-bold text-white">
                           {t.seat}
                         </span>
+                        {isCurrentBuyerSeller && (
+                          <span className="px-2.5 py-0.5 rounded-full bg-solana-cyan/20 border border-solana-cyan/50 text-[11px] font-extrabold text-solana-cyan shadow-sm flex items-center gap-1 backdrop-blur-md">
+                            <span className="w-1.5 h-1.5 rounded-full bg-solana-green animate-pulse" />
+                            Vé của bạn
+                          </span>
+                        )}
                       </div>
 
                       <div className="absolute top-3 right-3">
@@ -1075,8 +1115,27 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
                   {/* Card Footer Action */}
                   <div className="p-4 pt-0">
                     {isCurrentBuyerSeller ? (
-                      <div className="p-2.5 rounded-xl bg-solana-purple/10 border border-solana-purple/30 text-center text-xs text-solana-cyan font-semibold">
-                        Vé của bạn đang niêm yết
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 min-h-[42px] px-3 py-2 rounded-xl bg-solana-purple/20 border border-solana-purple/40 text-xs text-solana-cyan font-bold flex items-center justify-center gap-1.5 shadow-sm">
+                          <span className="w-2 h-2 rounded-full bg-solana-green animate-pulse" />
+                          <span>Vé của bạn (Đang bán)</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleUnlistTicket(t)}
+                          disabled={unlistingTicketId === t.id}
+                          className="min-h-[42px] px-3.5 py-2 rounded-xl border border-white/10 bg-white/5 text-xs font-semibold text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all shrink-0"
+                          title="Hủy niêm yết vé khỏi Chợ"
+                        >
+                          {unlistingTicketId === t.id ? (
+                            <span className="flex items-center gap-1 text-slate-400">
+                              <span className="w-3 h-3 border-2 border-white/40 border-t-transparent rounded-full animate-spin" />
+                              Hủy...
+                            </span>
+                          ) : (
+                            'Hủy bán'
+                          )}
+                        </button>
                       </div>
                     ) : isLocked ? (
                       <div className="p-2.5 rounded-xl bg-red-950/40 border border-red-500/30 text-center text-xs text-red-400 font-bold">

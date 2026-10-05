@@ -288,6 +288,20 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
       // BẮT BUỘC gọi trực tiếp Supabase để cập nhật bản ghi vé:
       if (isSupabaseConfigured) {
         try {
+          const { error: updateError } = await supabase
+            .from('tickets')
+            .update({
+              is_listed_for_sale: true,
+              listing_price_sol: Number(listingPriceSol),
+              seller_wallet: currentWalletAddress,
+              owner_address: currentWalletAddress,
+              customer_wallet: currentWalletAddress,
+              wallet_address: currentWalletAddress,
+              status: 'valid',
+              updated_at: new Date().toISOString()
+            })
+            .or(`id.eq.${ticket.id},ticket_code.eq.${ticket.ticketCode || ticket.id}`);
+
           const { error } = await supabase
             .from('tickets')
             .upsert({
@@ -309,13 +323,14 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
               owner_address: currentWalletAddress,
               customer_wallet: currentWalletAddress,
               wallet_address: currentWalletAddress,
+              seller_wallet: currentWalletAddress,
               transfer_count: Number(ticket.transfer_count || (ticket as any).transferCount || 0),
               status: ticket.status || 'valid',
               updated_at: new Date().toISOString()
             }, { onConflict: 'id' });
 
-          if (error) {
-            console.warn('[MyTickets] Supabase upsert listing error:', error);
+          if (error && updateError) {
+            console.warn('[MyTickets] Supabase listing error:', error || updateError);
           }
         } catch (supaErr) {
           console.warn('[MyTickets] Supabase listing exception:', supaErr);
@@ -545,20 +560,20 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
 
                 <div>
                   {/* VIP Ticket Header */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3.5">
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black tracking-widest text-solana-cyan uppercase font-mono bg-solana-cyan/10 px-2 py-0.5 rounded border border-solana-cyan/30">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="shrink-0 text-[10px] font-black tracking-widest text-solana-cyan uppercase font-mono bg-solana-cyan/10 px-2 py-0.5 rounded border border-solana-cyan/30">
                           VIP TICKET
                         </span>
-                        <h2 className="break-words text-base sm:text-lg font-bold text-white">{ticket.eventTitle}</h2>
+                        <h2 className="text-base sm:text-lg font-bold text-white break-words line-clamp-2">{ticket.eventTitle}</h2>
                       </div>
                       <p className="mt-1 text-xs text-solana-cyan font-medium">{ticket.tierName} • {ticket.seat}</p>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
                       {/* Tem bảo mật Holographic óng ánh */}
-                      <div className="hologram-badge rounded-xl border border-white/40 px-3 py-1 shadow-md flex items-center gap-1.5 select-none relative overflow-hidden">
+                      <div className="shrink-0 hologram-badge rounded-xl border border-white/40 px-3 py-1 shadow-md flex items-center gap-1.5 select-none relative overflow-hidden">
                         <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/35 to-transparent -skew-x-12 animate-pulse pointer-events-none" />
                         <ShieldCheck className="w-4 h-4 text-white drop-shadow-[0_0_6px_rgba(255,255,255,0.9)]" />
                         <div className="leading-tight hidden sm:block">
@@ -603,12 +618,12 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                     <div className="space-y-2.5 text-xs">
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                         <p>
-                          <span className="text-slate-300 font-semibold">{t('myTickets.buyer')}:</span>{' '}
+                          <span className="text-slate-300 font-semibold">{t('myTickets.buyer')}</span>{' '}
                           <span className="font-bold text-white tracking-wide">{ticket.customerName}</span>
                         </p>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-slate-300 font-semibold">{t('myTickets.ticketCode')}:</span>{' '}
-                          <span className="font-mono font-bold text-solana-cyan bg-solana-cyan/15 px-2 py-0.5 rounded-lg border border-solana-cyan/40">
+                          <span className="text-slate-300 font-semibold">{t('myTickets.ticketCode')}</span>{' '}
+                          <span className="whitespace-nowrap font-mono font-bold text-solana-cyan bg-solana-cyan/15 px-2 py-0.5 rounded-lg border border-solana-cyan/40">
                             {ticket.ticketCode}
                           </span>
                           <button
@@ -626,19 +641,19 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                         </div>
                       </div>
                       <p>
-                        <span className="text-slate-300 font-semibold">{t('myTickets.wallet')}:</span>{' '}
+                        <span className="text-slate-300 font-semibold">{t('myTickets.wallet')}</span>{' '}
                         <span className="font-mono text-slate-200">
                           {ticket.customerWallet ? `${ticket.customerWallet.slice(0, 6)}...${ticket.customerWallet.slice(-6)}` : 'N/A'}
                         </span>
                       </p>
                       <p>
-                        <span className="text-slate-300 font-semibold">{t('myTickets.purchaseDate')}:</span>{' '}
+                        <span className="text-slate-300 font-semibold">{t('myTickets.purchaseDate')}</span>{' '}
                         <span className="text-slate-200 font-medium">
                           {formatDate(ticket.purchaseDate || ticket.purchasedAt, { dateStyle: 'short', timeStyle: 'short' })}
                         </span>
                       </p>
                       <p>
-                        <span className="text-slate-300 font-semibold">{t('myTickets.venue')}:</span>{' '}
+                        <span className="text-slate-300 font-semibold">{t('myTickets.venue')}</span>{' '}
                         <span className="text-slate-200 font-medium">{ticket.venue}, {ticket.city}</span>
                       </p>
                     </div>
