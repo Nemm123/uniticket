@@ -237,11 +237,36 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
   const [buyingTicketId, setBuyingTicketId] = useState<string | null>(null);
   const [confirmingTicket, setConfirmingTicket] = useState<PurchasedTicket | null>(null);
   const [isSigning, setIsSigning] = useState<boolean>(false);
+  const [isProcessingTx, setIsProcessingTx] = useState<boolean>(false);
+  const isTxLockedRef = useRef<boolean>(false);
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState<boolean>(false);
   const [purchasedSuccessTicket, setPurchasedSuccessTicket] = useState<PurchasedTicket | null>(null);
   const [successTxSignature, setSuccessTxSignature] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const hasLoadedRef = useRef<boolean>(false);
+
+  // Lắng nghe sự kiện đổi tài khoản Phantom (Chống Wallet Desync P1)
+  useEffect(() => {
+    const phantomProvider = typeof window !== 'undefined' ? ((window as any).phantom?.solana || (window as any).solana) : null;
+    if (!phantomProvider || typeof phantomProvider.on !== 'function') return;
+
+    const handleAccountChange = (newAccount: any) => {
+      console.log('[Marketplace] Phát hiện đổi tài khoản ví:', newAccount);
+      // Tự động đóng modal và reset state tạm thời để tránh ký nhầm ví
+      setConfirmingTicket(null);
+      setIsSigning(false);
+      setIsProcessingTx(false);
+      isTxLockedRef.current = false;
+      setBuyingTicketId(null);
+    };
+
+    phantomProvider.on('accountChanged', handleAccountChange);
+    return () => {
+      if (typeof phantomProvider.removeListener === 'function') {
+        phantomProvider.removeListener('accountChanged', handleAccountChange);
+      }
+    };
+  }, []);
 
   // Tải danh sách vé niêm yết từ Supabase và LocalStorage
   const loadMarketplaceTickets = async () => {
@@ -270,7 +295,8 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
               const isUnlisted =
                 row.is_listed_for_sale === false ||
                 row.status === 'USED' ||
-                Boolean(row.checked_in_at || row.is_checked_in);
+                row.status === 'used' ||
+                Boolean(row.checked_in_at || row.is_checked_in || row.isCheckedIn || row.isUsed);
 
               if (isUnlisted) {
                 if (row.id) soldTicketIds.add(String(row.id));
@@ -372,6 +398,12 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
       const finalTickets = Array.from(map.values()).filter(
         (t) =>
           t.is_listed_for_sale === true &&
+          t.status !== 'USED' &&
+          t.status !== 'used' &&
+          !t.isCheckedIn &&
+          !t.isUsed &&
+          !(t as any).is_checked_in &&
+          !(t as any).checked_in_at &&
           !soldTicketIds.has(t.id) &&
           (!t.ticketCode || !soldTicketIds.has(t.ticketCode))
       );
@@ -550,6 +582,13 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
 
   // Xử lý xác nhận và ký ví Phantom trên Solana Devnet
   const handleConfirmAndSign = async (ticket: PurchasedTicket) => {
+    // 0. CHỐNG MULTI-CLICK & SPAM KÝ VÍ (P0 - Race Condition):
+    if (isProcessingTx || isTxLockedRef.current || isSigning) {
+      return;
+    }
+    isTxLockedRef.current = true;
+    setIsProcessingTx(true);
+
     // 1. KIỂM TRA ĐIỀU KIỆN KẾT NỐI VÍ:
     const phantomProvider = typeof window !== 'undefined' ? ((window as any).phantom?.solana || (window as any).solana) : null;
     const isPhantomDirectConnected = Boolean(phantomProvider?.isConnected && phantomProvider?.publicKey);
@@ -570,6 +609,8 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
 
     // NẾU CHƯA KẾT NỐI (!connected hoặc !publicKey): Lúc này mới mở modal kết nối ví
     if (!isWalletConnected || !buyerPubKey) {
+      setIsProcessingTx(false);
+      isTxLockedRef.current = false;
       if (onShowToast) onShowToast('info', 'Vui lòng kết nối ví Phantom trước khi mua vé.');
       onOpenWalletModal?.();
       return;
@@ -581,11 +622,15 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
     const buyerWalletStr = buyerPubKey.toBase58();
     const sellerWallet = ticket.owner_address || (ticket as any).seller_address || ticket.ownerAddress || ticket.customerWallet || '';
     if (sellerWallet && sellerWallet.toLowerCase() === buyerWalletStr.toLowerCase()) {
+      setIsProcessingTx(false);
+      isTxLockedRef.current = false;
       if (onShowToast) onShowToast('error', 'Bạn đang sở hữu vé này, không thể tự mua vé của chính mình.');
       return;
     }
 
     if ((Number(ticket.transfer_count) || 0) >= 2) {
+      setIsProcessingTx(false);
+      isTxLockedRef.current = false;
       if (onShowToast) onShowToast('error', 'Vé này đã đạt giới hạn chuyển nhượng tối đa 2 lần.');
       return;
     }
@@ -712,6 +757,8 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
       }
     } finally {
       setIsSigning(false);
+      setIsProcessingTx(false);
+      isTxLockedRef.current = false;
       setBuyingTicketId(null);
     }
   };
@@ -1151,13 +1198,18 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
                     <button
                       type="button"
                       onClick={() => handleConfirmAndSign(confirmingTicket)}
-                      disabled={isSigning}
+                      disabled={isSigning || isProcessingTx}
                       className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-solana-purple via-[#8338EC] to-neon-pink hover:opacity-95 text-white font-bold text-xs shadow-lg shadow-purple-950/60 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70"
                     >
                       {isSigning ? (
                         <>
                           <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                           <span>Đang ký ví Phantom...</span>
+                        </>
+                      ) : isProcessingTx ? (
+                        <>
+                          <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Đang khởi tạo giao dịch...</span>
                         </>
                       ) : (
                         <>
