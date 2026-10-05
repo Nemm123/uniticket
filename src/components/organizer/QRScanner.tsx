@@ -35,13 +35,16 @@ const QRScannerComponent: React.FC<QRScannerProps> = ({
   const hasPermissionGrantedRef = useRef(false);
 
   const isScanLockedRef = useRef(false);
+  const [isScanLocked, setIsScanLocked] = useState(false);
   const onScan = (result: string) => {
     if (isScanLockedRef.current) return;
     isScanLockedRef.current = true;
+    setIsScanLocked(true);
     onScanSuccess(result);
     onScanSuccessRef.current?.(result);
     setTimeout(() => {
       isScanLockedRef.current = false;
+      setIsScanLocked(false);
     }, 2500);
   };
 
@@ -274,7 +277,7 @@ const QRScannerComponent: React.FC<QRScannerProps> = ({
   if (!isEnabled) return null;
 
   return (
-    <div className="relative w-full max-w-md mx-auto bg-black/70 border border-solana-purple/30 rounded-xl overflow-hidden shadow-2xl">
+    <div className="relative w-full bg-black/70 border border-solana-purple/30 rounded-xl overflow-hidden shadow-2xl">
       <div className="flex justify-between items-center p-3 border-b border-white/10 bg-[#120B30]">
         <div className="flex items-center gap-2">
           <Camera className="w-4 h-4 text-solana-cyan" />
@@ -294,7 +297,7 @@ const QRScannerComponent: React.FC<QRScannerProps> = ({
         </button>
       </div>
 
-      <div className="relative min-h-[280px] bg-black flex items-center justify-center">
+      <div className="relative aspect-[4/3] w-full overflow-hidden bg-black flex items-center justify-center">
 
         {/* Thẻ video hiển thị stream chuẩn di động */}
         <video
@@ -302,7 +305,7 @@ const QRScannerComponent: React.FC<QRScannerProps> = ({
           autoPlay
           playsInline
           muted
-          className={`w-full max-h-[360px] object-cover rounded-b-xl ${
+          className={`absolute inset-0 h-full w-full object-cover ${
             permissionDenied || cameraError ? 'hidden' : 'block'
           }`}
         />
@@ -310,13 +313,24 @@ const QRScannerComponent: React.FC<QRScannerProps> = ({
         {/* Khung ngắm quét mã QR Cyberpunk */}
         {!permissionDenied && !cameraError && !isStarting && (
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-            <div className="relative w-56 h-56 border-2 border-solana-cyan/60 rounded-2xl shadow-[0_0_20px_rgba(0,255,163,0.3)] flex items-center justify-center">
+            <div className="relative w-52 h-52 sm:w-60 sm:h-60 border-2 border-solana-cyan/60 rounded-2xl shadow-[0_0_20px_rgba(0,255,163,0.3)] flex items-center justify-center">
               <div className="absolute top-0 left-0 w-5 h-5 border-t-4 border-l-4 border-solana-green rounded-tl-lg" />
               <div className="absolute top-0 right-0 w-5 h-5 border-t-4 border-r-4 border-solana-green rounded-tr-lg" />
               <div className="absolute bottom-0 left-0 w-5 h-5 border-b-4 border-l-4 border-solana-green rounded-bl-lg" />
               <div className="absolute bottom-0 right-0 w-5 h-5 border-b-4 border-r-4 border-solana-green rounded-br-lg" />
               <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-solana-cyan to-transparent animate-pulse" />
             </div>
+
+            {/* CHỈ BÁO COOLDOWN 2.5S SAU KHI QUÉT: Báo cho nhân viên biết hệ thống đang xử lý */}
+            {isScanLocked && (
+              <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2.5 animate-fadeIn">
+                <div className="h-10 w-10 rounded-full border-2 border-solana-green/30 border-t-solana-green animate-spin" />
+                <div className="inline-flex items-center gap-1.5 rounded-full border border-solana-green/40 bg-black/90 px-3.5 py-1 text-xs font-bold text-solana-green shadow-lg">
+                  <span className="w-2 h-2 rounded-full bg-solana-green animate-pulse" />
+                  <span>Sẵn sàng lượt tiếp sau 2.5s</span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

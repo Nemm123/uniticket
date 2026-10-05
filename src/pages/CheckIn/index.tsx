@@ -103,6 +103,7 @@ export const CheckInPage: React.FC<CheckInPageProps> = ({ currentRole, organizer
   const [search, setSearch] = useState('');
   const [isValidating, setIsValidating] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [mobileMode, setMobileMode] = useState<'camera' | 'manual'>('camera');
 
   const loadTickets = async () => {
     setIsRefreshing(true);
@@ -613,8 +614,38 @@ function extractTicketCode(raw: string): string {
           )}
         </header>
 
+        {/* Mobile Mode Switcher Tabs */}
+        <div className="flex sm:hidden p-1 rounded-xl bg-black/40 border border-white/10 mb-4 gap-1">
+          <button
+            type="button"
+            onClick={() => setMobileMode('camera')}
+            className={`flex-1 min-h-[42px] rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+              mobileMode === 'camera'
+                ? 'bg-solana-purple text-white shadow-md shadow-purple-950/50'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Camera className="w-4 h-4 text-solana-cyan" />
+            <span>Quét Camera</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileMode('manual')}
+            className={`flex-1 min-h-[42px] rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+              mobileMode === 'manual'
+                ? 'bg-solana-purple text-white shadow-md shadow-purple-950/50'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Keyboard className="w-4 h-4 text-solana-cyan" />
+            <span>Nhập Thủ Công</span>
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-          <section className="rounded-2xl border border-solana-purple/30 bg-[#120B30] p-4 shadow-2xl sm:p-6">
+          <section className={`rounded-2xl border border-solana-purple/30 bg-[#120B30] p-4 shadow-2xl sm:p-6 ${
+            mobileMode === 'camera' ? 'block' : 'hidden sm:block'
+          }`}>
             <div className="mb-4 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Camera className="h-5 w-5 text-solana-cyan" />
@@ -679,7 +710,9 @@ function extractTicketCode(raw: string): string {
             )}
           </section>
 
-          <section className="rounded-2xl border border-solana-purple/30 bg-[#120B30] p-4 shadow-2xl sm:p-6">
+          <section className={`rounded-2xl border border-solana-purple/30 bg-[#120B30] p-4 shadow-2xl sm:p-6 ${
+            mobileMode === 'manual' ? 'block' : 'hidden sm:block'
+          }`}>
             <div className="mb-4 flex items-center gap-2">
               <Keyboard className="h-5 w-5 text-solana-cyan" />
               <h2 className="font-bold text-white">{t('checkIn.manualTitle')}</h2>
@@ -740,50 +773,50 @@ function extractTicketCode(raw: string): string {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3.5 gap-x-6 text-sm">
-              <div className="flex flex-col">
-                <span className="text-xs text-gray-400">Sự kiện:</span>
-                <span className="font-medium text-white">{checkedInTicketDetail.eventName}</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div className="flex flex-col bg-black/40 p-3 rounded-xl border border-white/10">
+                <span className="text-xs font-semibold text-slate-300">Sự kiện:</span>
+                <span className="font-bold text-white tracking-wide mt-0.5">{checkedInTicketDetail.eventName}</span>
               </div>
 
-              <div className="flex flex-col">
-                <span className="text-xs text-gray-400">Hạng vé:</span>
-                <span className="font-medium text-white">{checkedInTicketDetail.tierName}</span>
+              <div className="flex flex-col bg-black/40 p-3 rounded-xl border border-white/10">
+                <span className="text-xs font-semibold text-slate-300">Hạng vé:</span>
+                <span className="font-bold text-solana-cyan tracking-wide mt-0.5">{checkedInTicketDetail.tierName}</span>
               </div>
 
-              <div className="flex flex-col">
-                <span className="text-xs text-gray-400">Ghế:</span>
-                <span className="font-medium text-white">{checkedInTicketDetail.seat}</span>
+              <div className="flex flex-col bg-black/40 p-3 rounded-xl border border-white/10">
+                <span className="text-xs font-semibold text-slate-300">Ghế / Vị trí:</span>
+                <span className="font-bold text-white tracking-wide mt-0.5">{checkedInTicketDetail.seat}</span>
               </div>
 
-              <div className="flex flex-col">
-                <span className="text-xs text-gray-400">Mã vé:</span>
-                <span className="font-mono font-bold text-emerald-400">{checkedInTicketDetail.ticketCode}</span>
+              <div className="flex flex-col bg-black/40 p-3 rounded-xl border border-white/10">
+                <span className="text-xs font-semibold text-slate-300">Mã vé:</span>
+                <span className="font-mono font-bold text-emerald-400 tracking-wide mt-0.5">{checkedInTicketDetail.ticketCode}</span>
               </div>
 
-              <div className="flex flex-col">
-                <span className="text-xs text-gray-400">Người mua:</span>
-                <span className="font-medium text-white">{checkedInTicketDetail.buyerName}</span>
+              <div className="flex flex-col bg-black/40 p-3 rounded-xl border border-white/10">
+                <span className="text-xs font-semibold text-slate-300">Người mua:</span>
+                <span className="font-bold text-white tracking-wide mt-0.5">{checkedInTicketDetail.buyerName}</span>
               </div>
 
-              <div className="flex flex-col">
-                <span className="text-xs text-gray-400">Trạng thái:</span>
-                <span className="font-bold text-emerald-400">{checkedInTicketDetail.status}</span>
+              <div className="flex flex-col bg-black/40 p-3 rounded-xl border border-white/10">
+                <span className="text-xs font-semibold text-slate-300">Trạng thái:</span>
+                <span className="font-bold text-emerald-400 tracking-wide mt-0.5">{checkedInTicketDetail.status}</span>
               </div>
 
-              <div className="flex flex-col">
-                <span className="text-xs text-gray-400">Thời điểm mua:</span>
-                <span className="font-medium text-white">{checkedInTicketDetail.formattedPurchaseDate}</span>
+              <div className="flex flex-col bg-black/40 p-3 rounded-xl border border-white/10">
+                <span className="text-xs font-semibold text-slate-300">Thời điểm mua:</span>
+                <span className="font-medium text-slate-100 tracking-wide mt-0.5">{checkedInTicketDetail.formattedPurchaseDate}</span>
               </div>
 
-              <div className="flex flex-col">
-                <span className="text-xs text-gray-400">Check-in:</span>
-                <span className="font-medium text-emerald-400">{checkedInTicketDetail.formattedCheckInDate}</span>
+              <div className="flex flex-col bg-black/40 p-3 rounded-xl border border-white/10">
+                <span className="text-xs font-semibold text-slate-300">Check-in:</span>
+                <span className="font-bold text-emerald-400 tracking-wide mt-0.5">{checkedInTicketDetail.formattedCheckInDate}</span>
               </div>
 
-              <div className="flex flex-col sm:col-span-2">
-                <span className="text-xs text-gray-400">Soát vé bởi:</span>
-                <span className="font-mono text-xs text-slate-300 truncate">{checkedInTicketDetail.staffAddress}</span>
+              <div className="flex flex-col sm:col-span-2 bg-black/40 p-3 rounded-xl border border-white/10">
+                <span className="text-xs font-semibold text-slate-300">Soát vé bởi:</span>
+                <span className="font-mono text-xs font-medium text-slate-200 truncate mt-0.5">{checkedInTicketDetail.staffAddress}</span>
               </div>
             </div>
           </section>
@@ -893,9 +926,9 @@ function extractTicketCode(raw: string): string {
                       type="button"
                       onClick={() => void handleManualCheck(ticket.ticketCode || ticket.id)}
                       disabled={isValidating}
-                      className="mt-1 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-solana-purple to-neon-pink hover:from-solana-purple/90 hover:to-neon-pink/90 px-3 py-1 text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-purple-950/40"
+                      className="mt-2 sm:mt-1 inline-flex min-h-[44px] px-4 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-solana-purple to-neon-pink hover:from-solana-purple/90 hover:to-neon-pink/90 text-xs font-bold text-white transition-all active:scale-95 shadow-md shadow-purple-950/40 w-full sm:w-auto"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Soát vé
+                      <CheckCircle2 className="w-4 h-4 text-solana-green" /> Soát vé
                     </button>
                   )}
                   {ticket.checkInTime && (
