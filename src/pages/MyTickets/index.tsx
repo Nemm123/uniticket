@@ -19,7 +19,8 @@ import {
 import { QRCodeSVG } from 'qrcode.react';
 import { PurchasedTicket } from '../../types';
 import * as storage from '../../utils/storage';
-import { getStoredPurchasedTickets } from '../../utils/storage';
+import { getStoredPurchasedTickets, updateLocalTicketStorage } from '../../utils/storage';
+export { updateLocalTicketStorage };
 import { supabase, isSupabaseConfigured } from '../../services/supabase';
 import { 
   supabaseRowToTicket,
@@ -88,6 +89,7 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
   const isWalletConnected = Boolean(connected && publicKey) || Boolean(effectiveWalletAddress);
 
   const [tickets, setTickets] = useState<PurchasedTicket[]>([]);
+  const setPurchasedTickets = setTickets;
   const [incomingTickets, setIncomingTickets] = useState<PurchasedTicket[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [listingModalTicket, setListingModalTicket] = useState<PurchasedTicket | null>(null);
@@ -151,6 +153,20 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
               listing_price_sol: Number(row.listing_price_sol) || Number(row.price_sol) || 0.05,
               pending_recipient: row.pending_recipient,
             }));
+
+            // BẮT BUỘC: Hợp nhất ghi đè trạng thái status: 'USED' và isCheckedIn: true vào localStorage
+            cloudTickets.forEach((row: any) => {
+              const isCloudUsed = row.status === 'USED' || row.status === 'used' || row.is_checked_in === true;
+              if (isCloudUsed) {
+                updateLocalTicketStorage({
+                  id: row.id,
+                  ticket_code: row.ticket_code,
+                  status: 'USED',
+                  is_checked_in: true,
+                  checked_in_at: row.checked_in_at,
+                });
+              }
+            });
           }
         } catch (cloudErr) {
           console.warn('[MyTickets] Supabase fetch error:', cloudErr);
@@ -168,9 +184,34 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
         listing_price_sol: Number(t.listing_price_sol) || Number(t.priceSol) || 0.05,
       }));
 
-      const combined = [...allTickets, ...localTickets].filter(
-        (t, idx, self) => idx === self.findIndex((o) => (o.ticketCode || o.id) === (t.ticketCode || t.id))
-      );
+      // Hợp nhất ưu tiên trạng thái Cloud (status: 'USED', isCheckedIn: true)
+      const combined = [...allTickets, ...localTickets]
+        .filter(
+          (t, idx, self) => idx === self.findIndex((o) => (o.ticketCode || o.id) === (t.ticketCode || t.id))
+        )
+        .map((t) => {
+          const cloudMatch = allTickets.find(
+            (c) => (c.ticketCode && c.ticketCode === t.ticketCode) || (c.id && c.id === t.id)
+          );
+          const isCloudUsed = Boolean(
+            cloudMatch &&
+              (cloudMatch.status === 'USED' ||
+                cloudMatch.status === 'used' ||
+                cloudMatch.isCheckedIn ||
+                (cloudMatch as any).is_checked_in)
+          );
+          if (isCloudUsed) {
+            return {
+              ...t,
+              status: 'USED',
+              isCheckedIn: true,
+              isUsed: true,
+              checkInTime: cloudMatch?.checkInTime || (cloudMatch as any)?.checked_in_at || t.checkInTime,
+              checked_in_at: (cloudMatch as any)?.checked_in_at || cloudMatch?.checkInTime,
+            };
+          }
+          return t;
+        });
 
       // Lọc vé thuộc sở hữu của người dùng hiện tại
       const userTickets = combined.filter(
@@ -195,19 +236,47 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
     }
   };
 
+  const loadTickets = fetchTickets;
+  const fetchUserTickets = fetchTickets;
+  void fetchUserTickets;
+
   useEffect(() => {
-    void fetchTickets();
+    void loadTickets();
 
     if (isSupabaseConfigured) {
       const channel = supabase
-        .channel('my-tickets-page-realtime')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => {
-          void fetchTickets();
-        })
+        .channel('realtime_my_tickets')
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'tickets',
+          },
+          (payload) => {
+            const updatedTicket = payload.new;
+            // Cập nhật state hiển thị vé ngay lập tức
+            setPurchasedTickets((prev) =>
+              prev.map((t) =>
+                t.id === updatedTicket.id || t.ticketCode === updatedTicket.ticket_code
+                  ? {
+                      ...t,
+                      status: updatedTicket.status,
+                      isCheckedIn: updatedTicket.is_checked_in ?? updatedTicket.status === 'USED',
+                      checkedInAt: updatedTicket.checked_in_at,
+                    }
+                  : t
+              )
+            );
+
+            // Cập nhật đồng bộ lại vào localStorage để lần sau mở lên không bị ghi đè dữ liệu cũ
+            updateLocalTicketStorage(updatedTicket);
+          }
+        )
         .subscribe();
 
       return () => {
-        void supabase.removeChannel(channel);
+        supabase.removeChannel(channel);
       };
     }
   }, [isWalletConnected, effectiveWalletAddress]);
@@ -592,7 +661,7 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                       {/* Trạng thái vé */}
                       <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
                         isUsedTicket
-                          ? 'border-solana-green/40 bg-solana-green/15 text-solana-green'
+                          ? 'border-emerald-500/50 bg-emerald-950/70 text-emerald-400 line-through decoration-emerald-400/70'
                           : isPendingAcceptance
                           ? 'border-yellow-500/40 bg-yellow-500/15 text-yellow-300'
                           : isListed
@@ -600,7 +669,7 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                           : 'border-solana-cyan/40 bg-solana-cyan/15 text-solana-cyan'
                       }`}>
                         {isUsedTicket
-                          ? t('myTickets.statusCheckedIn')
+                          ? 'ĐÃ CHECK-IN'
                           : isPendingAcceptance
                           ? 'Chờ chấp nhận'
                           : isListed
@@ -689,23 +758,45 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                         <div
                           onClick={() => onSelectQrTicket?.(ticket)}
                           className="bg-white p-2.5 rounded-2xl shadow-[0_0_25px_rgba(112,0,255,0.35)] relative overflow-hidden group cursor-pointer hover:scale-105 transition-all flex items-center justify-center shrink-0 w-28 h-28 sm:w-32 sm:h-32"
-                          title="Bấm để phóng to mã QR check-in"
+                          title={isUsedTicket ? 'Vé đã qua cổng check-in' : 'Bấm để phóng to mã QR check-in'}
                         >
                           <QRCodeSVG value={`UTK:${ticket.ticketCode}:${ticket.id}`} size={102} level="M" />
-                          {/* Tia quét laser neon cyan chạy quét dọc */}
-                          <div className="pointer-events-none absolute inset-x-0 h-1 bg-cyan-400 shadow-[0_0_12px_#00F5FF] animate-scanner" />
-                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white backdrop-blur-[2px]">
-                            <QrCode className="w-6 h-6 text-solana-cyan animate-pulse mb-1" />
-                            <span className="text-[11px] font-black text-white">Xem QR Phóng To</span>
+                          {/* Tia quét laser neon cyan chạy quét dọc khi chưa check-in */}
+                          {!isUsedTicket && (
+                            <div className="pointer-events-none absolute inset-x-0 h-1 bg-cyan-400 shadow-[0_0_12px_#00F5FF] animate-scanner" />
+                          )}
+
+                          {/* Overlay mờ khi vé đã check-in qua cổng */}
+                          {isUsedTicket ? (
+                            <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center p-2 text-center z-10 select-none">
+                              <Check className="w-8 h-8 text-solana-green mb-1 animate-pulse" />
+                              <span className="text-[11px] font-black text-white tracking-wider uppercase border border-solana-green/50 bg-solana-green/20 px-2 py-0.5 rounded-md shadow-sm">
+                                VÉ ĐÃ QUA CỔNG
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white backdrop-blur-[2px]">
+                              <QrCode className="w-6 h-6 text-solana-cyan animate-pulse mb-1" />
+                              <span className="text-[11px] font-black text-white">Xem QR Phóng To</span>
+                            </div>
+                          )}
+                        </div>
+                        {isUsedTicket ? (
+                          <div
+                            className="inline-flex items-center gap-1.5 rounded-full bg-slate-800/80 border border-slate-700 px-2.5 py-1 text-[10px] font-bold text-slate-400 select-none"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                            <span>ĐÃ CHECK-IN QUA CỔNG</span>
                           </div>
-                        </div>
-                        <div
-                          className="inline-flex items-center gap-1.5 rounded-full bg-solana-cyan/10 border border-solana-cyan/30 px-2.5 py-1 text-[10px] font-bold text-solana-cyan select-none"
-                          title="Mã QR tự động đổi mới mỗi 20 giây để chống chụp màn hình gian lận"
-                        >
-                          <span className="w-1.5 h-1.5 rounded-full bg-solana-green animate-pulse" />
-                          <span>🟢 Dynamic QR (20s) • Chống chụp màn hình</span>
-                        </div>
+                        ) : (
+                          <div
+                            className="inline-flex items-center gap-1.5 rounded-full bg-solana-cyan/10 border border-solana-cyan/30 px-2.5 py-1 text-[10px] font-bold text-solana-cyan select-none"
+                            title="Mã QR tự động đổi mới mỗi 20 giây để chống chụp màn hình gian lận"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-solana-green animate-pulse" />
+                            <span>🟢 Dynamic QR (20s) • Chống chụp màn hình</span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Các nút hành động trên cuống vé */}
@@ -723,7 +814,33 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                           </button>
 
                           {/* Nút Chuyển nhượng vé & Đăng bán lại */}
-                          {!isUsedTicket && (
+                          {isUsedTicket ? (
+                            <>
+                              {/* Nút Chuyển nhượng vé (Vô hiệu hóa) */}
+                              <button
+                                type="button"
+                                disabled
+                                aria-disabled="true"
+                                className="min-h-[44px] px-3.5 py-2.5 rounded-xl border border-slate-700/50 bg-slate-900/60 text-xs font-bold text-slate-500 cursor-not-allowed flex items-center justify-center gap-1.5 opacity-60 shadow-sm"
+                                title="Vé đã check-in qua cổng, không thể chuyển nhượng"
+                              >
+                                <Send className="h-4 w-4 text-slate-500" />
+                                <span>↗️ {t('myTickets.transferTicket')}</span>
+                              </button>
+
+                              {/* Nút Đăng bán lại (Vô hiệu hóa) */}
+                              <button
+                                type="button"
+                                disabled
+                                aria-disabled="true"
+                                className="col-span-2 sm:col-span-1 min-h-[44px] px-3.5 py-2.5 rounded-xl border border-slate-700/50 bg-slate-900/60 text-xs font-bold text-slate-500 cursor-not-allowed flex items-center justify-center gap-1.5 opacity-60 shadow-sm"
+                                title="Vé đã check-in qua cổng, không thể đăng bán lại"
+                              >
+                                <Tag className="h-4 w-4 text-slate-500" />
+                                <span>🏷️ Đăng bán lại</span>
+                              </button>
+                            </>
+                          ) : (
                             <>
                               {isTransferLocked ? (
                                 <span className="col-span-2 sm:col-span-1 min-h-[44px] px-3.5 py-2.5 rounded-xl bg-red-950/70 border border-red-500/50 text-red-300 text-xs font-bold flex items-center justify-center gap-1 shadow-sm">

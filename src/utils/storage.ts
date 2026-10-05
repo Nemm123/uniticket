@@ -990,3 +990,52 @@ export function fetchAllTickets(): PurchasedTicket[] {
   return getStoredPurchasedTickets();
 }
 export const loadTickets = fetchAllTickets;
+
+/**
+ * Cập nhật đồng bộ lại vé vào localStorage khi nhận sự kiện Realtime từ Supabase Cloud
+ */
+export function updateLocalTicketStorage(updatedTicket: any): boolean {
+  if (!updatedTicket) return false;
+  try {
+    const raw = localStorage.getItem(TICKETS_KEY);
+    if (!raw) return false;
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list)) return false;
+
+    const isUsed =
+      updatedTicket.status === 'USED' ||
+      updatedTicket.status === 'used' ||
+      updatedTicket.is_checked_in === true ||
+      updatedTicket.isCheckedIn === true;
+
+    let modified = false;
+    const nextList = list.map((item: any) => {
+      const match =
+        (updatedTicket.id && (item.id === updatedTicket.id || item.ticketCode === updatedTicket.id)) ||
+        (updatedTicket.ticket_code && (item.ticketCode === updatedTicket.ticket_code || item.id === updatedTicket.ticket_code)) ||
+        (updatedTicket.ticketCode && (item.ticketCode === updatedTicket.ticketCode || item.id === updatedTicket.ticketCode));
+
+      if (match) {
+        modified = true;
+        return {
+          ...item,
+          status: isUsed ? 'USED' : (updatedTicket.status || item.status),
+          isCheckedIn: isUsed ? true : Boolean(updatedTicket.is_checked_in ?? updatedTicket.isCheckedIn ?? item.isCheckedIn),
+          isUsed: isUsed ? true : item.isUsed,
+          checked_in_at: updatedTicket.checked_in_at || updatedTicket.checkedInAt || item.checked_in_at || (isUsed ? new Date().toISOString() : undefined),
+          checkInTime: updatedTicket.checked_in_at || updatedTicket.checkInTime || item.checkInTime || (isUsed ? new Date().toISOString() : undefined),
+        };
+      }
+      return item;
+    });
+
+    if (modified) {
+      localStorage.setItem(TICKETS_KEY, JSON.stringify(nextList));
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn('[UniTicket Storage] Lỗi cập nhật local ticket storage:', err);
+    return false;
+  }
+}
