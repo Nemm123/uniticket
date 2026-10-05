@@ -13,6 +13,8 @@ import {
   AlertTriangle,
   X,
   RefreshCw,
+  Check,
+  Copy,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { PurchasedTicket } from '../../types';
@@ -91,6 +93,15 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
   const [listingModalTicket, setListingModalTicket] = useState<PurchasedTicket | null>(null);
   const [listingPriceInput, setListingPriceInput] = useState<string>('0.1');
   const [isProcessingAction, setIsProcessingAction] = useState<boolean>(false);
+  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+
+  const handleCopyCode = (code: string, id: string) => {
+    try {
+      navigator.clipboard.writeText(code);
+      setCopiedCodeId(id);
+      setTimeout(() => setCopiedCodeId(null), 2000);
+    } catch {}
+  };
 
   // Lắng nghe sự kiện đổi tài khoản Phantom (Chống Wallet Desync P1)
   useEffect(() => {
@@ -551,8 +562,8 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                         <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/35 to-transparent -skew-x-12 animate-pulse pointer-events-none" />
                         <ShieldCheck className="w-4 h-4 text-white drop-shadow-[0_0_6px_rgba(255,255,255,0.9)]" />
                         <div className="leading-tight hidden sm:block">
-                          <span className="block text-[9px] font-black uppercase tracking-wider text-white drop-shadow">VIP SECURE PASS</span>
-                          <span className="block text-[8px] font-mono text-cyan-100">SOLANA DEVNET</span>
+                          <span className="block text-[10px] font-black uppercase tracking-wider text-white drop-shadow">VIP SECURE PASS</span>
+                          <span className="block text-[10px] font-mono text-cyan-200">SOLANA DEVNET</span>
                         </div>
                       </div>
 
@@ -589,14 +600,47 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                   {/* Body vé & Cuống vé với Nét đứt vé xé */}
                   <div className="mt-4 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-5 items-stretch">
                     {/* Phần thân vé (Ticket Body) */}
-                    <div className="space-y-2 text-xs text-slate-300">
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                        <p><span className="text-slate-500">{t('myTickets.buyer')}</span> <span className="font-semibold text-white">{ticket.customerName}</span></p>
-                        <p><span className="text-slate-500">{t('myTickets.ticketCode')}</span> <span className="font-mono font-bold text-solana-cyan bg-solana-cyan/10 px-1.5 py-0.5 rounded border border-solana-cyan/30">{ticket.ticketCode}</span></p>
+                    <div className="space-y-2.5 text-xs">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                        <p>
+                          <span className="text-slate-300 font-semibold">{t('myTickets.buyer')}:</span>{' '}
+                          <span className="font-bold text-white tracking-wide">{ticket.customerName}</span>
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-300 font-semibold">{t('myTickets.ticketCode')}:</span>{' '}
+                          <span className="font-mono font-bold text-solana-cyan bg-solana-cyan/15 px-2 py-0.5 rounded-lg border border-solana-cyan/40">
+                            {ticket.ticketCode}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyCode(ticket.ticketCode || ticket.id, ticket.id)}
+                            className="inline-flex min-h-[28px] min-w-[28px] items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+                            title="Sao chép mã vé"
+                          >
+                            {copiedCodeId === ticket.id ? (
+                              <Check className="w-3.5 h-3.5 text-solana-green" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
                       </div>
-                      <p><span className="text-slate-500">{t('myTickets.wallet')}</span> <span className="font-mono text-slate-300">{ticket.customerWallet ? `${ticket.customerWallet.slice(0, 6)}...${ticket.customerWallet.slice(-6)}` : 'N/A'}</span></p>
-                      <p><span className="text-slate-500">{t('myTickets.purchaseDate')}</span> <span className="text-slate-200">{formatDate(ticket.purchaseDate || ticket.purchasedAt, { dateStyle: 'short', timeStyle: 'short' })}</span></p>
-                      <p><span className="text-slate-500">{t('myTickets.venue')}</span> <span className="text-slate-200">{ticket.venue}, {ticket.city}</span></p>
+                      <p>
+                        <span className="text-slate-300 font-semibold">{t('myTickets.wallet')}:</span>{' '}
+                        <span className="font-mono text-slate-200">
+                          {ticket.customerWallet ? `${ticket.customerWallet.slice(0, 6)}...${ticket.customerWallet.slice(-6)}` : 'N/A'}
+                        </span>
+                      </p>
+                      <p>
+                        <span className="text-slate-300 font-semibold">{t('myTickets.purchaseDate')}:</span>{' '}
+                        <span className="text-slate-200 font-medium">
+                          {formatDate(ticket.purchaseDate || ticket.purchasedAt, { dateStyle: 'short', timeStyle: 'short' })}
+                        </span>
+                      </p>
+                      <p>
+                        <span className="text-slate-300 font-semibold">{t('myTickets.venue')}:</span>{' '}
+                        <span className="text-slate-200 font-medium">{ticket.venue}, {ticket.city}</span>
+                      </p>
                     </div>
 
                     {/* Đường nét đứt xé vé (Perforated Tear Line) & Cuống vé xé */}
@@ -605,30 +649,40 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                       <div className="hidden md:block absolute -top-6 -left-2 w-4 h-4 rounded-full bg-[#070412] border-b border-purple-500/30" />
                       <div className="hidden md:block absolute -bottom-6 -left-2 w-4 h-4 rounded-full bg-[#070412] border-t border-purple-500/30" />
 
-                      {/* Mã QR có tia quét neon mờ */}
-                      <div
-                        onClick={() => onSelectQrTicket?.(ticket)}
-                        className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl bg-white p-2 shadow-2xl border-2 border-solana-cyan/40 cursor-pointer group/qr overflow-hidden flex items-center justify-center shrink-0 hover:scale-105 transition-transform"
-                        title="Bấm để phóng to mã QR check-in"
-                      >
-                        <QRCodeSVG value={`UTK:${ticket.ticketCode}:${ticket.id}`} size={92} level="M" />
-                        {/* Tia quét laser neon */}
-                        <div className="pointer-events-none absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-solana-cyan to-transparent opacity-95 shadow-[0_0_10px_#00F5FF] animate-scanner" />
-                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/qr:opacity-100 transition-opacity flex flex-col items-center justify-center text-white backdrop-blur-[1px]">
-                          <QrCode className="w-5 h-5 text-solana-cyan animate-pulse mb-0.5" />
-                          <span className="text-[10px] font-extrabold text-white">Xem QR</span>
+                      {/* Mã QR kèm nhãn Dynamic QR */}
+                      <div className="flex flex-col items-center gap-1.5 shrink-0">
+                        <div
+                          onClick={() => onSelectQrTicket?.(ticket)}
+                          className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl bg-white p-2 shadow-2xl border-2 border-solana-cyan/40 cursor-pointer group/qr overflow-hidden flex items-center justify-center shrink-0 hover:scale-105 transition-transform"
+                          title="Bấm để phóng to mã QR check-in"
+                        >
+                          <QRCodeSVG value={`UTK:${ticket.ticketCode}:${ticket.id}`} size={92} level="M" />
+                          {/* Tia quét laser neon */}
+                          <div className="pointer-events-none absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-solana-cyan to-transparent opacity-95 shadow-[0_0_10px_#00F5FF] animate-scanner" />
+                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/qr:opacity-100 transition-opacity flex flex-col items-center justify-center text-white backdrop-blur-[1px]">
+                            <QrCode className="w-5 h-5 text-solana-cyan animate-pulse mb-0.5" />
+                            <span className="text-[10px] font-extrabold text-white">Xem QR</span>
+                          </div>
+                        </div>
+                        <div
+                          className="inline-flex items-center gap-1 rounded-full bg-solana-cyan/10 border border-solana-cyan/30 px-2 py-0.5 text-[10px] font-bold text-solana-cyan select-none"
+                          title="Mã QR tự động đổi mới mỗi 20 giây để chống chụp màn hình gian lận"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-solana-green animate-pulse" />
+                          <span>Dynamic QR (20s)</span>
                         </div>
                       </div>
 
                       {/* Các nút hành động trên cuống vé */}
                       <div className="flex flex-col items-center md:items-end gap-2 w-full sm:w-auto">
-                        <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
+                        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center justify-end gap-2 w-full mt-3 sm:mt-0">
                           {/* Nút Show QR */}
                           <button
+                            type="button"
                             onClick={() => onSelectQrTicket?.(ticket)}
-                            className="min-h-9 rounded-xl border border-solana-cyan/40 bg-solana-cyan/10 px-3 py-1.5 text-xs font-bold text-solana-cyan hover:bg-solana-cyan/20 transition-colors flex items-center gap-1.5"
+                            className="min-h-[42px] px-3.5 py-2 rounded-xl border border-solana-cyan/40 bg-solana-cyan/15 text-xs font-bold text-solana-cyan hover:bg-solana-cyan/25 transition-all flex items-center justify-center gap-1.5 active:scale-95 shadow-sm"
                           >
-                            <QrCode className="h-3.5 w-3.5" />
+                            <QrCode className="h-4 w-4" />
                             <span>{t('myTickets.showQr')}</span>
                           </button>
 
@@ -636,19 +690,19 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                           {!isUsedTicket && (
                             <>
                               {isTransferLocked ? (
-                                <span className="px-2.5 py-1 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-[11px] font-bold flex items-center gap-1">
+                                <span className="col-span-2 sm:col-span-1 px-3 py-2 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs font-bold flex items-center justify-center gap-1">
                                   <span>🔒 Đã khóa chuyển nhượng (Transfer Locked)</span>
                                 </span>
                               ) : isPendingAcceptance ? (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[11px] text-yellow-300 bg-yellow-950/60 border border-yellow-500/40 px-2.5 py-1 rounded-xl">
+                                <div className="col-span-2 sm:col-span-1 flex flex-col sm:flex-row items-center gap-2">
+                                  <span className="text-xs text-yellow-300 bg-yellow-950/60 border border-yellow-500/40 px-2.5 py-1 rounded-xl text-center">
                                     Đang chờ ví {ticket.pending_recipient ? `${ticket.pending_recipient.slice(0, 4)}...${ticket.pending_recipient.slice(-4)}` : 'người nhận'} chấp nhận
                                   </span>
                                   <button
                                     type="button"
                                     onClick={() => handleRevokeTicket(ticket)}
                                     disabled={isProcessingAction}
-                                    className="min-h-9 rounded-xl border border-red-500/40 bg-red-950/40 px-3 py-1.5 text-xs font-bold text-red-300 hover:bg-red-900/60 transition-colors"
+                                    className="min-h-[42px] px-3.5 py-2 rounded-xl border border-red-500/40 bg-red-950/40 text-xs font-bold text-red-300 hover:bg-red-900/60 transition-colors w-full sm:w-auto"
                                   >
                                     Thu hồi vé (Revoke)
                                   </button>
@@ -657,25 +711,26 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                                 <>
                                   {/* Nút Chuyển nhượng */}
                                   <button
+                                    type="button"
                                     onClick={() => onSelectTransferTicket?.(ticket)}
-                                    className="min-h-9 rounded-xl border border-solana-purple/40 bg-solana-purple/20 px-3 py-1.5 text-xs font-bold text-purple-200 hover:bg-solana-purple/35 hover:text-white transition-colors flex items-center gap-1.5"
+                                    className="min-h-[42px] px-3.5 py-2 rounded-xl border border-solana-purple/50 bg-solana-purple/25 text-xs font-bold text-purple-200 hover:bg-solana-purple/40 hover:text-white transition-all flex items-center justify-center gap-1.5 active:scale-95 shadow-sm"
                                     title="Chuyển nhượng vé cho ví Solana khác"
                                   >
-                                    <Send className="h-3.5 w-3.5 text-solana-cyan" />
+                                    <Send className="h-4 w-4 text-solana-cyan" />
                                     <span>{t('myTickets.transferTicket')}</span>
                                   </button>
 
                                   {/* Nút Đăng bán lại / Hủy niêm yết */}
                                   {isListed ? (
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="px-2 py-1 rounded-xl bg-solana-purple/20 border border-solana-purple/40 text-xs font-bold text-solana-cyan">
+                                    <div className="col-span-2 sm:col-span-1 flex items-center gap-1.5">
+                                      <span className="min-h-[42px] px-3 py-2 rounded-xl bg-solana-purple/25 border border-solana-purple/40 text-xs font-bold text-solana-cyan flex items-center">
                                         {ticket.listing_price_sol || ticket.priceSol} SOL
                                       </span>
                                       <button
                                         type="button"
                                         onClick={() => handleUnlistTicket(ticket)}
                                         disabled={isProcessingAction}
-                                        className="min-h-9 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-300 hover:bg-white/10"
+                                        className="min-h-[42px] px-3.5 py-2 rounded-xl border border-white/10 bg-white/5 text-xs font-semibold text-slate-300 hover:bg-white/10 transition-colors flex-1 sm:flex-initial"
                                       >
                                         Hủy bán
                                       </button>
@@ -687,10 +742,10 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                                         setListingModalTicket(ticket);
                                         setListingPriceInput(String(ticket.listing_price_sol || ticket.priceSol || 0.1));
                                       }}
-                                      className="min-h-9 rounded-xl border border-neon-pink/40 bg-neon-pink/15 px-3 py-1.5 text-xs font-bold text-pink-200 hover:bg-neon-pink/30 hover:text-white transition-colors flex items-center gap-1.5"
+                                      className="col-span-2 sm:col-span-1 min-h-[42px] px-3.5 py-2 rounded-xl border border-neon-pink/50 bg-neon-pink/20 text-xs font-bold text-pink-200 hover:bg-neon-pink/30 hover:text-white transition-all flex items-center justify-center gap-1.5 active:scale-95 shadow-sm"
                                       title="Đăng bán vé lại trên Chợ Vé Thứ Cấp"
                                     >
-                                      <Tag className="h-3.5 w-3.5 text-neon-pink" />
+                                      <Tag className="h-4 w-4 text-neon-pink" />
                                       <span>Đăng bán lại</span>
                                     </button>
                                   )}
