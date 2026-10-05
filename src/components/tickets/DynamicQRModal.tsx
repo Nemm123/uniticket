@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { X, ShieldCheck, RefreshCw, Clock, Sparkles } from 'lucide-react';
+import { X, ShieldCheck, RefreshCw, Clock, Sparkles, Download, Check } from 'lucide-react';
 import { PurchasedTicket } from '../../types';
 import { useTranslation } from '../../i18n';
 
@@ -56,6 +56,7 @@ export const DynamicQRModal: React.FC<DynamicQRModalProps> = ({
   const [secondsLeft, setSecondsLeft] = useState<number>(REFRESH_INTERVAL_SECONDS);
   const [progressPercent, setProgressPercent] = useState<number>(100);
   const [isRotating, setIsRotating] = useState<boolean>(false);
+  const [isOfflineSaved, setIsOfflineSaved] = useState<boolean>(false);
 
   const refreshQRCode = useCallback(() => {
     const now = Date.now();
@@ -101,6 +102,50 @@ export const DynamicQRModal: React.FC<DynamicQRModalProps> = ({
     return generateDynamicQRPayload(ticket, timestamp);
   }, [ticket, timestamp]);
 
+  const handleDownloadOfflinePass = () => {
+    if (!ticket) return;
+    try {
+      const passData = {
+        formatVersion: 1,
+        passTypeIdentifier: 'pass.io.uniticket.solana',
+        serialNumber: ticket.ticketCode || ticket.id,
+        teamIdentifier: 'SOLANA-VN',
+        organizationName: 'UniTicket Web3 Phygital',
+        description: ticket.eventTitle,
+        event: {
+          title: ticket.eventTitle,
+          venue: `${ticket.venue}, ${ticket.city}`,
+          date: ticket.date,
+          time: ticket.time,
+          tier: ticket.tierName,
+          seat: ticket.seat,
+          customerName: ticket.customerName,
+          wallet: ticket.customerWallet,
+        },
+        barcode: {
+          message: qrPayload,
+          format: 'PKBarcodeFormatQR',
+          altText: ticket.ticketCode || ticket.id,
+        },
+        offlineSecret: generateDynamicQRHash(ticket.id, ticket.customerWallet || 'offline', timestamp),
+        generatedAt: new Date().toISOString(),
+      };
+      const blob = new Blob([JSON.stringify(passData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `UniTicket-Pass-${ticket.ticketCode || ticket.id}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setIsOfflineSaved(true);
+      setTimeout(() => setIsOfflineSaved(false), 3000);
+    } catch (e) {
+      console.warn('Lỗi tải vé offline:', e);
+    }
+  };
+
   if (!isOpen || !ticket) return null;
 
   return (
@@ -112,7 +157,7 @@ export const DynamicQRModal: React.FC<DynamicQRModalProps> = ({
         onClick={onClose}
       />
 
-      <div className="relative w-full max-w-sm rounded-2xl border border-solana-purple/50 bg-[#0F0A28] p-4 sm:p-6 text-center shadow-2xl z-10 space-y-3.5 sm:space-y-4 max-h-[90vh] overflow-y-auto my-auto">
+      <div className="relative w-full max-w-sm rounded-3xl border border-solana-purple/50 bg-[#0F0A28] p-4 sm:p-6 text-center shadow-2xl z-10 space-y-3.5 sm:space-y-4 max-h-[92vh] overflow-y-auto my-auto backdrop-blur-xl">
         {/* Nút đóng */}
         <button
           aria-label={t('common.close')}
@@ -134,23 +179,24 @@ export const DynamicQRModal: React.FC<DynamicQRModalProps> = ({
           </p>
         </div>
 
-        {/* Khung hiển thị mã QR động với tia quét laser neon mờ */}
-        <div className="relative mx-auto inline-flex max-w-full rounded-2xl bg-white p-3.5 shadow-2xl border-2 border-solana-cyan/40 group overflow-hidden">
-          <QRCodeSVG value={qrPayload} size={230} level="M" />
+        {/* Khung hiển thị mã QR động lớn 240x240 với tia quét laser neon mờ */}
+        <div className="relative mx-auto inline-flex max-w-full rounded-2xl bg-white p-3.5 shadow-[0_0_30px_rgba(0,245,255,0.35)] border-2 border-solana-cyan/50 group overflow-hidden">
+          <QRCodeSVG value={qrPayload} size={240} level="M" />
           {/* Tia quét laser neon mờ */}
-          <div className="pointer-events-none absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-solana-cyan to-transparent opacity-90 shadow-[0_0_12px_#00F5FF] animate-scanner" />
+          <div className="pointer-events-none absolute inset-x-0 h-1 bg-cyan-400 shadow-[0_0_14px_#00F5FF] animate-scanner" />
         </div>
 
-        {/* Thanh đếm ngược trực quan (Progress Bar) */}
+        {/* Thanh đếm ngược chu kỳ 20 giây trực quan (Progress Bar) */}
         <div className="space-y-1.5 text-left">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-400 flex items-center gap-1">
+            <span className="text-slate-300 flex items-center gap-1 font-medium">
               <Clock className="w-3.5 h-3.5 text-solana-cyan" />
               <span>{t('qrModal.refreshIn', { seconds: secondsLeft })}</span>
             </span>
             <button
+              type="button"
               onClick={refreshQRCode}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-purple-300 hover:text-white transition-colors"
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-solana-cyan hover:text-white transition-colors"
               title="Làm mới mã QR ngay lập tức"
             >
               <RefreshCw className={`w-3 h-3 ${isRotating ? 'animate-spin' : ''}`} />
@@ -158,7 +204,7 @@ export const DynamicQRModal: React.FC<DynamicQRModalProps> = ({
             </button>
           </div>
 
-          {/* Progress bar line */}
+          {/* Progress bar line co ngắn dần 100% -> 0% */}
           <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
             <div
               className={`h-full transition-all duration-100 ease-linear rounded-full ${
@@ -177,6 +223,26 @@ export const DynamicQRModal: React.FC<DynamicQRModalProps> = ({
             {t('qrModal.dynamicNotice')}
           </p>
         </div>
+
+        {/* Nút lưu / Tải vé Offline (Passbook/Apple Wallet mock) */}
+        <button
+          type="button"
+          onClick={handleDownloadOfflinePass}
+          className="w-full min-h-[44px] py-2.5 px-4 rounded-xl border border-solana-cyan/40 bg-solana-cyan/15 hover:bg-solana-cyan/25 text-solana-cyan font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm"
+          title="Tải thẻ vé offline để xuất trình khi không có sóng di động"
+        >
+          {isOfflineSaved ? (
+            <>
+              <Check className="w-4 h-4 text-solana-green" />
+              <span className="text-solana-green font-bold">Đã tải vé Offline (Apple Wallet mock)!</span>
+            </>
+          ) : (
+            <>
+              <Download className="w-4 h-4" />
+              <span>Tải vé Offline (Passbook / Apple Wallet mock)</span>
+            </>
+          )}
+        </button>
 
         <p className="text-[11px] text-slate-400">
           {t('qrModal.showToStaff')}
