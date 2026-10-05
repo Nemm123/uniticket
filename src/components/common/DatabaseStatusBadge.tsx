@@ -5,11 +5,13 @@ import { RefreshCw } from 'lucide-react';
 interface DatabaseStatusBadgeProps {
   className?: string;
   onStatusChange?: (isOnline: boolean) => void;
+  compact?: boolean;
 }
 
 export const DatabaseStatusBadge: React.FC<DatabaseStatusBadgeProps> = ({
   className = '',
   onStatusChange,
+  compact = false,
 }) => {
   const [isOnline, setIsOnline] = useState<boolean>(false);
   const [latencyMs, setLatencyMs] = useState<number | undefined>(undefined);
@@ -40,6 +42,31 @@ export const DatabaseStatusBadge: React.FC<DatabaseStatusBadgeProps> = ({
   useEffect(() => {
     void checkConnection();
   }, [checkConnection]);
+
+  if (compact) {
+    const compactTooltip = isOnline
+      ? `Cloud DB: Online${latencyMs ? ` (${latencyMs}ms)` : ''}`
+      : `${statusMessage}`;
+
+    return (
+      <button
+        type="button"
+        onClick={() => void checkConnection()}
+        disabled={isPinging}
+        title={compactTooltip}
+        aria-label={compactTooltip}
+        className={`inline-flex items-center justify-center p-1 rounded-full hover:bg-white/10 transition-all active:scale-90 ${className}`}
+      >
+        {isPinging ? (
+          <RefreshCw className="w-2.5 h-2.5 animate-spin text-solana-cyan" />
+        ) : isOnline ? (
+          <span className="w-2 h-2 rounded-full bg-solana-green animate-pulse shadow-[0_0_8px_#14F195]" />
+        ) : (
+          <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_#FBBF24]" />
+        )}
+      </button>
+    );
+  }
 
   const tooltipText = isOnline
     ? `Supabase Connected${latencyMs ? ` · ${latencyMs}ms ping` : ''} (Click để kiểm tra lại)`

@@ -513,9 +513,9 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <>
-    <header className="sticky top-0 z-[80] w-full glass-nav transition-all duration-300">
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-14 sm:h-16 lg:h-16">
+    <header className="sticky top-0 z-[80] w-full glass-nav transition-all duration-300 overflow-x-hidden">
+      <div className="max-w-7xl mx-auto px-4">
+        <div className="flex items-center justify-between h-14 sm:h-16 gap-2">
           {/* Bên trái: Logo Brand */}
           <div
             onClick={() => handleNavClick('home')}
@@ -543,10 +543,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-0.5 lg:gap-1 bg-[#150E35]/80 px-2 py-1 lg:px-2.5 lg:py-1.5 rounded-full border border-white/10 shadow-inner backdrop-blur-md">
+          <nav className="hidden md:flex items-center gap-1 bg-[#150E35]/80 px-2.5 py-1 rounded-full border border-white/10 shadow-inner backdrop-blur-md">
             <button
               onClick={() => handleNavClick('home')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 lg:px-3 lg:py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold transition-all duration-200 ${
                 currentPage === 'home'
                   ? 'bg-gradient-to-r from-solana-purple to-[#6E1FD6] text-white shadow-md shadow-solana-purple/40'
                   : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -558,7 +558,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             <button
               onClick={() => handleNavClick('events')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 lg:px-3 lg:py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold transition-all duration-200 ${
                 currentPage === 'events'
                   ? 'bg-gradient-to-r from-solana-purple to-[#6E1FD6] text-white shadow-md shadow-solana-purple/40'
                   : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -570,7 +570,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             <button
               onClick={() => handleNavClick('marketplace')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 lg:px-3 lg:py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold transition-all duration-200 ${
                 currentPage === 'marketplace'
                   ? 'bg-gradient-to-r from-solana-purple to-[#6E1FD6] text-white shadow-md shadow-solana-purple/40'
                   : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -584,7 +584,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <>
                 <button
                   onClick={() => handleNavClick('organizer')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 lg:px-3 lg:py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold transition-all duration-200 ${
                     currentPage === 'organizer'
                       ? 'bg-gradient-to-r from-solana-purple to-[#6E1FD6] text-white shadow-md shadow-solana-purple/40'
                       : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -676,7 +676,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             ) : (
               <button
                 onClick={() => handleNavClick('my-tickets')}
-                className={`flex items-center gap-1.5 px-2.5 py-1 lg:px-3 lg:py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all duration-200 ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold transition-all duration-200 ${
                   currentPage === 'my-tickets'
                     ? 'bg-gradient-to-r from-solana-purple to-[#6E1FD6] text-white shadow-md shadow-solana-purple/40'
                     : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -694,18 +694,20 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={onOpenSearch}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#150E35]/80 hover:bg-white/10 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:text-white transition-all active:scale-95 shadow-inner"
+                className="inline-flex items-center justify-between gap-1.5 rounded-xl border border-white/10 bg-[#150E35]/80 hover:bg-white/10 px-2.5 py-1.5 w-36 focus:w-48 transition-all duration-300 text-xs font-medium text-slate-300 hover:text-white active:scale-95 shadow-inner"
                 title={t('search.title')}
               >
-                <Search className="h-3.5 w-3.5 text-solana-cyan" />
-                <span className="hidden xl:inline">{t('nav.searchPlaceholder')}</span>
-                <kbd className="rounded bg-black/40 px-1 py-0.5 text-[9px] text-slate-400 border border-white/10">{t('nav.searchShortcut')}</kbd>
+                <div className="flex items-center gap-1.5 truncate">
+                  <Search className="h-3.5 w-3.5 text-solana-cyan shrink-0" />
+                  <span className="truncate">{t('nav.searchPlaceholder')}</span>
+                </div>
+                <kbd className="rounded bg-black/40 px-1 py-0.5 text-[9px] text-slate-400 border border-white/10 shrink-0">{t('nav.searchShortcut')}</kbd>
               </button>
             )}
 
-            {/* Nhóm badge trạng thái: DatabaseStatusBadge + LanguageSwitcher */}
-            <div className="flex items-center gap-1 bg-[#120B30]/70 border border-white/10 rounded-full px-2 py-0.5 shadow-inner backdrop-blur-md">
-              <DatabaseStatusBadge />
+            {/* Nhóm badge trạng thái: DatabaseStatusBadge (chấm xanh compact) + LanguageSwitcher */}
+            <div className="flex items-center gap-1 bg-[#120B30]/70 border border-white/10 rounded-full px-1.5 py-0.5 shadow-inner backdrop-blur-md shrink-0">
+              <DatabaseStatusBadge compact />
               <span className="h-3 w-px bg-white/15 mx-0.5" />
               <LanguageSwitcher />
             </div>
@@ -715,7 +717,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={() => onNavigate('home')}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-solana-cyan/40 bg-solana-cyan/10 hover:bg-solana-cyan/20 px-2.5 py-1.5 text-xs font-semibold text-solana-cyan transition-all active:scale-95 shadow-sm"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-solana-cyan/40 bg-solana-cyan/10 hover:bg-solana-cyan/20 px-2.5 py-1 text-xs font-semibold text-solana-cyan transition-all active:scale-95 shadow-sm shrink-0"
                 title="Quay về trang người dùng"
               >
                 <Eye className="w-3.5 h-3.5 shrink-0" />
@@ -725,7 +727,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={() => onNavigate('organizer')}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-solana-green/40 bg-solana-green/10 hover:bg-solana-green/20 px-2.5 py-1.5 text-xs font-semibold text-solana-green transition-all active:scale-95 shadow-sm"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-solana-green/40 bg-solana-green/10 hover:bg-solana-green/20 px-2.5 py-1 text-xs font-semibold text-solana-green transition-all active:scale-95 shadow-sm shrink-0"
                 title="Chuyển sang Chế độ Ban Tổ Chức"
               >
                 <LayoutDashboard className="w-3.5 h-3.5 text-solana-green shrink-0" />
@@ -738,11 +740,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               type="button"
               onClick={() => setIsFanQuestOpen(true)}
               title="Mở Fan Quest Hub - Tương tác nhận UniPoint"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-purple-500/30 hover:border-purple-500/60 bg-gradient-to-r from-purple-950/40 via-purple-900/20 to-solana-purple/20 hover:bg-purple-900/40 text-xs font-bold text-white shadow-sm transition-all active:scale-95 shrink-0"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-purple-500/30 hover:border-purple-500/60 bg-gradient-to-r from-purple-950/40 via-purple-900/20 to-solana-purple/20 hover:bg-purple-900/40 text-xs font-bold text-white shadow-sm transition-all active:scale-95 shrink-0"
             >
               <span>🎯 Fan Quest</span>
-              <span className="bg-purple-500/20 text-purple-300 text-xs px-2 py-0.5 rounded-full border border-purple-500/30 font-mono">
-                +{fanPoints} pts
+              <span className="bg-purple-500/20 text-purple-300 text-[10px] px-1.5 py-0.5 rounded-full border border-purple-500/30 font-mono">
+                +{fanPoints}
               </span>
             </button>
 
