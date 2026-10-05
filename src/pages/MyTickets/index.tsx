@@ -345,6 +345,9 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
       setListingModalTicket(null);
       await fetchTickets();
       onTicketsChanged?.();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('marketplace_updated'));
+      }
     } catch (err: any) {
       onShowToast?.('error', err?.message || 'Không thể đăng bán vé.');
     } finally {
@@ -376,6 +379,9 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
       onShowToast?.('info', 'Đã hủy niêm yết vé khỏi Chợ Vé Thứ Cấp.');
       await fetchTickets();
       onTicketsChanged?.();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('marketplace_updated'));
+      }
     } catch (err: any) {
       onShowToast?.('error', err?.message || 'Không thể hủy niêm yết.');
     } finally {

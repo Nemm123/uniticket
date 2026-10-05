@@ -317,18 +317,65 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
     };
   }, []);
 
-  // Tải danh sách vé niêm yết từ Supabase và LocalStorage
+  // Tải danh sách vé niêm yết từ Supabase và LocalStorage (Multi-source sync)
   const loadMarketplaceTickets = async () => {
     if (!hasLoadedRef.current) {
       setLoading(true);
     }
     try {
-      const stored = storage.getStoredPurchasedTickets();
-      const localListed = stored.filter((t: PurchasedTicket) => t.is_listed_for_sale && !t.isCheckedIn && !t.isUsed && t.status !== 'USED');
+      // Nguồn 2: Đọc vé niêm yết từ LocalStorage (purchased_tickets_v2, marketplace_tickets, uniticket_purchased_tickets)
+      const localKeys = [
+        'uniticket_purchased_tickets',
+        'purchased_tickets_v2',
+        'marketplace_tickets',
+      ];
+      const allLocalTickets: PurchasedTicket[] = [...storage.getStoredPurchasedTickets()];
+      for (const k of localKeys) {
+        try {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              allLocalTickets.push(...parsed);
+            }
+          }
+        } catch {}
+      }
+
+      // Chuẩn hóa và lọc vé niêm yết từ LocalStorage
+      const localListedMap = new Map<string, PurchasedTicket>();
+      allLocalTickets.forEach((t: PurchasedTicket) => {
+        if (
+          Boolean(t.is_listed_for_sale) &&
+          !t.isCheckedIn &&
+          !t.isUsed &&
+          t.status !== 'USED' &&
+          t.status !== 'used' &&
+          !(t as any).is_checked_in &&
+          !(t as any).checked_in_at
+        ) {
+          const key = t.id || t.ticketCode;
+          if (key && !localListedMap.has(key)) {
+            const normalized: PurchasedTicket = {
+              ...t,
+              listing_price_sol: Number(t.listing_price_sol) || Number(t.priceSol) || 0.05,
+              seller_wallet: t.seller_wallet || t.customerWallet || t.owner_address || t.ownerAddress || '',
+              customerWallet: t.seller_wallet || t.customerWallet || t.owner_address || t.ownerAddress || '',
+              ownerAddress: t.seller_wallet || t.customerWallet || t.owner_address || t.ownerAddress || '',
+              is_listed_for_sale: true,
+            };
+            localListedMap.set(key, normalized);
+            if (t.id) localListedMap.set(t.id, normalized);
+            if (t.ticketCode) localListedMap.set(t.ticketCode, normalized);
+          }
+        }
+      });
+      const localListed = Array.from(new Set(localListedMap.values()));
 
       const storedEvents = storage.getStoredEvents();
       const eventsMap = new Map(storedEvents.map((e) => [e.id, e]));
 
+      // Nguồn 1: Vé từ Supabase Cloud
       let cloudListed: PurchasedTicket[] = [];
       const soldTicketIds = new Set<string>();
       const cloudUnlistedKeys = soldTicketIds; // Alias tương thích test-suite
@@ -347,7 +394,10 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
                 row.status === 'used' ||
                 Boolean(row.checked_in_at || row.is_checked_in || row.isCheckedIn || row.isUsed);
 
-              if (isUnlisted) {
+              // Không đánh dấu unlisted nếu vé đó vừa được niêm yết hợp lệ trong localListedMap
+              const isLocallyListed = localListedMap.has(String(row.id)) || localListedMap.has(String(row.ticket_code));
+
+              if (isUnlisted && !isLocallyListed) {
                 if (row.id) soldTicketIds.add(String(row.id));
                 if (row.ticket_code) soldTicketIds.add(String(row.ticket_code));
                 if (row.ticketCode) soldTicketIds.add(String(row.ticketCode));
@@ -391,17 +441,34 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
         }
       }
 
-      // Hợp nhất dữ liệu không trùng lặp
-      const map = new Map<string, PurchasedTicket>();
+      // Merge Deduplicate: Kết hợp vé từ LocalStorage, Supabase Cloud và Vé mẫu
+      const mergedMap = new Map<string, PurchasedTicket>();
+      const seenCodes = new Set<string>();
 
-      // Tạo map tra cứu trạng thái trong LocalStorage
-      const storedById = new Map<string, PurchasedTicket>();
-      stored.forEach((item: PurchasedTicket) => {
-        if (item.id) storedById.set(item.id, item);
-        if (item.ticketCode) storedById.set(item.ticketCode, item);
+      const addTicketToMarket = (t: PurchasedTicket) => {
+        const idKey = t.id ? String(t.id) : '';
+        const codeKey = t.ticketCode ? String(t.ticketCode) : idKey;
+        if (!idKey && !codeKey) return;
+
+        if (codeKey && seenCodes.has(codeKey)) return;
+        if (idKey && mergedMap.has(idKey)) return;
+
+        mergedMap.set(idKey || codeKey, t);
+        if (codeKey) seenCodes.add(codeKey);
+      };
+
+      // 1. Ưu tiên cao nhất: Vé niêm yết từ LocalStorage (BẮT BUỘC phải xuất hiện trên danh sách vé Chợ)
+      localListed.forEach(addTicketToMarket);
+
+      // 2. Vé từ Supabase Cloud có is_listed_for_sale === true
+      cloudListed.forEach((t) => {
+        if (soldTicketIds.has(t.id) || (t.ticketCode && soldTicketIds.has(t.ticketCode))) {
+          return;
+        }
+        addTicketToMarket(t);
       });
 
-      // 1. Thêm vé mẫu: NẾU vé đã bị bán hoặc unlisted trên Supabase Cloud (nằm trong soldTicketIds) thì TUYỆT ĐỐI LOẠI BỎ KHỎI CHỢ
+      // 3. Vé mẫu mặc định sẵn sàng giao dịch (SEED)
       SEED_MARKETPLACE_TICKETS.forEach((seed) => {
         if (
           soldTicketIds.has(seed.id) ||
@@ -410,42 +477,11 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
         ) {
           return;
         }
-
-        const locallyUpdated = storedById.get(seed.id) || (seed.ticketCode ? storedById.get(seed.ticketCode) : undefined);
-        if (locallyUpdated) {
-          if (locallyUpdated.is_listed_for_sale === true && !locallyUpdated.isCheckedIn && !locallyUpdated.isUsed && locallyUpdated.status !== 'USED') {
-            map.set(locallyUpdated.id, locallyUpdated);
-          }
-        } else {
-          map.set(seed.id, seed);
-        }
+        addTicketToMarket(seed);
       });
 
-      // 2. Bổ sung tất cả các vé từ Supabase có is_listed_for_sale === true (Ưu tiên Single Source of Truth từ Cloud)
-      cloudListed.forEach((t) => {
-        if (soldTicketIds.has(t.id) || (t.ticketCode && soldTicketIds.has(t.ticketCode))) {
-          return;
-        }
-        map.set(t.id, t);
-      });
-
-      // 3. Thêm các vé được đăng bán từ local (nếu chưa có trên Cloud)
-      localListed.forEach((t: PurchasedTicket) => {
-        if (
-          !soldTicketIds.has(t.id) &&
-          (!t.ticketCode || !soldTicketIds.has(t.ticketCode)) &&
-          t.is_listed_for_sale === true &&
-          !t.isCheckedIn &&
-          !t.isUsed &&
-          t.status !== 'USED' &&
-          !map.has(t.id)
-        ) {
-          map.set(t.id, t);
-        }
-      });
-
-      // Loại bỏ hoàn toàn các vé có is_listed_for_sale === false khỏi danh sách hiển thị
-      const finalTickets = Array.from(map.values()).filter(
+      // Lọc các vé hợp lệ cuối cùng
+      const finalTickets = Array.from(mergedMap.values()).filter(
         (t) =>
           t.is_listed_for_sale === true &&
           t.status !== 'USED' &&
@@ -453,9 +489,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
           !t.isCheckedIn &&
           !t.isUsed &&
           !(t as any).is_checked_in &&
-          !(t as any).checked_in_at &&
-          !soldTicketIds.has(t.id) &&
-          (!t.ticketCode || !soldTicketIds.has(t.ticketCode))
+          !(t as any).checked_in_at
       );
 
       setListedTickets(finalTickets);
@@ -468,8 +502,19 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
     }
   };
 
+  const loadTickets = loadMarketplaceTickets;
+
+  // Lắng nghe sự kiện marketplace_updated và storage để đồng bộ tức thì
   useEffect(() => {
-    void loadMarketplaceTickets();
+    void loadTickets();
+
+    window.addEventListener('marketplace_updated', loadTickets);
+    window.addEventListener('storage', loadTickets);
+
+    return () => {
+      window.removeEventListener('marketplace_updated', loadTickets);
+      window.removeEventListener('storage', loadTickets);
+    };
   }, []);
 
   // Tự động kiểm tra và cập nhật danh sách vé từ Supabase mỗi 3.5 giây (Fallback Polling)

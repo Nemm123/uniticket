@@ -933,6 +933,9 @@ export function listStoredTicketForSale(
     const updatedTickets = [...tickets];
     updatedTickets[index] = updated;
     localStorage.setItem(TICKETS_KEY, JSON.stringify(updatedTickets));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('marketplace_updated'));
+    }
 
     return {
       ok: true,
@@ -965,6 +968,9 @@ export function unlistStoredTicketForSale(
     const updatedTickets = [...tickets];
     updatedTickets[index] = updated;
     localStorage.setItem(TICKETS_KEY, JSON.stringify(updatedTickets));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('marketplace_updated'));
+    }
 
     return {
       ok: true,
