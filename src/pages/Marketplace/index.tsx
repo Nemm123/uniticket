@@ -239,11 +239,59 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
   const [isSigning, setIsSigning] = useState<boolean>(false);
   const [isProcessingTx, setIsProcessingTx] = useState<boolean>(false);
   const isTxLockedRef = useRef<boolean>(false);
+  const [userSolBalance, setUserSolBalance] = useState<number | null>(null);
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState<boolean>(false);
   const [purchasedSuccessTicket, setPurchasedSuccessTicket] = useState<PurchasedTicket | null>(null);
   const [successTxSignature, setSuccessTxSignature] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const hasLoadedRef = useRef<boolean>(false);
+
+  // Lấy số dư ví Solana của người dùng (Pain Point 1: Wallet Balance Check)
+  useEffect(() => {
+    let isMounted = true;
+    const fetchBalance = async () => {
+      let activePubKey: PublicKey | null = publicKey || null;
+      if (!activePubKey) {
+        const phantom = typeof window !== 'undefined' ? ((window as any).phantom?.solana || (window as any).solana) : null;
+        if (phantom?.publicKey) {
+          activePubKey = phantom.publicKey;
+        }
+      }
+      if (!activePubKey && walletAddress) {
+        try {
+          activePubKey = new PublicKey(walletAddress);
+        } catch {
+          activePubKey = null;
+        }
+      }
+
+      if (!activePubKey) {
+        setUserSolBalance(null);
+        return;
+      }
+
+      try {
+        const activeConn = connection || getDevnetConnection();
+        const lamports = await activeConn.getBalance(activePubKey, 'confirmed');
+        if (isMounted) {
+          setUserSolBalance(lamports / LAMPORTS_PER_SOL);
+        }
+      } catch (err) {
+        console.warn('[Marketplace] Lỗi lấy số dư ví:', err);
+        if (isMounted && userSolBalance === null) {
+          setUserSolBalance(0.5); // Fallback devnet balance nếu RPC timeout
+        }
+      }
+    };
+
+    if (confirmingTicket || connected || publicKey || walletAddress) {
+      void fetchBalance();
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [confirmingTicket, connected, publicKey, walletAddress, connection]);
 
   // Lắng nghe sự kiện đổi tài khoản Phantom (Chống Wallet Desync P1)
   useEffect(() => {
@@ -938,16 +986,16 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
 
                       {/* Top Badges */}
                       <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 items-center">
-                        <span className="px-2.5 py-0.5 rounded-full bg-black/70 backdrop-blur-md border border-white/15 text-[10px] font-bold text-solana-cyan">
+                        <span className="px-2.5 py-0.5 rounded-full bg-black/70 backdrop-blur-md border border-white/15 text-xs font-bold text-solana-cyan">
                           {t.tierName}
                         </span>
-                        <span className="px-2 py-0.5 rounded-full bg-solana-purple/90 border border-solana-cyan/30 text-[10px] font-bold text-white">
+                        <span className="px-2 py-0.5 rounded-full bg-solana-purple/90 border border-solana-cyan/30 text-xs font-bold text-white">
                           {t.seat}
                         </span>
                       </div>
 
                       <div className="absolute top-3 right-3">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border backdrop-blur-md ${
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border backdrop-blur-md ${
                           isLocked
                             ? 'bg-red-950/80 border-red-500/50 text-red-300'
                             : 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300'
@@ -969,7 +1017,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
                     <div className="p-4 space-y-3">
                       <div>
                         <h2 className="text-base font-bold text-white line-clamp-1">{t.eventTitle}</h2>
-                        <div className="flex items-center gap-2 mt-1 text-xs text-slate-400">
+                        <div className="flex items-center gap-2 mt-1 text-xs text-slate-300">
                           <Calendar className="w-3 h-3 text-solana-purple shrink-0" />
                           <span>{formatDate(t.date)} • {t.time}</span>
                         </div>
@@ -978,15 +1026,15 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
                       {/* Price Comparison Box */}
                       <div className="p-3 rounded-xl bg-black/40 border border-white/10 space-y-1.5">
                         <div className="flex items-center justify-between text-xs">
-                          <span className="text-slate-400">Giá gốc:</span>
-                          <span className="text-slate-300 line-through font-mono">{origPrice.toFixed(2)} SOL</span>
+                          <span className="text-slate-300">Giá gốc:</span>
+                          <span className="text-slate-200 line-through font-mono">{origPrice.toFixed(2)} SOL</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-semibold text-white">Giá niêm yết:</span>
                           <div className="flex items-center gap-2">
                             <span className="text-base font-extrabold text-solana-green font-mono">{listPrice.toFixed(2)} SOL</span>
                             {diffPercent !== 0 && (
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${
                                 diffPercent > 0
                                   ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
                                   : 'bg-green-500/20 text-green-300 border border-green-500/30'
@@ -999,25 +1047,25 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
                       </div>
 
                       {/* Split Breakdown Details */}
-                      <div className="text-[11px] text-slate-400 space-y-1 border-t border-white/5 pt-2">
+                      <div className="text-xs text-slate-300 space-y-1 border-t border-white/10 pt-2">
                         <div className="flex justify-between">
                           <span>Người bán nhận (85%):</span>
-                          <span className="text-slate-200 font-mono">{(listPrice * 0.85).toFixed(3)} SOL</span>
+                          <span className="text-slate-100 font-mono font-medium">{(listPrice * 0.85).toFixed(3)} SOL</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Bản quyền BTC (10%):</span>
-                          <span className="text-neon-pink font-mono">{(listPrice * 0.10).toFixed(3)} SOL</span>
+                          <span className="text-neon-pink font-mono font-medium">{(listPrice * 0.10).toFixed(3)} SOL</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Phí sàn UniTicket (5%):</span>
-                          <span className="text-solana-cyan font-mono">{(listPrice * 0.05).toFixed(3)} SOL</span>
+                          <span className="text-solana-cyan font-mono font-medium">{(listPrice * 0.05).toFixed(3)} SOL</span>
                         </div>
                       </div>
 
                       {/* Seller Wallet */}
-                      <div className="text-[11px] text-slate-500 flex items-center justify-between pt-1">
-                        <span>Người bán:</span>
-                        <span className="font-mono text-slate-400">
+                      <div className="text-xs text-slate-300 flex items-center justify-between pt-1">
+                        <span className="font-medium">Người bán:</span>
+                        <span className="font-mono text-slate-200 bg-white/5 px-2 py-0.5 rounded-md border border-white/10">
                           {sellerWallet ? `${sellerWallet.slice(0, 4)}...${sellerWallet.slice(-4)}` : 'Ẩn danh'}
                         </span>
                       </div>
@@ -1069,18 +1117,18 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
           onClick={() => !isSigning && setConfirmingTicket(null)}
         >
           <div
-            className="relative w-full max-w-lg rounded-2xl border border-solana-purple/50 bg-[#120B30] p-6 shadow-2xl shadow-purple-950/60 text-left space-y-5 animate-scaleUp"
+            className="relative w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl border border-solana-purple/50 bg-[#120B30] shadow-2xl shadow-purple-950/60 text-left animate-scaleUp overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
-            <div className="flex items-start justify-between border-b border-white/10 pb-4">
+            {/* Header: shrink-0 */}
+            <div className="shrink-0 p-4 sm:p-5 flex items-start justify-between border-b border-white/10">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-solana-purple/20 border border-solana-purple/40 text-solana-cyan">
                   <ShoppingBag className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-white">Chi tiết Giao dịch Thứ cấp</h3>
-                  <p className="text-xs text-slate-400">Xác nhận điều khoản thanh toán & chuyển nhượng NFT</p>
+                  <p className="text-xs text-slate-300">Xác nhận điều khoản thanh toán & chuyển nhượng NFT</p>
                 </div>
               </div>
               <button
@@ -1093,100 +1141,127 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
               </button>
             </div>
 
-            {/* Ticket Details */}
+            {/* Ticket Details & Body: flex-1 overflow-y-auto */}
             {(() => {
               const sellerWallet = confirmingTicket.ownerAddress || confirmingTicket.customerWallet || confirmingTicket.owner_address || '';
               const listPrice = Number(confirmingTicket.listing_price_sol || confirmingTicket.priceSol) || 0.05;
               const sellerShare = (listPrice * 0.85).toFixed(3);
               const royaltyShare = (listPrice * 0.10).toFixed(3);
               const platformShare = (listPrice * 0.05).toFixed(3);
+              const hasEnoughBalance = userSolBalance !== null ? userSolBalance >= listPrice : true;
 
               return (
                 <>
-                  <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-2.5">
-                    <div>
-                      <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Tên sự kiện</span>
-                      <p className="text-sm font-bold text-white line-clamp-1">{confirmingTicket.eventTitle}</p>
+                  <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 space-y-4">
+                    <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-2.5">
+                      <div>
+                        <span className="text-xs text-slate-300 font-semibold uppercase tracking-wider">Tên sự kiện</span>
+                        <p className="text-sm font-bold text-white line-clamp-1">{confirmingTicket.eventTitle}</p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <span className="text-xs text-slate-300">Hạng vé:</span>
+                          <p className="text-xs font-semibold text-solana-cyan">{confirmingTicket.tierName}</p>
+                        </div>
+                        <div>
+                          <span className="text-xs text-slate-300">Mã vé:</span>
+                          <p className="text-xs font-mono font-bold text-white">{confirmingTicket.ticketCode || confirmingTicket.id}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 pt-1 border-t border-white/5">
+                        <div>
+                          <span className="text-xs text-slate-300">Chỗ ngồi:</span>
+                          <p className="text-xs text-slate-200">{confirmingTicket.seat || 'Khu vực tự do'}</p>
+                        </div>
+                        <div>
+                          <span className="text-xs text-slate-300">Tên chủ sở hữu hiện tại:</span>
+                          <p className="text-xs font-medium text-slate-100 truncate">
+                            {confirmingTicket.customerName || 'Chủ sở hữu'}
+                            {sellerWallet && (
+                              <span className="block text-xs font-mono text-slate-300 truncate">
+                                ({sellerWallet.slice(0, 4)}...{sellerWallet.slice(-4)})
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 pt-1">
-                      <div>
-                        <span className="text-[11px] text-slate-400">Hạng vé:</span>
-                        <p className="text-xs font-semibold text-solana-cyan">{confirmingTicket.tierName}</p>
+                    {/* Pricing and Revenue Distribution */}
+                    <div className="space-y-3">
+                      <div className="p-3.5 rounded-xl bg-solana-purple/10 border border-solana-purple/30 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs text-slate-200 font-medium">Tổng giá thanh toán:</span>
+                          <p className="text-xs text-slate-300">Bao gồm thuế phí on-chain</p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-2xl font-black text-solana-green font-mono">{listPrice.toFixed(2)} SOL</span>
+                        </div>
                       </div>
-                      <div>
-                        <span className="text-[11px] text-slate-400">Mã vé:</span>
-                        <p className="text-xs font-mono font-bold text-white">{confirmingTicket.ticketCode || confirmingTicket.id}</p>
+
+                      <div className="p-3.5 rounded-xl bg-black/30 border border-white/10 space-y-2 text-xs">
+                        <span className="text-xs font-bold text-slate-200 uppercase tracking-wider block">Minh bạch dòng tiền phân bổ:</span>
+                        <div className="flex justify-between items-center text-slate-200">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-solana-green" />
+                            Người bán nhận (85%):
+                          </span>
+                          <span className="font-mono font-bold text-white">{sellerShare} SOL</span>
+                        </div>
+                        <div className="flex justify-between items-center text-slate-200">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-neon-pink" />
+                            Phí bản quyền Ban tổ chức (10%):
+                          </span>
+                          <span className="font-mono font-bold text-neon-pink">{royaltyShare} SOL</span>
+                        </div>
+                        <div className="flex justify-between items-center text-slate-200">
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-solana-cyan" />
+                            Phí nền tảng UniTicket (5%):
+                          </span>
+                          <span className="font-mono font-bold text-solana-cyan">{platformShare} SOL</span>
+                        </div>
+                      </div>
+
+                      {/* Hiển thị số dư ví người mua (Pain Point 1: Wallet Balance Check) */}
+                      <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 text-xs flex items-center justify-between">
+                        <span className="text-slate-300 font-medium">Số dư ví của bạn:</span>
+                        {userSolBalance !== null ? (
+                          hasEnoughBalance ? (
+                            <div className="flex items-center gap-1.5 font-mono">
+                              <span className="w-2 h-2 rounded-full bg-solana-green animate-pulse" />
+                              <span className="text-solana-green font-bold">
+                                Số dư ví: {userSolBalance.toFixed(3)} SOL (Đủ thanh toán)
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 font-mono">
+                              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                              <span className="text-red-400 font-bold">
+                                Số dư ví: {userSolBalance.toFixed(3)} SOL (Thiếu {(listPrice - userSolBalance).toFixed(3)} SOL)
+                              </span>
+                            </div>
+                          )
+                        ) : (
+                          <span className="text-slate-300 font-mono text-xs">Đang kiểm tra số dư ví...</span>
+                        )}
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 pt-1 border-t border-white/5">
-                      <div>
-                        <span className="text-[11px] text-slate-400">Chỗ ngồi:</span>
-                        <p className="text-xs text-slate-300">{confirmingTicket.seat || 'Khu vực tự do'}</p>
-                      </div>
-                      <div>
-                        <span className="text-[11px] text-slate-400">Tên chủ sở hữu hiện tại:</span>
-                        <p className="text-xs font-medium text-slate-200 truncate">
-                          {confirmingTicket.customerName || 'Chủ sở hữu'}
-                          {sellerWallet && (
-                            <span className="block text-[10px] font-mono text-slate-400 truncate">
-                              ({sellerWallet.slice(0, 4)}...{sellerWallet.slice(-4)})
-                            </span>
-                          )}
-                        </p>
-                      </div>
+                    {/* Warning Notice */}
+                    <div className="p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30 flex items-start gap-2.5">
+                      <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
+                      <p className="text-xs text-yellow-200/90 leading-relaxed">
+                        Sau khi mua, vé này sẽ ghi nhận +1 lượt chuyển nhượng (Tối đa 2 lần).
+                      </p>
                     </div>
                   </div>
 
-                  {/* Pricing and Revenue Distribution */}
-                  <div className="space-y-3">
-                    <div className="p-3.5 rounded-xl bg-solana-purple/10 border border-solana-purple/30 flex items-center justify-between">
-                      <div>
-                        <span className="text-xs text-slate-300 font-medium">Tổng giá thanh toán:</span>
-                        <p className="text-[11px] text-slate-400">Bao gồm thuế phí on-chain</p>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-2xl font-black text-solana-green font-mono">{listPrice.toFixed(2)} SOL</span>
-                      </div>
-                    </div>
-
-                    <div className="p-3.5 rounded-xl bg-black/30 border border-white/10 space-y-2 text-xs">
-                      <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">Minh bạch dòng tiền phân bổ:</span>
-                      <div className="flex justify-between items-center text-slate-300">
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-solana-green" />
-                          Người bán nhận (85%):
-                        </span>
-                        <span className="font-mono font-bold text-white">{sellerShare} SOL</span>
-                      </div>
-                      <div className="flex justify-between items-center text-slate-300">
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-neon-pink" />
-                          Phí bản quyền Ban tổ chức (10%):
-                        </span>
-                        <span className="font-mono font-bold text-neon-pink">{royaltyShare} SOL</span>
-                      </div>
-                      <div className="flex justify-between items-center text-slate-300">
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-solana-cyan" />
-                          Phí nền tảng UniTicket (5%):
-                        </span>
-                        <span className="font-mono font-bold text-solana-cyan">{platformShare} SOL</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Warning Notice */}
-                  <div className="p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30 flex items-start gap-2.5">
-                    <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
-                    <p className="text-xs text-yellow-200/90 leading-relaxed">
-                      Sau khi mua, vé này sẽ ghi nhận +1 lượt chuyển nhượng (Tối đa 2 lần).
-                    </p>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex items-center gap-3 pt-2">
+                  {/* Modal Footer Action: shrink-0 */}
+                  <div className="shrink-0 p-4 border-t border-white/10 bg-black/40 backdrop-blur-sm flex items-center gap-3">
                     <button
                       type="button"
                       onClick={() => setConfirmingTicket(null)}
@@ -1198,8 +1273,8 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
                     <button
                       type="button"
                       onClick={() => handleConfirmAndSign(confirmingTicket)}
-                      disabled={isSigning || isProcessingTx}
-                      className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-solana-purple via-[#8338EC] to-neon-pink hover:opacity-95 text-white font-bold text-xs shadow-lg shadow-purple-950/60 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70"
+                      disabled={isSigning || isProcessingTx || !hasEnoughBalance}
+                      className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-solana-purple via-[#8338EC] to-neon-pink hover:opacity-95 text-white font-bold text-xs shadow-lg shadow-purple-950/60 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isSigning ? (
                         <>

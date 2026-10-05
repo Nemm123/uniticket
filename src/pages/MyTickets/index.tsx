@@ -758,10 +758,11 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
           onClick={() => setListingModalTicket(null)}
         >
           <div 
-            className="relative w-full max-w-md rounded-2xl border border-solana-purple/50 bg-[#120B30] p-6 shadow-2xl text-left space-y-5"
+            className="relative w-full max-w-md max-h-[90vh] flex flex-col rounded-2xl border border-solana-purple/50 bg-[#120B30] shadow-2xl text-left overflow-hidden animate-scaleUp"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+            {/* Modal Header: shrink-0 */}
+            <div className="shrink-0 p-4 sm:p-5 flex items-center justify-between border-b border-white/10">
               <div className="flex items-center gap-2">
                 <Tag className="w-5 h-5 text-neon-pink" />
                 <h3 className="text-base font-bold text-white">Đăng bán lại vé trên Chợ Vé</h3>
@@ -771,90 +772,94 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
               </button>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 text-xs space-y-1">
-              <h4 className="font-bold text-white text-sm">{listingModalTicket.eventTitle}</h4>
-              <p className="text-solana-cyan">{listingModalTicket.tierName} • {listingModalTicket.seat}</p>
-              <p className="text-slate-400">Giá gốc: <span className="font-mono text-white">{listingModalTicket.priceSol} SOL</span></p>
+            {/* Modal Body: flex-1 overflow-y-auto */}
+            <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-4">
+              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 text-xs space-y-1">
+                <h4 className="font-bold text-white text-sm">{listingModalTicket.eventTitle}</h4>
+                <p className="text-solana-cyan font-medium">{listingModalTicket.tierName} • {listingModalTicket.seat}</p>
+                <p className="text-slate-300">Giá gốc: <span className="font-mono text-white font-bold">{listingModalTicket.priceSol} SOL</span></p>
+              </div>
+
+              {(() => {
+                const originalPrice = Number(listingModalTicket.priceSol) || 0.05;
+                const priceValidationError = getListingPriceValidationError(listingPriceInput, originalPrice);
+
+                return (
+                  <>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-300">Giá bạn muốn bán trên Chợ (SOL):</label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          max="100"
+                          value={listingPriceInput}
+                          onChange={(e) => setListingPriceInput(e.target.value)}
+                          className={`w-full bg-[#180E3D] border ${
+                            priceValidationError ? 'border-red-500/80 focus:border-red-500' : 'border-solana-purple/40 focus:border-solana-cyan'
+                          } rounded-xl px-4 py-2.5 text-sm font-mono text-white focus:outline-none transition-colors`}
+                          placeholder="VD: 0.1"
+                        />
+                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-solana-cyan">SOL</span>
+                      </div>
+                      {priceValidationError && (
+                        <div className="flex items-center gap-1.5 text-xs text-red-400 mt-1">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                          <span>{priceValidationError}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* BẢNG TÍNH MINH BẠCH DÒNG TIỀN */}
+                    {(() => {
+                      const p = parseFloat(listingPriceInput) || 0;
+                      const royalty = p * 0.10;
+                      const platform = p * 0.05;
+                      const net = p * 0.85;
+                      return (
+                        <div className="p-3.5 rounded-xl bg-solana-purple/10 border border-solana-purple/30 text-xs space-y-2">
+                          <span className="text-xs font-bold text-slate-200 uppercase tracking-wider block">
+                            Bảng tính minh bạch dòng tiền:
+                          </span>
+                          <div className="flex justify-between text-slate-200">
+                            <span>Phí bản quyền BTC (10%):</span>
+                            <span className="font-mono text-neon-pink font-semibold">-{royalty.toFixed(3)} SOL</span>
+                          </div>
+                          <div className="flex justify-between text-slate-200">
+                            <span>Phí nền tảng (5%):</span>
+                            <span className="font-mono text-solana-cyan font-semibold">-{platform.toFixed(3)} SOL</span>
+                          </div>
+                          <div className="border-t border-white/10 pt-2 flex justify-between font-bold text-white">
+                            <span>Thực nhận về ví (85%):</span>
+                            <span className="font-mono text-solana-green text-sm">+{net.toFixed(3)} SOL</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </>
+                );
+              })()}
             </div>
 
-            {(() => {
-              const originalPrice = Number(listingModalTicket.priceSol) || 0.05;
-              const priceValidationError = getListingPriceValidationError(listingPriceInput, originalPrice);
-
-              return (
-                <>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-300">Giá bạn muốn bán trên Chợ (SOL):</label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        max="100"
-                        value={listingPriceInput}
-                        onChange={(e) => setListingPriceInput(e.target.value)}
-                        className={`w-full bg-[#180E3D] border ${
-                          priceValidationError ? 'border-red-500/80 focus:border-red-500' : 'border-solana-purple/40 focus:border-solana-cyan'
-                        } rounded-xl px-4 py-2.5 text-sm font-mono text-white focus:outline-none transition-colors`}
-                        placeholder="VD: 0.1"
-                      />
-                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-solana-cyan">SOL</span>
-                    </div>
-                    {priceValidationError && (
-                      <div className="flex items-center gap-1.5 text-xs text-red-400 mt-1">
-                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                        <span>{priceValidationError}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* BẢNG TÍNH MINH BẠCH DÒNG TIỀN */}
-                  {(() => {
-                    const p = parseFloat(listingPriceInput) || 0;
-                    const royalty = p * 0.10;
-                    const platform = p * 0.05;
-                    const net = p * 0.85;
-                    return (
-                      <div className="p-3.5 rounded-xl bg-solana-purple/10 border border-solana-purple/30 text-xs space-y-2">
-                        <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
-                          Bảng tính minh bạch dòng tiền:
-                        </span>
-                        <div className="flex justify-between text-slate-300">
-                          <span>Phí bản quyền BTC (10%):</span>
-                          <span className="font-mono text-neon-pink">-{royalty.toFixed(3)} SOL</span>
-                        </div>
-                        <div className="flex justify-between text-slate-300">
-                          <span>Phí nền tảng (5%):</span>
-                          <span className="font-mono text-solana-cyan">-{platform.toFixed(3)} SOL</span>
-                        </div>
-                        <div className="border-t border-white/10 pt-2 flex justify-between font-bold text-white">
-                          <span>Thực nhận về ví (85%):</span>
-                          <span className="font-mono text-solana-green text-sm">+{net.toFixed(3)} SOL</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  <div className="flex items-center gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setListingModalTicket(null)}
-                      className="flex-1 py-2.5 rounded-xl border border-white/10 text-xs font-semibold text-slate-300 hover:bg-white/5"
-                    >
-                      Hủy
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleConfirmListing}
-                      disabled={isProcessingAction || Boolean(priceValidationError)}
-                      className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-solana-purple to-neon-pink text-xs font-bold text-white shadow-lg hover:opacity-95 disabled:opacity-50"
-                    >
-                      {isProcessingAction ? 'Đang lưu...' : 'Xác nhận niêm yết'}
-                    </button>
-                  </div>
-                </>
-              );
-            })()}
+            {/* Modal Footer Action: shrink-0 */}
+            <div className="shrink-0 p-4 border-t border-white/10 bg-black/40 backdrop-blur-sm flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setListingModalTicket(null)}
+                className="flex-1 py-2.5 rounded-xl border border-white/10 text-xs font-semibold text-slate-300 hover:bg-white/5"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmListing}
+                disabled={isProcessingAction || Boolean(getListingPriceValidationError(listingPriceInput, Number(listingModalTicket.priceSol) || 0.05))}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-solana-purple to-neon-pink text-xs font-bold text-white shadow-lg hover:opacity-95 disabled:opacity-50"
+              >
+                {isProcessingAction ? 'Đang lưu...' : 'Xác nhận niêm yết'}
+              </button>
+            </div>
           </div>
         </div>
       )}
