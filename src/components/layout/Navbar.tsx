@@ -30,6 +30,7 @@ import { LanguageSwitcher } from '../common/LanguageSwitcher';
 import { DatabaseStatusBadge } from '../common/DatabaseStatusBadge';
 import { useTranslation } from '../../i18n';
 import { formatSolBalance, SOLANA_DEVNET_FAUCET_URL } from '../../services/solanaClient';
+import { FanQuestModal, getFanPoints } from '../quests/FanQuestModal';
 
 interface NavbarProps {
   currentPage: string;
@@ -89,6 +90,18 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const activeWallet = internalWalletAddress;
   const activeBalance = internalSolBalance;
+
+  const [isFanQuestOpen, setIsFanQuestOpen] = useState(false);
+  const [fanPoints, setFanPoints] = useState<number>(() => getFanPoints(walletAddress));
+
+  useEffect(() => {
+    setFanPoints(getFanPoints(walletAddress));
+    const handlePointsUpdated = () => {
+      setFanPoints(getFanPoints(walletAddress));
+    };
+    window.addEventListener('uniticket-fan-points-updated', handlePointsUpdated);
+    return () => window.removeEventListener('uniticket-fan-points-updated', handlePointsUpdated);
+  }, [walletAddress]);
 
   const handleDisconnect = async () => {
     try {
@@ -435,6 +448,23 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
+          {/* Nút Fan Quest Hub trên Mobile */}
+          <button
+            type="button"
+            onClick={() => {
+              setMobileMenuOpen(false);
+              setIsFanQuestOpen(true);
+            }}
+            className="flex w-full items-center justify-between px-3.5 py-2.5 rounded-xl border border-purple-500/30 bg-gradient-to-r from-purple-950/40 via-purple-900/20 to-solana-purple/20 text-xs font-bold text-white shadow-sm active:scale-95 transition-all"
+          >
+            <span className="flex items-center gap-1.5">
+              <span>🎯 Fan Quest</span>
+            </span>
+            <span className="bg-purple-500/20 text-purple-300 text-xs px-2 py-0.5 rounded-full border border-purple-500/30 font-mono">
+              +{fanPoints} pts
+            </span>
+          </button>
+
           {/* Ngôn ngữ (VI / EN) */}
           <div className="flex items-center justify-between rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs">
             <div className="flex items-center gap-2.5 text-slate-300 font-medium">
@@ -703,6 +733,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
+            {/* Nút Fan Quest Hub */}
+            <button
+              type="button"
+              onClick={() => setIsFanQuestOpen(true)}
+              title="Mở Fan Quest Hub - Tương tác nhận UniPoint"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-purple-500/30 hover:border-purple-500/60 bg-gradient-to-r from-purple-950/40 via-purple-900/20 to-solana-purple/20 hover:bg-purple-900/40 text-xs font-bold text-white shadow-sm transition-all active:scale-95 shrink-0"
+            >
+              <span>🎯 Fan Quest</span>
+              <span className="bg-purple-500/20 text-purple-300 text-xs px-2 py-0.5 rounded-full border border-purple-500/30 font-mono">
+                +{fanPoints} pts
+              </span>
+            </button>
+
             {/* CỤM VÍ GÓC PHẢI DẠNG PILL: [Devnet | {balance} SOL] + [Address] + [Logout] */}
             {activeWallet ? (
               <div className="inline-flex items-center gap-1 p-0.5 rounded-full bg-[#120B30] border border-solana-purple/40 text-xs font-mono shadow-inner select-none">
@@ -787,6 +830,12 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
     </header>
     {mobileNavigation}
+    <FanQuestModal
+      isOpen={isFanQuestOpen}
+      onClose={() => setIsFanQuestOpen(false)}
+      walletAddress={walletAddress}
+      onPointsUpdated={(newPts) => setFanPoints(newPts)}
+    />
     </>
   );
 };
