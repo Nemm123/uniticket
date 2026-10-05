@@ -14,6 +14,7 @@ import {
   X,
   RefreshCw,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { PurchasedTicket } from '../../types';
 import * as storage from '../../utils/storage';
 import { getStoredPurchasedTickets } from '../../utils/storage';
@@ -463,16 +464,39 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
             );
 
             return (
-              <div key={ticket.id} className="rounded-2xl border border-solana-purple/30 bg-[#120B30] p-4 shadow-xl flex flex-col justify-between">
+              <div
+                key={ticket.id}
+                className="relative rounded-2xl border border-purple-500/25 hover:border-purple-500/60 hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] bg-gradient-to-br from-[#120B30] via-[#0D0724] to-[#170C3D] p-4 sm:p-5 shadow-xl flex flex-col justify-between transition-all duration-300 group overflow-hidden"
+              >
+                {/* Glow background orb */}
+                <div className="pointer-events-none absolute -top-12 -right-12 h-36 w-36 rounded-full bg-solana-purple/15 blur-2xl group-hover:bg-solana-purple/25 transition-all" />
+
                 <div>
-                  <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
-                    <div className="min-w-0">
-                      <h2 className="break-words text-base font-bold text-white">{ticket.eventTitle}</h2>
-                      <p className="mt-1 text-xs text-solana-cyan">{ticket.tierName} • {ticket.seat}</p>
+                  {/* VIP Ticket Header */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black tracking-widest text-solana-cyan uppercase font-mono bg-solana-cyan/10 px-2 py-0.5 rounded border border-solana-cyan/30">
+                          VIP TICKET
+                        </span>
+                        <h2 className="break-words text-base sm:text-lg font-bold text-white">{ticket.eventTitle}</h2>
+                      </div>
+                      <p className="mt-1 text-xs text-solana-cyan font-medium">{ticket.tierName} • {ticket.seat}</p>
                     </div>
 
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* Tem bảo mật Holographic óng ánh */}
+                      <div className="hologram-badge rounded-xl border border-white/40 px-3 py-1 shadow-md flex items-center gap-1.5 select-none relative overflow-hidden">
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/35 to-transparent -skew-x-12 animate-pulse pointer-events-none" />
+                        <ShieldCheck className="w-4 h-4 text-white drop-shadow-[0_0_6px_rgba(255,255,255,0.9)]" />
+                        <div className="leading-tight hidden sm:block">
+                          <span className="block text-[9px] font-black uppercase tracking-wider text-white drop-shadow">VIP SECURE PASS</span>
+                          <span className="block text-[8px] font-mono text-cyan-100">SOLANA DEVNET</span>
+                        </div>
+                      </div>
+
+                      {/* Trạng thái vé */}
+                      <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
                         isUsedTicket
                           ? 'border-solana-green/40 bg-solana-green/15 text-solana-green'
                           : isPendingAcceptance
@@ -501,98 +525,126 @@ export const MyTicketsPage: React.FC<MyTicketsProps> = ({
                     </div>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
-                    <div className="space-y-1.5 text-xs text-slate-300">
-                      <p><span className="text-slate-500">{t('myTickets.buyer')}</span> {ticket.customerName}</p>
-                      <p><span className="text-slate-500">{t('myTickets.ticketCode')}</span> <span className="font-mono text-white">{ticket.ticketCode}</span></p>
-                      <p><span className="text-slate-500">{t('myTickets.wallet')}</span> {ticket.customerWallet ? `${ticket.customerWallet.slice(0, 4)}...${ticket.customerWallet.slice(-4)}` : 'N/A'}</p>
-                      <p><span className="text-slate-500">{t('myTickets.purchaseDate')}</span> {formatDate(ticket.purchaseDate || ticket.purchasedAt, { dateStyle: 'short', timeStyle: 'short' })}</p>
-                      <p><span className="text-slate-500">{t('myTickets.venue')}</span> {ticket.venue}, {ticket.city}</p>
+                  {/* Body vé & Cuống vé với Nét đứt vé xé */}
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-5 items-stretch">
+                    {/* Phần thân vé (Ticket Body) */}
+                    <div className="space-y-2 text-xs text-slate-300">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                        <p><span className="text-slate-500">{t('myTickets.buyer')}</span> <span className="font-semibold text-white">{ticket.customerName}</span></p>
+                        <p><span className="text-slate-500">{t('myTickets.ticketCode')}</span> <span className="font-mono font-bold text-solana-cyan bg-solana-cyan/10 px-1.5 py-0.5 rounded border border-solana-cyan/30">{ticket.ticketCode}</span></p>
+                      </div>
+                      <p><span className="text-slate-500">{t('myTickets.wallet')}</span> <span className="font-mono text-slate-300">{ticket.customerWallet ? `${ticket.customerWallet.slice(0, 6)}...${ticket.customerWallet.slice(-6)}` : 'N/A'}</span></p>
+                      <p><span className="text-slate-500">{t('myTickets.purchaseDate')}</span> <span className="text-slate-200">{formatDate(ticket.purchaseDate || ticket.purchasedAt, { dateStyle: 'short', timeStyle: 'short' })}</span></p>
+                      <p><span className="text-slate-500">{t('myTickets.venue')}</span> <span className="text-slate-200">{ticket.venue}, {ticket.city}</span></p>
                     </div>
 
-                    <div className="flex flex-col items-start gap-2 sm:items-end">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {/* Nút Show QR */}
-                        <button
-                          onClick={() => onSelectQrTicket?.(ticket)}
-                          className="min-h-10 rounded-xl border border-solana-cyan/40 bg-solana-cyan/10 px-3.5 py-1.5 text-xs font-bold text-solana-cyan hover:bg-solana-cyan/20 transition-colors flex items-center gap-1.5"
-                        >
-                          <QrCode className="h-3.5 w-3.5" />
-                          <span>{t('myTickets.showQr')}</span>
-                        </button>
+                    {/* Đường nét đứt xé vé (Perforated Tear Line) & Cuống vé xé */}
+                    <div className="border-t-2 md:border-t-0 md:border-l-2 border-dashed border-purple-500/30 pt-4 md:pt-0 md:pl-5 flex flex-col sm:flex-row md:flex-col items-center justify-between gap-3 relative">
+                      {/* Decorative Ticket Notches */}
+                      <div className="hidden md:block absolute -top-6 -left-2 w-4 h-4 rounded-full bg-[#070412] border-b border-purple-500/30" />
+                      <div className="hidden md:block absolute -bottom-6 -left-2 w-4 h-4 rounded-full bg-[#070412] border-t border-purple-500/30" />
 
-                        {/* Nút Chuyển nhượng vé & Đăng bán lại */}
-                        {!isUsedTicket && (
-                          <>
-                            {isTransferLocked ? (
-                              <span className="px-2.5 py-1 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-[11px] font-bold flex items-center gap-1">
-                                <span>🔒 Đã khóa chuyển nhượng (Transfer Locked)</span>
-                              </span>
-                            ) : isPendingAcceptance ? (
-                              <div className="flex items-center gap-2">
-                                <span className="text-[11px] text-yellow-300 bg-yellow-950/60 border border-yellow-500/40 px-2.5 py-1 rounded-xl">
-                                  Đang chờ ví {ticket.pending_recipient ? `${ticket.pending_recipient.slice(0, 4)}...${ticket.pending_recipient.slice(-4)}` : 'người nhận'} chấp nhận
+                      {/* Mã QR có tia quét neon mờ */}
+                      <div
+                        onClick={() => onSelectQrTicket?.(ticket)}
+                        className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl bg-white p-2 shadow-2xl border-2 border-solana-cyan/40 cursor-pointer group/qr overflow-hidden flex items-center justify-center shrink-0 hover:scale-105 transition-transform"
+                        title="Bấm để phóng to mã QR check-in"
+                      >
+                        <QRCodeSVG value={`UTK:${ticket.ticketCode}:${ticket.id}`} size={92} level="M" />
+                        {/* Tia quét laser neon */}
+                        <div className="pointer-events-none absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-solana-cyan to-transparent opacity-95 shadow-[0_0_10px_#00F5FF] animate-scanner" />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/qr:opacity-100 transition-opacity flex flex-col items-center justify-center text-white backdrop-blur-[1px]">
+                          <QrCode className="w-5 h-5 text-solana-cyan animate-pulse mb-0.5" />
+                          <span className="text-[10px] font-extrabold text-white">Xem QR</span>
+                        </div>
+                      </div>
+
+                      {/* Các nút hành động trên cuống vé */}
+                      <div className="flex flex-col items-center md:items-end gap-2 w-full sm:w-auto">
+                        <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
+                          {/* Nút Show QR */}
+                          <button
+                            onClick={() => onSelectQrTicket?.(ticket)}
+                            className="min-h-9 rounded-xl border border-solana-cyan/40 bg-solana-cyan/10 px-3 py-1.5 text-xs font-bold text-solana-cyan hover:bg-solana-cyan/20 transition-colors flex items-center gap-1.5"
+                          >
+                            <QrCode className="h-3.5 w-3.5" />
+                            <span>{t('myTickets.showQr')}</span>
+                          </button>
+
+                          {/* Nút Chuyển nhượng vé & Đăng bán lại */}
+                          {!isUsedTicket && (
+                            <>
+                              {isTransferLocked ? (
+                                <span className="px-2.5 py-1 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-[11px] font-bold flex items-center gap-1">
+                                  <span>🔒 Đã khóa chuyển nhượng (Transfer Locked)</span>
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRevokeTicket(ticket)}
-                                  disabled={isProcessingAction}
-                                  className="min-h-10 rounded-xl border border-red-500/40 bg-red-950/40 px-3 py-1.5 text-xs font-bold text-red-300 hover:bg-red-900/60 transition-colors"
-                                >
-                                  Thu hồi vé (Revoke)
-                                </button>
-                              </div>
-                            ) : (
-                              <>
-                                {/* Nút Chuyển nhượng */}
-                                <button
-                                  onClick={() => onSelectTransferTicket?.(ticket)}
-                                  className="min-h-10 rounded-xl border border-solana-purple/40 bg-solana-purple/20 px-3 py-1.5 text-xs font-bold text-purple-200 hover:bg-solana-purple/35 hover:text-white transition-colors flex items-center gap-1.5"
-                                  title="Chuyển nhượng vé cho ví Solana khác"
-                                >
-                                  <Send className="h-3.5 w-3.5 text-solana-cyan" />
-                                  <span>{t('myTickets.transferTicket')}</span>
-                                </button>
-
-                                {/* Nút Đăng bán lại / Hủy niêm yết */}
-                                {isListed ? (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="px-2 py-1 rounded-xl bg-solana-purple/20 border border-solana-purple/40 text-xs font-bold text-solana-cyan">
-                                      {ticket.listing_price_sol || ticket.priceSol} SOL
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleUnlistTicket(ticket)}
-                                      disabled={isProcessingAction}
-                                      className="min-h-10 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-300 hover:bg-white/10"
-                                    >
-                                      Hủy bán
-                                    </button>
-                                  </div>
-                                ) : (
+                              ) : isPendingAcceptance ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] text-yellow-300 bg-yellow-950/60 border border-yellow-500/40 px-2.5 py-1 rounded-xl">
+                                    Đang chờ ví {ticket.pending_recipient ? `${ticket.pending_recipient.slice(0, 4)}...${ticket.pending_recipient.slice(-4)}` : 'người nhận'} chấp nhận
+                                  </span>
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      setListingModalTicket(ticket);
-                                      setListingPriceInput(String(ticket.listing_price_sol || ticket.priceSol || 0.1));
-                                    }}
-                                    className="min-h-10 rounded-xl border border-neon-pink/40 bg-neon-pink/15 px-3 py-1.5 text-xs font-bold text-pink-200 hover:bg-neon-pink/30 hover:text-white transition-colors flex items-center gap-1.5"
-                                    title="Đăng bán vé lại trên Chợ Vé Thứ Cấp"
+                                    onClick={() => handleRevokeTicket(ticket)}
+                                    disabled={isProcessingAction}
+                                    className="min-h-9 rounded-xl border border-red-500/40 bg-red-950/40 px-3 py-1.5 text-xs font-bold text-red-300 hover:bg-red-900/60 transition-colors"
                                   >
-                                    <Tag className="h-3.5 w-3.5 text-neon-pink" />
-                                    <span>Đăng bán lại</span>
+                                    Thu hồi vé (Revoke)
                                   </button>
-                                )}
-                              </>
-                            )}
-                          </>
+                                </div>
+                              ) : (
+                                <>
+                                  {/* Nút Chuyển nhượng */}
+                                  <button
+                                    onClick={() => onSelectTransferTicket?.(ticket)}
+                                    className="min-h-9 rounded-xl border border-solana-purple/40 bg-solana-purple/20 px-3 py-1.5 text-xs font-bold text-purple-200 hover:bg-solana-purple/35 hover:text-white transition-colors flex items-center gap-1.5"
+                                    title="Chuyển nhượng vé cho ví Solana khác"
+                                  >
+                                    <Send className="h-3.5 w-3.5 text-solana-cyan" />
+                                    <span>{t('myTickets.transferTicket')}</span>
+                                  </button>
+
+                                  {/* Nút Đăng bán lại / Hủy niêm yết */}
+                                  {isListed ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="px-2 py-1 rounded-xl bg-solana-purple/20 border border-solana-purple/40 text-xs font-bold text-solana-cyan">
+                                        {ticket.listing_price_sol || ticket.priceSol} SOL
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUnlistTicket(ticket)}
+                                        disabled={isProcessingAction}
+                                        className="min-h-9 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-300 hover:bg-white/10"
+                                      >
+                                        Hủy bán
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setListingModalTicket(ticket);
+                                        setListingPriceInput(String(ticket.listing_price_sol || ticket.priceSol || 0.1));
+                                      }}
+                                      className="min-h-9 rounded-xl border border-neon-pink/40 bg-neon-pink/15 px-3 py-1.5 text-xs font-bold text-pink-200 hover:bg-neon-pink/30 hover:text-white transition-colors flex items-center gap-1.5"
+                                      title="Đăng bán vé lại trên Chợ Vé Thứ Cấp"
+                                    >
+                                      <Tag className="h-3.5 w-3.5 text-neon-pink" />
+                                      <span>Đăng bán lại</span>
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            </>
+                          )}
+                        </div>
+
+                        {isUsedTicket && (ticket.checkInTime || (ticket as any).checked_in_at) && (
+                          <span className="text-[11px] text-solana-green">
+                            {t('myTickets.checkedInAt', { time: formatDate(ticket.checkInTime || (ticket as any).checked_in_at, { dateStyle: 'short', timeStyle: 'short' }) })}
+                          </span>
                         )}
                       </div>
-                      {isUsedTicket && (ticket.checkInTime || (ticket as any).checked_in_at) && (
-                        <span className="text-[11px] text-solana-green">
-                          {t('myTickets.checkedInAt', { time: formatDate(ticket.checkInTime || (ticket as any).checked_in_at, { dateStyle: 'short', timeStyle: 'short' }) })}
-                        </span>
-                      )}
                     </div>
                   </div>
                 </div>

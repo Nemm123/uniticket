@@ -424,7 +424,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }
               }}
               disabled={isConnectingWallet}
-              className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-solana-purple via-neon-pink to-solana-cyan px-3 py-2.5 text-xs font-bold text-white shadow-lg active:scale-95 transition-all disabled:opacity-70 disabled:cursor-wait"
+              className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#9945FF] to-[#14F195] px-3 py-2.5 text-xs font-extrabold text-white shadow-lg active:scale-95 transition-all disabled:opacity-70 disabled:cursor-wait"
             >
               {isConnectingWallet ? (
                 <Loader2 className="h-4 w-4 animate-spin text-white" />
@@ -754,7 +754,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 disabled={isConnectingWallet}
                 className="relative group overflow-hidden px-3.5 py-1.5 lg:px-4 lg:py-2 rounded-xl font-bold text-xs sm:text-sm text-white transition-all duration-300 shadow-lg shadow-purple-900/30 hover:shadow-solana-purple/50 active:scale-95 disabled:opacity-75 disabled:cursor-wait"
               >
-                <div className="absolute inset-0 bg-gradient-to-r from-solana-purple via-neon-pink to-solana-green opacity-90 group-hover:opacity-100 transition-opacity" />
+                <div className="absolute inset-0 bg-gradient-to-r from-[#9945FF] to-[#14F195] opacity-90 group-hover:opacity-100 transition-opacity" />
                 <div className="absolute inset-[1px] bg-[#120B30] rounded-[11px] group-hover:bg-opacity-0 transition-all duration-300" />
                 <div className="relative flex items-center gap-1.5">
                   {isConnectingWallet ? (

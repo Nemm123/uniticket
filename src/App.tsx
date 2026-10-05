@@ -4,6 +4,7 @@ import { Footer } from './components/layout/Footer';
 import { WalletModal, getPhantomProvider, safeConnectPhantom, logPhantomDebug, extractWalletErrorMessage } from './components/common/WalletModal';
 import { CheckoutModal } from './components/checkout/CheckoutModal';
 import { ToastContainer } from './components/common/Toast';
+import { LiveActivityBanner } from './components/common/LiveActivityBanner';
 import { HomePage } from './pages/Home';
 import { EventsPage } from './pages/Events';
 import { EventDetailPage } from './pages/EventDetail';
@@ -818,6 +819,11 @@ export function App() {
         solBalance={solBalance}
         isConnectingWallet={isConnectingWallet}
       />
+
+      {/* Dải Ticker Hoạt động Web3 thời gian thực (Live Activity Banner) */}
+      {(currentPage === 'home' || currentPage === 'marketplace') && (
+        <LiveActivityBanner onNavigateMarketplace={() => handleNavigate('marketplace')} />
+      )}
 
       {/* Nội dung trang động */}
       <main className="flex-1">

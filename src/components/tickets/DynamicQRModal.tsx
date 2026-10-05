@@ -134,9 +134,11 @@ export const DynamicQRModal: React.FC<DynamicQRModalProps> = ({
           </p>
         </div>
 
-        {/* Khung hiển thị mã QR động */}
-        <div className="relative mx-auto inline-flex max-w-full rounded-2xl bg-white p-3.5 shadow-2xl border-2 border-solana-purple/30 group">
+        {/* Khung hiển thị mã QR động với tia quét laser neon mờ */}
+        <div className="relative mx-auto inline-flex max-w-full rounded-2xl bg-white p-3.5 shadow-2xl border-2 border-solana-cyan/40 group overflow-hidden">
           <QRCodeSVG value={qrPayload} size={230} level="M" />
+          {/* Tia quét laser neon mờ */}
+          <div className="pointer-events-none absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-solana-cyan to-transparent opacity-90 shadow-[0_0_12px_#00F5FF] animate-scanner" />
         </div>
 
         {/* Thanh đếm ngược trực quan (Progress Bar) */}

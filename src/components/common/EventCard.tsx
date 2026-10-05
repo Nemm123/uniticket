@@ -66,7 +66,7 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onClick, onNavigate
           onClick(event.id);
         }
       }}
-      className="group relative h-full flex flex-col justify-between overflow-hidden rounded-2xl border border-white/10 bg-[#110A2B]/85 text-left shadow-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-solana-purple/50 hover:bg-[#180E3D] hover:shadow-2xl hover:shadow-purple-950/50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-solana-cyan/50"
+      className="group relative h-full flex flex-col justify-between overflow-hidden rounded-2xl border border-purple-500/20 hover:border-purple-500/60 hover:shadow-[0_0_25px_rgba(168,85,247,0.25)] bg-[#110A2B]/85 text-left shadow-xl transition-all duration-300 hover:-translate-y-1.5 hover:bg-[#180E3D] cursor-pointer focus:outline-none focus:ring-2 focus:ring-solana-cyan/50"
     >
       {/* Background glow orb on hover */}
       <div className="pointer-events-none absolute -top-10 -right-10 h-36 w-36 rounded-full bg-solana-purple/10 blur-2xl transition-all duration-500 group-hover:bg-solana-purple/25" />

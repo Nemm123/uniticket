@@ -176,3 +176,58 @@
 .animate-slide-left {
   animation: slideInLeft 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Tia quét QR laser neon */
+@keyframes laserScanner {
+  0% {
+    top: 2%;
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    top: 96%;
+    opacity: 0.3;
+  }
+}
+.animate-scanner {
+  animation: laserScanner 2.2s ease-in-out infinite alternate;
+}
+
+/* Tem holographic óng ánh (VIP security badge) */
+@keyframes holoShimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+.hologram-badge {
+  background: linear-gradient(135deg, rgba(20, 241, 149, 0.25), rgba(153, 69, 255, 0.45), rgba(0, 242, 254, 0.35), rgba(255, 0, 122, 0.35));
+  background-size: 300% 300%;
+  animation: holoShimmer 5s ease infinite;
+}
+
+/* Live Activity Ticker Marquee */
+@keyframes marqueeScroll {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+.animate-marquee {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: marqueeScroll 35s linear infinite;
+}
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+

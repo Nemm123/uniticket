@@ -877,7 +877,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
               return (
                 <div
                   key={t.id}
-                  className="rounded-2xl border border-white/10 bg-[#120B30]/90 overflow-hidden shadow-xl hover:border-solana-purple/50 transition-all flex flex-col justify-between"
+                  className="rounded-2xl border border-purple-500/20 hover:border-purple-500/60 hover:shadow-[0_0_25px_rgba(168,85,247,0.25)] bg-[#120B30]/90 overflow-hidden shadow-xl transition-all duration-300 flex flex-col justify-between group"
                 >
                   <div>
                     {/* Event Banner */}
@@ -992,7 +992,7 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
                         type="button"
                         onClick={() => handleOpenConfirmModal(t)}
                         disabled={buyingTicketId === t.id}
-                        className="w-full min-h-11 rounded-xl bg-gradient-to-r from-solana-purple via-[#8338EC] to-neon-pink text-white font-bold text-xs shadow-lg shadow-purple-950/60 hover:opacity-95 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                        className="w-full min-h-11 rounded-xl bg-gradient-to-r from-[#9945FF] via-purple-600 to-[#14F195] text-white font-extrabold text-xs shadow-lg shadow-purple-950/60 hover:shadow-[0_0_20px_rgba(20,241,149,0.35)] hover:opacity-95 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                       >
                         {buyingTicketId === t.id ? (
                           <>
