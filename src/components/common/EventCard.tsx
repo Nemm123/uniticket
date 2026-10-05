@@ -71,8 +71,8 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onClick, onNavigate
       {/* Background glow orb on hover */}
       <div className="pointer-events-none absolute -top-10 -right-10 h-36 w-36 rounded-full bg-solana-purple/10 blur-2xl transition-all duration-500 group-hover:bg-solana-purple/25" />
 
-      {/* Khung ảnh Thumbnail cố định tỷ lệ aspect-[16/9] */}
-      <div className="relative aspect-[16/9] w-full overflow-hidden bg-black/40">
+      {/* Khung ảnh Thumbnail cố định tỷ lệ aspect-video */}
+      <div className="relative aspect-video w-full overflow-hidden bg-black/40">
         <img
           src={event.thumbnailImage || event.bannerImage}
           alt={event.title}
@@ -98,13 +98,6 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onClick, onNavigate
             </span>
           )}
 
-          {/* SOLD OUT badge nổi bật */}
-          {isSoldOut && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-red-600/90 px-2.5 py-0.5 text-[10px] font-extrabold text-white backdrop-blur-md border border-red-400/50 shadow-lg shadow-red-950/60 animate-pulse">
-              <span>🔥 SOLD OUT</span>
-            </span>
-          )}
-
           {/* FOMO Countdown badge */}
           {countdownText && (
             <span className="inline-flex items-center gap-1 rounded-full bg-purple-900/90 px-2 py-0.5 text-[10px] font-bold text-yellow-300 backdrop-blur-md border border-yellow-400/40 shadow-sm animate-pulse">
@@ -114,12 +107,22 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onClick, onNavigate
           )}
         </div>
 
-        {/* Badges top right: NFT Ticket badge */}
-        <div className="absolute top-2.5 right-2.5">
-          <span className="inline-flex items-center gap-1 rounded-full bg-solana-purple/80 px-2.5 py-1 text-[10px] font-bold text-solana-cyan backdrop-blur-md border border-solana-cyan/30 shadow-md">
-            <Sparkles className="h-3 w-3 text-solana-green" />
-            <span>{t('common.nftTicket')}</span>
-          </span>
+        {/* Badges top right: Huy hiệu SOLD OUT hoặc NFT Ticket */}
+        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+          {isSoldOut ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-red-600/90 px-2.5 py-1 text-xs font-bold text-white shadow-lg shadow-red-950/60 backdrop-blur-md border border-red-400/50 animate-pulse"
+              title="HẾT VÉ (SOLD OUT)"
+            >
+              <span>🔥 SOLD OUT</span>
+              <span className="sr-only">HẾT VÉ (SOLD OUT)</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-solana-purple/80 px-2.5 py-1 text-[10px] font-bold text-solana-cyan backdrop-blur-md border border-solana-cyan/30 shadow-md">
+              <Sparkles className="h-3 w-3 text-solana-green" />
+              <span>{t('common.nftTicket')}</span>
+            </span>
+          )}
         </div>
 
         {/* Badges bottom */}
@@ -170,39 +173,35 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onClick, onNavigate
             </div>
           </div>
 
-          {/* Footer CTA */}
+          {/* Footer CTA: Đồng nhất 1 dòng duy nhất cho mọi thẻ */}
           <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-xs gap-2">
+            <span className="text-[11px] text-slate-400 truncate">
+              {event.organizer?.name ? `${t('hero.organizedBy')}: ${event.organizer.name}` : 'UniTicket Web3'}
+            </span>
             {isSoldOut ? (
-              <div className="w-full flex flex-wrap items-center justify-between gap-2">
-                <span className="px-2.5 py-1 rounded-lg bg-red-950/60 text-red-400 border border-red-500/40 text-[11px] font-bold">
-                  HẾT VÉ (SOLD OUT)
-                </span>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (onNavigateMarketplace) {
-                      onNavigateMarketplace();
-                    } else if (typeof window !== 'undefined') {
-                      window.dispatchEvent(new CustomEvent('uniticket-navigate', { detail: 'marketplace' }));
-                      window.location.hash = '#/marketplace';
-                    }
-                  }}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gradient-to-r from-solana-purple to-neon-pink text-white text-xs font-bold shadow-md shadow-pink-950/50 hover:opacity-90 active:scale-95 transition-all"
-                >
-                  <span>Xem Chợ Vé Thứ Cấp (Săn vé trên Chợ Vé →)</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onNavigateMarketplace) {
+                    onNavigateMarketplace();
+                  } else if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('uniticket-navigate', { detail: 'marketplace' }));
+                    window.location.hash = '#/marketplace';
+                  }
+                }}
+                className="inline-flex items-center gap-1 font-semibold text-neon-pink hover:text-pink-300 transition-colors shrink-0"
+                title="Săn vé trên Chợ Vé →"
+              >
+                <span>Săn vé Chợ</span>
+                <span className="sr-only">Săn vé trên Chợ Vé →</span>
+                <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+              </button>
             ) : (
-              <>
-                <span className="text-[11px] text-slate-400 truncate">
-                  {event.organizer?.name ? `${t('hero.organizedBy')}: ${event.organizer.name}` : 'UniTicket Web3'}
-                </span>
-                <span className="inline-flex items-center gap-1 font-semibold text-solana-purple group-hover:text-solana-cyan transition-colors shrink-0">
-                  <span>{t('common.viewDetails')}</span>
-                  <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                </span>
-              </>
+              <span className="inline-flex items-center gap-1 font-semibold text-solana-purple group-hover:text-solana-cyan transition-colors shrink-0">
+                <span>{t('common.viewDetails')}</span>
+                <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+              </span>
             )}
           </div>
         </div>
