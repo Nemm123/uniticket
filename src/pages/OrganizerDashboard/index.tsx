@@ -218,10 +218,23 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
       const walletMatch = (ticket.customerWallet || '').toLowerCase().includes(q);
       const eventMatch = (ticket.eventTitle || '').toLowerCase().includes(q);
       const tierMatch = (ticket.tierName || '').toLowerCase().includes(q);
-
       return codeMatch || nameMatch || walletMatch || eventMatch || tierMatch;
     });
   }, [allTickets, eventFilter, statusFilter, searchQuery]);
+
+  // Attendee Table Pagination (10 tickets per page)
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, eventFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredTickets.length / ITEMS_PER_PAGE));
+  const paginatedTickets = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredTickets.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredTickets, currentPage]);
 
   // Copy helper
   const handleCopy = (text: string, id: string) => {
@@ -352,122 +365,136 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
           </div>
         </header>
 
-        {/* 1. THỐNG KÊ DOANH THU & SỐ LƯỢNG VÉ (4 METRIC CARDS) */}
-        <section aria-label="Organizer Metrics">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        {/* 1. THỐNG KÊ DOANH THU & SỐ LƯỢNG VÉ (BENTO 4 METRIC CARDS + SECONDARY ROYALTY BANNER) */}
+        <section aria-label="Organizer Metrics" className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {/* Card 1: Tổng số vé đã phát hành */}
-            <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#120B30]/90 p-5 shadow-xl transition-all duration-300 hover:border-solana-cyan/50 hover:shadow-solana-cyan/10">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-medium text-slate-400">
-                  {t('organizer.totalTicketsIssued')}
-                </span>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-solana-cyan/10 text-solana-cyan">
-                  <Ticket className="h-5 w-5" />
+            <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#120B30]/90 p-5 shadow-xl transition-all duration-300 hover:border-solana-cyan/50 hover:shadow-solana-cyan/10 h-full flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-semibold text-slate-300">
+                    {t('organizer.totalTicketsIssued')}
+                  </span>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-solana-cyan/10 text-solana-cyan">
+                    <Ticket className="h-5 w-5" />
+                  </div>
                 </div>
+                <p className="mt-4 text-3xl font-black text-white">
+                  {formatNumber(totalCapacity)}
+                </p>
               </div>
-              <p className="mt-4 text-3xl font-black text-white">
-                {formatNumber(totalCapacity)}
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="mt-2 text-xs text-slate-400">
                 {events.length} sự kiện trên hệ thống
               </p>
               <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-solana-cyan/0 via-solana-cyan/40 to-solana-cyan/0 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
 
             {/* Card 2: Số vé đã bán thành công */}
-            <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#120B30]/90 p-5 shadow-xl transition-all duration-300 hover:border-solana-green/50 hover:shadow-solana-green/10">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-medium text-slate-400">
-                  {t('organizer.ticketsSoldSuccess')}
-                </span>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-solana-green/10 text-solana-green">
-                  <CheckCircle2 className="h-5 w-5" />
+            <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#120B30]/90 p-5 shadow-xl transition-all duration-300 hover:border-solana-green/50 hover:shadow-solana-green/10 h-full flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-semibold text-slate-300">
+                    {t('organizer.ticketsSoldSuccess')}
+                  </span>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-solana-green/10 text-solana-green">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </div>
                 </div>
+                <p className="mt-4 text-3xl font-black text-white">
+                  {formatNumber(totalSold)}
+                </p>
               </div>
-              <p className="mt-4 text-3xl font-black text-white">
-                {formatNumber(totalSold)}
-              </p>
-              <p className="mt-1 text-xs text-solana-green">
+              <p className="mt-2 text-xs text-solana-green font-medium">
                 {formatNumber(totalRemaining)} vé còn lại trong kho
               </p>
               <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-solana-green/0 via-solana-green/40 to-solana-green/0 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
 
             {/* Card 3: Tỷ lệ soát vé qua cổng (% Check-in) */}
-            <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#120B30]/90 p-5 shadow-xl transition-all duration-300 hover:border-solana-purple/50 hover:shadow-solana-purple/10">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-medium text-slate-400">
-                  {t('organizer.checkInRate')}
-                </span>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-solana-purple/20 text-solana-purple">
-                  <ClipboardCheck className="h-5 w-5" />
+            <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#120B30]/90 p-5 shadow-xl transition-all duration-300 hover:border-solana-purple/50 hover:shadow-solana-purple/10 h-full flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-semibold text-slate-300">
+                    {t('organizer.checkInRate')}
+                  </span>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-solana-purple/20 text-solana-purple">
+                    <ClipboardCheck className="h-5 w-5" />
+                  </div>
+                </div>
+                <div className="mt-4 flex items-baseline gap-2">
+                  <p className="text-3xl font-black text-white">{checkInRatePercent}%</p>
+                  <span className="text-xs text-slate-400">
+                    ({checkedInTickets} / {effectiveSoldForRatio} vé)
+                  </span>
                 </div>
               </div>
-              <div className="mt-4 flex items-baseline gap-2">
-                <p className="text-3xl font-black text-white">{checkInRatePercent}%</p>
-                <span className="text-xs text-slate-400">
-                  ({checkedInTickets} / {effectiveSoldForRatio} vé)
-                </span>
-              </div>
-              <div className="mt-2.5 h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-solana-purple to-neon-pink transition-all duration-500"
-                  style={{ width: `${Math.min(100, Math.max(0, Number(checkInRatePercent)))}%` }}
-                />
+              <div className="mt-2.5">
+                <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-solana-purple to-neon-pink transition-all duration-500"
+                    style={{ width: `${Math.min(100, Math.max(0, Number(checkInRatePercent)))}%` }}
+                  />
+                </div>
               </div>
               <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-solana-purple/0 via-solana-purple/40 to-solana-purple/0 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
 
             {/* Card 4: Tổng doanh thu nhận được (tính bằng SOL và VNĐ) */}
-            <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#120B30]/90 p-5 shadow-xl transition-all duration-300 hover:border-neon-pink/50 hover:shadow-neon-pink/10">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-medium text-slate-400">
-                  {t('organizer.totalRevenue')}
-                </span>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-neon-pink/10 text-neon-pink">
-                  <Coins className="h-5 w-5" />
+            <div className="group relative overflow-hidden rounded-2xl border border-neon-pink/30 bg-[#120B30]/90 p-5 shadow-xl transition-all duration-300 hover:border-neon-pink/60 hover:shadow-neon-pink/10 h-full flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-semibold text-slate-300">
+                    {t('organizer.totalRevenue')}
+                  </span>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-neon-pink/10 text-neon-pink">
+                    <Coins className="h-5 w-5" />
+                  </div>
                 </div>
+                <p className="mt-4 text-3xl font-black text-neon-pink">
+                  {totalRevenueSol.toFixed(2)} SOL
+                </p>
               </div>
-              <p className="mt-4 text-3xl font-black text-neon-pink">
-                {totalRevenueSol.toFixed(2)} SOL
-              </p>
-              <div className="mt-1 flex items-center justify-between">
+              <div className="mt-2 flex items-center justify-between">
                 <p className="text-xs font-semibold text-slate-200">
                   ≈ {totalRevenueVnd.toLocaleString('vi-VN')} ₫
                 </p>
-                <span className="text-[10px] text-slate-400">1 SOL ≈ 3.8M ₫</span>
+                <span className="text-xs text-slate-400">1 SOL ≈ 3.8M ₫</span>
               </div>
               <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-neon-pink/0 via-neon-pink/40 to-neon-pink/0 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
+          </div>
 
-            {/* Card 5: Bản quyền Thứ cấp (Secondary Royalties) */}
-            <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#120B30]/90 p-5 shadow-xl transition-all duration-300 hover:border-yellow-400/50 hover:shadow-yellow-400/10">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-medium text-slate-400">
-                  Bản quyền Thứ cấp (Secondary Royalties)
-                </span>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-yellow-500/15 text-yellow-300">
-                  <TrendingUp className="h-5 w-5" />
+          {/* Feature Highlight Banner: Bản quyền Thứ cấp (Secondary Royalties) */}
+          <div className="group relative overflow-hidden rounded-2xl border border-yellow-400/40 bg-gradient-to-r from-yellow-950/30 via-[#1a1325] to-[#120B30] p-4 sm:p-5 shadow-xl transition-all hover:border-yellow-400/60">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-yellow-500/15 text-yellow-300 border border-yellow-400/30 shadow-[0_0_15px_rgba(234,179,8,0.15)]">
+                  <TrendingUp className="h-6 w-6" />
                 </div>
-              </div>
-              <p className="mt-4 text-3xl font-black text-yellow-300">
-                +{secondaryRoyaltySol.toFixed(2)} SOL
-              </p>
-              <div className="mt-1 flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-slate-200">
-                    10% chia sẻ từ giao dịch bán lại
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm sm:text-base font-bold text-white">
+                      Bản quyền Thứ cấp (Secondary Royalties)
+                    </h3>
+                    <span className="text-[11px] font-bold text-yellow-300 px-2.5 py-0.5 rounded-full bg-yellow-400/15 border border-yellow-400/30">
+                      10% Royalty Tự Động
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                    Dòng tiền thụ động 10% trích tự động về ví BTC qua Smart Contract mỗi khi khán giả chuyển nhượng hoặc bán lại vé trên Chợ thứ cấp UniTicket.
                   </p>
-                  <span className="text-[10px] font-bold text-solana-cyan px-1.5 py-0.5 rounded bg-solana-cyan/10 border border-solana-cyan/30">
-                    10% Royalty
-                  </span>
                 </div>
-                <p className="text-[11px] text-slate-400">
-                  Dòng tiền thụ động 10% trích tự động về ví BTC qua Smart Contract
-                </p>
               </div>
-              <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-yellow-400/0 via-yellow-400/40 to-yellow-400/0 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t border-white/10 sm:border-0 pt-3 sm:pt-0 shrink-0">
+                <span className="text-2xl sm:text-3xl font-black text-yellow-300">
+                  +{secondaryRoyaltySol.toFixed(2)} SOL
+                </span>
+                <span className="text-xs font-semibold text-slate-300">
+                  ≈ {(secondaryRoyaltySol * 3800000).toLocaleString('vi-VN')} ₫
+                </span>
+              </div>
             </div>
+            <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-yellow-400/0 via-yellow-400/40 to-yellow-400/0 opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
         </section>
 
@@ -666,13 +693,26 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
               <tbody className="divide-y divide-white/5">
                 {filteredTickets.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-slate-400">
-                      <Ticket className="mx-auto h-8 w-8 text-slate-600 mb-2" />
-                      <p>{t('organizer.noAttendeesFound')}</p>
+                    <td colSpan={7} className="p-8 text-center text-slate-300">
+                      <Ticket className="mx-auto h-8 w-8 text-slate-500 mb-2" />
+                      <p className="font-semibold text-white">{t('organizer.noAttendeesFound')}</p>
+                      <p className="text-xs text-slate-400 mt-1">Không có vé nào phù hợp với bộ lọc hiện tại.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery('');
+                          setStatusFilter('all');
+                          setEventFilter('all');
+                        }}
+                        className="mt-3 inline-flex min-h-[36px] items-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-bold text-white hover:bg-white/20 transition-all active:scale-95"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        <span>Xóa bộ lọc (Reset)</span>
+                      </button>
                     </td>
                   </tr>
                 ) : (
-                  filteredTickets.map((ticket) => {
+                  paginatedTickets.map((ticket) => {
                     const checked = isCheckedIn(ticket);
                     const code = ticket.ticketCode || ticket.id;
                     const wallet = ticket.customerWallet || '';
@@ -682,57 +722,57 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                       <tr key={ticket.id} className="hover:bg-white/5 transition-colors">
                         {/* Mã vé */}
                         <td className="px-4 py-3.5 whitespace-nowrap">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-bold text-solana-cyan">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-sm text-solana-cyan">
                               {code}
                             </span>
                             <button
                               type="button"
                               onClick={() => handleCopy(code, `code-${ticket.id}`)}
-                              className="text-slate-400 hover:text-white"
+                              className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
                               title="Sao chép mã vé"
                             >
                               {copiedText === `code-${ticket.id}` ? (
-                                <Check className="h-3 w-3 text-solana-green" />
+                                <Check className="h-3.5 w-3.5 text-solana-green" />
                               ) : (
-                                <Copy className="h-3 w-3" />
+                                <Copy className="h-3.5 w-3.5" />
                               )}
                             </button>
                           </div>
-                          <span className="text-[10px] text-slate-500 block truncate max-w-[140px]">
+                          <span className="text-xs text-slate-300 font-medium block truncate max-w-[160px] mt-0.5">
                             {ticket.eventTitle}
                           </span>
                         </td>
 
                         {/* Tên người mua */}
                         <td className="px-4 py-3.5 whitespace-nowrap">
-                          <span className="font-semibold text-white">
+                          <span className="font-bold text-white text-sm block">
                             {ticket.customerName || 'Khách tham dự'}
                           </span>
                           {ticket.customerEmail && (
-                            <span className="text-[10px] text-slate-500 block truncate max-w-[130px]">
+                            <span className="text-xs text-slate-300 font-medium block truncate max-w-[160px] mt-0.5">
                               {ticket.customerEmail}
                             </span>
                           )}
                         </td>
 
                         {/* Địa chỉ ví Solana */}
-                        <td className="px-4 py-3.5 whitespace-nowrap font-mono text-[11px]">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-slate-300">
+                        <td className="px-4 py-3.5 whitespace-nowrap font-mono text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-200 font-semibold">
                               {truncateWallet(wallet)}
                             </span>
                             {wallet && (
                               <button
                                 type="button"
                                 onClick={() => handleCopy(wallet, `wallet-${ticket.id}`)}
-                                className="text-slate-400 hover:text-white"
+                                className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
                                 title="Sao chép địa chỉ ví"
                               >
                                 {copiedText === `wallet-${ticket.id}` ? (
-                                  <Check className="h-3 w-3 text-solana-green" />
+                                  <Check className="h-3.5 w-3.5 text-solana-green" />
                                 ) : (
-                                  <Copy className="h-3 w-3" />
+                                  <Copy className="h-3.5 w-3.5" />
                                 )}
                               </button>
                             )}
@@ -742,21 +782,21 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                         {/* Hạng vé */}
                         <td className="px-4 py-3.5 whitespace-nowrap">
                           <span
-                            className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                            className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-bold ${
                               isVip
-                                ? 'border border-amber-400/40 bg-amber-400/10 text-amber-300'
-                                : 'border border-solana-cyan/30 bg-solana-cyan/10 text-solana-cyan'
+                                ? 'border border-amber-400/50 bg-amber-400/15 text-amber-200 shadow-sm'
+                                : 'border border-solana-cyan/40 bg-solana-cyan/15 text-cyan-200'
                             }`}
                           >
                             {ticket.tierName || 'Standard'}
                           </span>
-                          <span className="text-[10px] text-slate-400 block mt-0.5">
+                          <span className="text-xs text-slate-300 font-medium block mt-1">
                             {ticket.priceSol} SOL
                           </span>
                         </td>
 
                         {/* Thời gian mua */}
-                        <td className="px-4 py-3.5 whitespace-nowrap text-slate-400">
+                        <td className="px-4 py-3.5 whitespace-nowrap text-xs text-slate-300 font-medium">
                           {ticket.purchasedAt || ticket.purchaseDate
                             ? formatDate(ticket.purchasedAt || ticket.purchaseDate)
                             : '—'}
@@ -765,12 +805,12 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                         {/* Trạng thái */}
                         <td className="px-4 py-3.5 whitespace-nowrap text-center">
                           {checked ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-solana-green/40 bg-solana-green/10 px-2.5 py-1 text-[11px] font-semibold text-solana-green">
-                              <CheckCircle2 className="h-3 w-3" />
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-solana-green/50 bg-solana-green/15 px-3 py-1 text-xs font-bold text-solana-green shadow-sm">
+                              <CheckCircle2 className="h-3.5 w-3.5" />
                               ĐÃ CHECK-IN
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-solana-cyan/40 bg-solana-cyan/10 px-2.5 py-1 text-[11px] font-semibold text-solana-cyan">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-solana-cyan/40 bg-solana-cyan/15 px-3 py-1 text-xs font-bold text-cyan-200 shadow-sm">
                               <span className="h-1.5 w-1.5 rounded-full bg-solana-cyan animate-pulse" />
                               {t('organizer.statusValid')}
                             </span>
@@ -783,7 +823,7 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                             <button
                               type="button"
                               onClick={() => onNavigate('verify', ticket.id)}
-                              className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:bg-white/10 hover:text-white"
+                              className="inline-flex min-h-[36px] items-center justify-center rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-slate-100 hover:bg-white/20 hover:text-white transition-all active:scale-95 shadow-sm"
                               title="Tra cứu xác minh vé công khai"
                             >
                               Tra cứu
@@ -793,10 +833,10 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                                 href={`https://explorer.solana.com/address/${wallet}?cluster=devnet`}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="rounded-lg border border-white/10 bg-white/5 p-1 text-slate-400 hover:text-solana-cyan"
+                                className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-xl border border-white/15 bg-white/10 p-2 text-slate-300 hover:text-solana-cyan hover:bg-white/20 transition-all active:scale-95"
                                 title="Xem ví trên Solana Explorer"
                               >
-                                <ExternalLink className="h-3.5 w-3.5" />
+                                <ExternalLink className="h-4 w-4" />
                               </a>
                             )}
                           </div>
@@ -807,6 +847,43 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                 )}
               </tbody>
             </table>
+
+            {/* Chân Bảng: Bộ Đếm Phân Trang & Điều Hướng */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-white/10 bg-white/[0.02] px-4 py-3 text-xs text-slate-300">
+              <div className="flex items-center gap-2">
+                <span>
+                  Hiển thị <strong>{filteredTickets.length > 0 ? (currentPage - 1) * ITEMS_PER_PAGE + 1 : 0}</strong> -{' '}
+                  <strong>{Math.min(currentPage * ITEMS_PER_PAGE, filteredTickets.length)}</strong> trên tổng số{' '}
+                  <strong className="text-white">{filteredTickets.length}</strong> vé
+                </span>
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage <= 1}
+                    className="inline-flex min-h-[36px] items-center justify-center px-3.5 py-1.5 rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all active:scale-95"
+                  >
+                    ← Trang trước
+                  </button>
+                  <div className="flex items-center gap-1">
+                    <span className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center px-3 py-1.5 rounded-xl bg-solana-purple/30 text-solana-cyan font-bold border border-solana-purple/50">
+                      {currentPage}
+                    </span>
+                    <span className="text-slate-400">/ {totalPages}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage >= totalPages}
+                    className="inline-flex min-h-[36px] items-center justify-center px-3.5 py-1.5 rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all active:scale-95"
+                  >
+                    Trang sau →
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </section>
 
